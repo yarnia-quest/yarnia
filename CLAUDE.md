@@ -8,14 +8,13 @@
 ## Repo layout
 - `app/` — the Yarnia app (Expo / React Native). The product frontend.
 - `api/` — product backend (Cloudflare Worker): story gen + ElevenLabs TTS + InstantDB + content-safety guardrail.
-- `marketing/` — waitlist landing page (`index.html`) + signup `worker/` (Cloudflare Worker → InstantDB). Already built.
-- `infra/` — Terraform (Cloudflare IaC) + config/CI notes.
+- `marketing/` — landing page (`public/`) served by an assets-only Cloudflare Worker (`src/worker.ts`) at yarnia.quest. The signup writes client-side to InstantDB (no secret). **Deployed.**
+- `infra/` — Terraform (zone settings) + config/CI notes.
 - `instant/` — InstantDB schema + permissions as code (applied by `push-schema.yml`).
 - `ideation/` — strategy/pitch docs (not code).
 
-## Domains (keep marketing and app cleanly separate)
-- `yarnia.quest` (naked/apex) → **marketing** landing page (Cloudflare Pages, serves `marketing/`).
-- `signups.yarnia.quest` → **marketing** waitlist Worker (`marketing/worker/`).
+## Domains
+- `yarnia.quest` (apex) → **marketing** Worker (serves `marketing/public/`; the page writes signups directly to InstantDB via the public app id + a create-only permission).
 - `api.yarnia.quest` → **app backend** (`api/`). Reserved; the marketing side must not use it.
 
 ## Stack
@@ -56,14 +55,13 @@
 - **ElevenLabs (voice):** https://elevenlabs.io/docs · **OpenAI:** https://platform.openai.com/docs · **Qwen:** https://qwen.readthedocs.io/
 - **Mollie (payments, if used):** https://docs.mollie.com/
 
-Verified facts in use: InstantDB admin `init({appId, adminToken})` + `db.transact([db.tx.X[lookup('attr', val)].update({...})])` (SDK uses `fetch`, runs on Workers). Schema: `i.entity({ email: i.string().unique().indexed(), ... })`, push with `npx instant-cli@latest push schema`. Wrangler custom domain: `[[routes]] pattern="signups.yarnia.quest" custom_domain=true` (marketing waitlist worker; `api.yarnia.quest` is the app backend). InstantDB schema/perms in CI: `instant-cli push schema --app <id> --token <INSTANT_ADMIN_TOKEN> --yes` — the app admin token works as the CLI `--token` (verified 2026-06-05), no separate PAT. Platform SDK is `@instantdb/platform`. Terraform Cloudflare provider `~> 5` resources: `cloudflare_zone_setting`, `cloudflare_pages_project`, `cloudflare_pages_domain`, `cloudflare_dns_record`.
+Verified facts in use (2026-06-05). **Pattern (from prism):** one Worker with Static Assets per app — `[assets] directory binding=ASSETS` + the worker falls through to `env.ASSETS.fetch()`; deployed via `cloudflare/wrangler-action@v3`. Marketing: `[[routes]] pattern="yarnia.quest" custom_domain=true` (the worker serves the page; `api.yarnia.quest` is the app backend). **Client write (no token):** the page uses `@instantdb/core` `db.transact(db.tx.signups[id()].create({...}))` as a guest, gated by a `signups.create:true` permission (`view/update/delete:false`). **Admin token** (`@instantdb/admin`, bypasses perms) is used ONLY by schema CI: `instant-cli push schema/perms --app <id> --token <INSTANT_ADMIN_TOKEN> --yes` (the app admin token works as the CLI `--token`; no separate PAT). Schema: `i.entity({ email: i.string().unique().indexed(), ... })`. Tooling: use **Node ≥22** (nvm v24 here), not Bun, for wrangler. Terraform provider `~> 5`: `cloudflare_zone_setting`.
 
 ## Deploy & automation
-- **Cloudflare infra (declarative):** `infra/terraform/` — zone settings, Pages project, apex/www domains + DNS. Run locally: `terraform apply` with `CLOUDFLARE_API_TOKEN` in env (state is local for now).
-- **Marketing page:** `.github/workflows/deploy-marketing.yml` → `wrangler pages deploy marketing` on push to `marketing/**`.
-- **Signup Worker:** `.github/workflows/deploy-worker.yml` (+ `marketing/worker/deploy.sh`) → wrangler; serves `signups.yarnia.quest`.
-- **InstantDB schema/perms:** `.github/workflows/push-schema.yml` → `instant-cli push schema/perms --token` on changes to `instant.schema.ts`/`instant.perms.ts`.
-- **GitHub repo secrets (mirror `.env`):** `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, `INSTANT_APP_ID`, `INSTANT_ADMIN_TOKEN` (worker runtime AND schema-push CI — the app admin token doubles as the instant-cli `--token`, so no separate PAT).
+- **Marketing site:** `.github/workflows/deploy.yml` → `cloudflare/wrangler-action@v3` deploys the `yarnia-marketing` Worker (page + assets) to `yarnia.quest` on push to `marketing/**`. No app secrets (signup is client-side).
+- **InstantDB schema/perms:** `.github/workflows/push-schema.yml` → `instant-cli push schema/perms --token <INSTANT_ADMIN_TOKEN>` on changes to `instant/**`.
+- **Cloudflare infra:** `infra/terraform/` — zone settings only (the worker custom domain + DNS are managed by wrangler on deploy).
+- **GitHub repo secrets:** `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` (deploys); `INSTANT_APP_ID`, `INSTANT_ADMIN_TOKEN` (schema CI only). The marketing Worker holds NO secret.
 
 ## Tooling: gstack
 - Both machines need the base install (`~/.claude/skills/gstack`, needs Bun). Gives `/office-hours`, `/plan-ceo-review`, `/review`, `/qa`, `/ship`. Optional team-mode repo bootstrap (`gstack-team-init optional`) can be run once on this repo. Full notes: `ideation/STRATEGY.md` history / `infra/README.md`.

@@ -1,0 +1,16 @@
+name = "yarnia-marketing"
+main = "src/worker.ts"
+compatibility_date = "2026-06-05"
+compatibility_flags = ["nodejs_compat"]
+
+# Serves the static landing page (public/) via the ASSETS binding. No secrets/vars:
+# the signup is written client-side from the page to InstantDB (create-only permission).
+[assets]
+directory = "./public"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+
+# Served at the apex. Cloudflare provisions DNS + TLS on deploy (yarnia.quest must be an active zone).
+[[routes]]
+pattern = "yarnia.quest"
+custom_domain = true

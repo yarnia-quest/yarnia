@@ -3,12 +3,9 @@
   Yarnia landing page (marketing / waitlist — NOT the product app).
   Purpose: collect real email signups as demand evidence before the hackathon.
 
-  BACKEND: InstantDB (data) + Cloudflare Worker (capture). This page POSTs JSON to the Worker;
-  the Worker writes the email into InstantDB using the admin token, kept server-side as a Worker secret.
-  SETUP + DEPLOY: see marketing/worker/README.md. The <form action> below points to the marketing waitlist
-  Worker at https://signups.yarnia.quest. This page is served by Cloudflare Pages on https://yarnia.quest.
-  (api.yarnia.quest is reserved for the app's backend in api/, kept separate from marketing.)
-  The public InstantDB App ID is safe in client code; the admin token must NEVER be in this page or the repo.
+  BACKEND: one Cloudflare Worker (../src/worker.ts) serves this page (Static Assets) AND handles the signup.
+  The form POSTs same-origin to /api/signup; the worker writes the email into InstantDB using the admin
+  token (a Worker secret). Served at https://yarnia.quest. The admin token must NEVER be in this page/repo.
 
   Rule note: this is customer validation, separate from the product codebase. Fine to ship tonight.
 -->
@@ -83,8 +80,8 @@
     <h1>Open the app. The screen goes off. A voice tells your kid a story made <span class="em">just for them</span>.</h1>
     <p class="lede">It's 8pm. Instead of handing over the iPad, your child hears a bedtime story they helped invent, in a calm voice in the dark. And Yarnia remembers them, night after night.</p>
 
-    <!-- action = the marketing waitlist Worker at signups.yarnia.quest (see marketing/worker/README.md). -->
-    <form id="signup" action="https://signups.yarnia.quest" method="POST">
+    <!-- signup is written client-side to InstantDB (public app id, guest create-only perm) -->
+    <form id="signup">
       <input type="text" name="_gotcha" class="hp" tabindex="-1" autocomplete="off" aria-hidden="true" />
       <input type="email" name="email" placeholder="your@email.com" required />
       <button type="submit">Get early access</button>
@@ -112,30 +109,32 @@
     </footer>
   </div>
 
-  <script>
-    // Progressive enhancement: AJAX submit so we stay on-page. Plain POST still works if JS is off.
-    var f = document.getElementById("signup");
-    f.addEventListener("submit", function (e) {
+  <script type="module">
+    import { init, id } from "https://esm.sh/@instantdb/core@1.0.43";
+    // Public InstantDB app id (safe to expose). Writes are gated by the create-only `signups` permission.
+    const db = init({ appId: "889939e5-f81f-41d9-9307-90c8af24b4b8" });
+
+    const f = document.getElementById("signup");
+    const fineprint = document.getElementById("fineprint");
+    const thanks = document.getElementById("thanks");
+    const showThanks = () => { f.style.display = "none"; fineprint.style.display = "none"; thanks.style.display = "block"; };
+
+    f.addEventListener("submit", async (e) => {
       e.preventDefault();
-      var btn = f.querySelector("button");
-      if (f.querySelector('input[name=_gotcha]').value) return; // honeypot tripped, ignore bots
-      var email = f.querySelector('input[name=email]').value.trim();
+      if (f.querySelector('input[name=_gotcha]').value) return; // honeypot
+      const btn = f.querySelector("button");
+      const email = f.querySelector('input[name=email]').value.trim().toLowerCase();
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { fineprint.textContent = "That email looks off. Try again?"; return; }
       btn.disabled = true; btn.textContent = "Sending...";
-      fetch(f.action, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: email }) })
-        .then(function (r) {
-          if (r.ok) {
-            f.style.display = "none";
-            document.getElementById("fineprint").style.display = "none";
-            document.getElementById("thanks").style.display = "block";
-          } else {
-            btn.disabled = false; btn.textContent = "Get early access";
-            document.getElementById("fineprint").textContent = "Hmm, that didn't go through. Try again?";
-          }
-        })
-        .catch(function () {
-          btn.disabled = false; btn.textContent = "Get early access";
-          document.getElementById("fineprint").textContent = "Network hiccup. Try again?";
-        });
+      try {
+        await db.transact(db.tx.signups[id()].create({ email, createdAt: Date.now(), source: "landing" }));
+        showThanks();
+      } catch (err) {
+        const msg = String(err?.message ?? err);
+        if (/unique|already|exists|duplicate/i.test(msg)) { showThanks(); return; } // already on the list
+        btn.disabled = false; btn.textContent = "Get early access";
+        fineprint.textContent = "Hmm, that didn't go through. Try again?";
+      }
     });
   </script>
 </body>

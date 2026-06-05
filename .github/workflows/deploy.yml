@@ -1,0 +1,26 @@
+name: Deploy marketing
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ["marketing/**"]
+
+# The marketing worker is assets-only and holds NO secret (the signup is written client-side to
+# InstantDB with a create-only permission). So this only needs the Cloudflare deploy credentials.
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+        working-directory: marketing
+      - uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: marketing
+          command: deploy
