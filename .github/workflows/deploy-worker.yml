@@ -1,0 +1,31 @@
+name: Deploy signup worker
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ["marketing/worker/**"]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: marketing/worker
+    env:
+      # Mirror the keys in .env. Add under Settings -> Secrets and variables -> Actions.
+      # Passed via env (not inlined into run:) so values are never interpolated into the shell command.
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      INSTANT_APP_ID: ${{ secrets.INSTANT_APP_ID }}
+      INSTANT_ADMIN_TOKEN: ${{ secrets.INSTANT_ADMIN_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm install
+      - name: Set InstantDB admin token secret
+        run: printf '%s' "$INSTANT_ADMIN_TOKEN" | npx wrangler secret put INSTANT_ADMIN_TOKEN
+      - name: Deploy
+        run: npx wrangler deploy --var INSTANT_APP_ID:"$INSTANT_APP_ID"

@@ -1,0 +1,10 @@
+name = "yarnia-signups"
+main = "src/index.js"
+compatibility_date = "2026-06-05"
+compatibility_flags = ["nodejs_compat"]
+
+# No ids/secrets hardcoded here. They come from the environment / repo-root .env:
+#   account_id          -> CLOUDFLARE_ACCOUNT_ID env var (wrangler reads it automatically)
+#   INSTANT_APP_ID      -> injected at deploy via `--var` (see deploy.sh / CI)
+#   INSTANT_ADMIN_TOKEN -> Worker secret (`wrangler secret put`, or set in CI from a repo secret)
+# Local `wrangler dev`: put INSTANT_APP_ID and INSTANT_ADMIN_TOKEN in marketing/worker/.dev.vars (gitignored).

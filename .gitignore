@@ -1,0 +1,14 @@
+# secrets / local config — NEVER commit
+.env
+.env.local
+.dev.vars
+
+# deps / build
+node_modules/
+.wrangler/
+dist/
+.next/
+
+# os / editor
+.DS_Store
+*.log

@@ -1,0 +1,131 @@
+<!doctype html>
+<!--
+  Yarnia landing page (marketing / waitlist — NOT the product app).
+  Purpose: collect real email signups as demand evidence before the hackathon.
+
+  BACKEND: InstantDB (data) + Cloudflare Worker (capture). This page POSTs JSON to the Worker;
+  the Worker writes the email into InstantDB using the admin token, kept server-side as a Worker secret.
+  SETUP + DEPLOY: see marketing/worker/README.md. Then set the <form action="..."> below to your deployed
+  Worker URL (https://yarnia-signups.<your-subdomain>.workers.dev). Deploy this page on Cloudflare Pages.
+  The public InstantDB App ID is safe in client code; the admin token must NEVER be in this page or the repo.
+
+  Rule note: this is customer validation, separate from the product codebase. Fine to ship tonight.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Yarnia — bedtime stories that remember your kid</title>
+<meta name="description" content="Open the app. The screen goes off. A voice tells your child a story made just for them, and it remembers them night after night." />
+<style>
+  :root{
+    --ink:#0b0d1a; --ink2:#11142a; --cream:#f4ecd8; --muted:#9aa0c0;
+    --moon:#e9c46a; --soft:#7c83b8; --line:rgba(244,236,216,.12);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{
+    background:radial-gradient(1200px 700px at 70% -10%, #1b1f3b 0%, var(--ink) 55%) , var(--ink);
+    color:var(--cream); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    line-height:1.55; -webkit-font-smoothing:antialiased; min-height:100vh;
+  }
+  .wrap{max-width:680px; margin:0 auto; padding:64px 24px 80px}
+  .moon{width:14px;height:14px;border-radius:50%;background:var(--moon);
+    box-shadow:0 0 24px 6px rgba(233,196,106,.45); display:inline-block; vertical-align:middle}
+  .brand{font-size:15px; letter-spacing:.22em; text-transform:uppercase; color:var(--muted); margin-left:10px}
+  h1{font-family:Georgia,"Times New Roman",serif; font-weight:500; font-size:clamp(34px,6vw,52px);
+    line-height:1.1; margin:40px 0 18px; color:var(--cream)}
+  h1 .em{color:var(--moon); font-style:italic}
+  .lede{font-size:clamp(17px,2.4vw,20px); color:#d7d2e8; max-width:34ch}
+  form{margin:34px 0 14px; display:flex; gap:10px; flex-wrap:wrap}
+  input[type=email]{flex:1 1 240px; padding:15px 16px; border-radius:12px; border:1px solid var(--line);
+    background:rgba(244,236,216,.04); color:var(--cream); font-size:16px; outline:none}
+  input[type=email]::placeholder{color:#7e84a6}
+  input[type=email]:focus{border-color:var(--moon); background:rgba(233,196,106,.06)}
+  button{padding:15px 22px; border:0; border-radius:12px; background:var(--moon); color:#23200c;
+    font-size:16px; font-weight:650; cursor:pointer; transition:transform .08s ease}
+  button:hover{transform:translateY(-1px)}
+  .fineprint{font-size:13px;color:var(--muted)}
+  .hp{position:absolute;left:-9999px}
+  section{margin-top:56px}
+  .eyebrow{font-size:13px; letter-spacing:.18em; text-transform:uppercase; color:var(--soft); margin-bottom:14px}
+  .beats{display:grid; gap:18px}
+  .beat{display:flex; gap:14px; align-items:flex-start}
+  .num{flex:0 0 28px; height:28px; border-radius:50%; border:1px solid var(--line);
+    display:grid; place-items:center; font-size:13px; color:var(--moon)}
+  .beat p{color:#d7d2e8}
+  .beat b{color:var(--cream)}
+  .moat{margin-top:56px; padding:24px; border:1px solid var(--line); border-radius:16px;
+    background:linear-gradient(180deg, rgba(233,196,106,.06), rgba(233,196,106,0))}
+  .moat p{color:#e7e3f3}
+  .quietnote{margin-top:14px;font-size:14px;color:var(--muted)}
+  footer{margin-top:64px; padding-top:24px; border-top:1px solid var(--line); font-size:14px; color:var(--muted)}
+  a{color:var(--moon)}
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <span class="moon"></span><span class="brand">Yarnia</span>
+    </header>
+
+    <h1>Open the app. The screen goes off. A voice tells your kid a story made <span class="em">just for them</span>.</h1>
+    <p class="lede">It's 8pm. Instead of handing over the iPad, your child hears a bedtime story they helped invent, in a calm voice in the dark. And Yarnia remembers them, night after night.</p>
+
+    <!-- action = your deployed Cloudflare Worker URL (see marketing/worker/README.md). -->
+    <form id="signup" action="https://yarnia-signups.YOUR-SUBDOMAIN.workers.dev" method="POST">
+      <input type="text" name="_gotcha" class="hp" tabindex="-1" autocomplete="off" aria-hidden="true" />
+      <input type="email" name="email" placeholder="your@email.com" required />
+      <button type="submit">Get early access</button>
+    </form>
+    <p class="fineprint" id="fineprint">Be the first to try it. €8/mo when we launch. No spam, just a heads-up.</p>
+    <p class="fineprint" id="thanks" style="display:none;color:var(--moon)">Thank you. We'll email you the moment Yarnia is ready. 🌙</p>
+
+    <section>
+      <div class="eyebrow">How a bedtime goes</div>
+      <div class="beats">
+        <div class="beat"><div class="num">1</div><p><b>You open it, the screen dims.</b> No feed, no scroll. Just a warm voice greeting your child by name.</p></div>
+        <div class="beat"><div class="num">2</div><p><b>Your kid helps invent it.</b> "An owl, or a dragon? In our town?" Then it settles into a calm, narrated story.</p></div>
+        <div class="beat"><div class="num">3</div><p><b>It remembers.</b> Tomorrow it knows they love dragons, get scared of thunder, and fell asleep faster with a cat in the story.</p></div>
+      </div>
+    </section>
+
+    <div class="moat">
+      <div class="eyebrow">Why it's different</div>
+      <p>Sleep apps play the same recordings for every kid. Yarnia makes your child the hero of a story that grows with them, and you can send tonight's story to grandma with one tap.</p>
+    </div>
+    <p class="quietnote">Every story runs through age and safety checks, and Yarnia steers clear of the exact things that scare your kid, because it remembers them.</p>
+
+    <footer>
+      Built by parents who refuse to hand over the iPad at bedtime. · <a href="mailto:hi@yarnia.app">hi@yarnia.app</a>
+    </footer>
+  </div>
+
+  <script>
+    // Progressive enhancement: AJAX submit so we stay on-page. Plain POST still works if JS is off.
+    var f = document.getElementById("signup");
+    f.addEventListener("submit", function (e) {
+      e.preventDefault();
+      var btn = f.querySelector("button");
+      if (f.querySelector('input[name=_gotcha]').value) return; // honeypot tripped, ignore bots
+      var email = f.querySelector('input[name=email]').value.trim();
+      btn.disabled = true; btn.textContent = "Sending...";
+      fetch(f.action, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: email }) })
+        .then(function (r) {
+          if (r.ok) {
+            f.style.display = "none";
+            document.getElementById("fineprint").style.display = "none";
+            document.getElementById("thanks").style.display = "block";
+          } else {
+            btn.disabled = false; btn.textContent = "Get early access";
+            document.getElementById("fineprint").textContent = "Hmm, that didn't go through. Try again?";
+          }
+        })
+        .catch(function () {
+          btn.disabled = false; btn.textContent = "Get early access";
+          document.getElementById("fineprint").textContent = "Network hiccup. Try again?";
+        });
+    });
+  </script>
+</body>
+</html>

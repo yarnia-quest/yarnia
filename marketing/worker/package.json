@@ -1,0 +1,15 @@
+{
+  "name": "yarnia-signups",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "dependencies": {
+    "@instantdb/admin": "latest"
+  },
+  "devDependencies": {
+    "wrangler": "latest"
+  }
+}
