@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- Source for og.png (1200x630). Rendered to PNG with headless Chrome; reuses the live night-sky theme. -->
+<!-- Source for og.png (1200x630). Rendered to PNG with headless Chrome; reuses the live night-sky theme. Generous safe margins so nothing gets cropped by social platforms. -->
 <html lang="en">
 <head>
 <meta charset="utf-8" />
@@ -11,34 +11,32 @@
   html,body{width:1200px; height:630px; overflow:hidden}
   body{
     position:relative; color:#f6efe0; font-family:"Lora",Georgia,serif;
-    background:
-      radial-gradient(120% 95% at 82% -12%, #2a3168 0%, #181a3c 38%, #12132a 68%, #0c0d1f 100%);
+    background:radial-gradient(120% 95% at 82% -12%, #2a3168 0%, #181a3c 38%, #12132a 68%, #0c0d1f 100%);
   }
-  /* starfield */
   .stars{position:absolute; inset:0;
     background-image:
-      radial-gradient(2px 2px at 10% 22%, rgba(246,239,224,.8), transparent 60%),
-      radial-gradient(1.6px 1.6px at 26% 12%, rgba(127,168,212,.7), transparent 60%),
-      radial-gradient(1.4px 1.4px at 18% 60%, rgba(246,239,224,.6), transparent 60%),
-      radial-gradient(1.6px 1.6px at 44% 30%, rgba(241,198,115,.5), transparent 60%),
-      radial-gradient(1.3px 1.3px at 60% 70%, rgba(246,239,224,.5), transparent 60%),
-      radial-gradient(1.5px 1.5px at 88% 64%, rgba(127,168,212,.55), transparent 60%),
-      radial-gradient(1.3px 1.3px at 70% 18%, rgba(246,239,224,.55), transparent 60%),
-      radial-gradient(2px 2px at 92% 30%, rgba(246,239,224,.45), transparent 60%);
+      radial-gradient(2px 2px at 12% 24%, rgba(246,239,224,.7), transparent 60%),
+      radial-gradient(1.6px 1.6px at 28% 16%, rgba(127,168,212,.6), transparent 60%),
+      radial-gradient(1.4px 1.4px at 20% 62%, rgba(246,239,224,.5), transparent 60%),
+      radial-gradient(1.5px 1.5px at 62% 72%, rgba(246,239,224,.45), transparent 60%),
+      radial-gradient(1.5px 1.5px at 86% 60%, rgba(127,168,212,.5), transparent 60%),
+      radial-gradient(1.3px 1.3px at 72% 22%, rgba(246,239,224,.5), transparent 60%);
     background-repeat:no-repeat;
   }
-  .moon{position:absolute; top:78px; right:108px; width:188px; height:188px;
-    filter:drop-shadow(0 0 20px rgba(241,198,115,.6)) drop-shadow(0 0 80px rgba(241,198,115,.4)) drop-shadow(0 0 170px rgba(127,168,212,.28));
+  /* generous, uniform safe margin so platforms can crop without clipping content */
+  .frame{position:absolute; inset:0; padding:92px 104px}
+  .moon{position:absolute; top:104px; right:124px; width:158px; height:158px;
+    filter:drop-shadow(0 0 18px rgba(241,198,115,.55)) drop-shadow(0 0 72px rgba(241,198,115,.36)) drop-shadow(0 0 150px rgba(127,168,212,.24));
   }
-  .content{position:absolute; left:96px; top:0; bottom:0; width:760px; display:flex; flex-direction:column; justify-content:center}
-  .brandrow{display:flex; align-items:center; gap:16px; margin-bottom:40px}
-  .brandrow .glyph{width:40px; height:40px; filter:drop-shadow(0 0 8px rgba(241,198,115,.5))}
-  .brandrow .name{font-family:"Fraunces",Georgia,serif; font-weight:500; font-size:40px; letter-spacing:.01em}
-  h1{font-family:"Fraunces",Georgia,serif; font-weight:400; font-size:72px; line-height:1.08; letter-spacing:-.015em; max-width:16ch}
+  .content{position:absolute; left:104px; right:300px; top:0; bottom:0; display:flex; flex-direction:column; justify-content:center}
+  .brandrow{display:flex; align-items:center; gap:15px; margin-bottom:38px}
+  .brandrow .glyph{width:36px; height:36px; filter:drop-shadow(0 0 8px rgba(241,198,115,.5))}
+  .brandrow .name{font-family:"Fraunces",Georgia,serif; font-weight:500; font-size:37px; letter-spacing:.01em}
+  h1{font-family:"Fraunces",Georgia,serif; font-weight:400; font-size:62px; line-height:1.1; letter-spacing:-.015em; max-width:15ch}
   h1 em{font-style:italic; color:#f1c673; font-weight:500}
-  .rule{width:64px; height:2px; background:linear-gradient(90deg,#f1c673,rgba(241,198,115,0)); margin:34px 0 26px}
-  .tag{font-size:25px; color:#ddd8ef; max-width:30ch; line-height:1.4}
-  .url{position:absolute; right:104px; bottom:52px; font-family:"Fraunces",Georgia,serif; font-style:italic; font-size:22px; letter-spacing:.04em; color:#9aa0cb}
+  .rule{width:60px; height:2px; background:linear-gradient(90deg,#f1c673,rgba(241,198,115,0)); margin:32px 0 24px}
+  .tag{font-size:23px; color:#ddd8ef; max-width:30ch; line-height:1.42}
+  .url{position:absolute; right:104px; bottom:78px; font-family:"Fraunces",Georgia,serif; font-style:italic; font-size:21px; letter-spacing:.04em; color:#9aa0cb}
 </style>
 </head>
 <body>
