@@ -31,10 +31,11 @@
 - GitHub repo secrets mirror the `.env` keys (see `infra/README.md`); CI in `.github/workflows/`.
 
 ## Commands
-- **Marketing signup worker:** `cd marketing/worker && npm install && bash deploy.sh` (reads root `.env`). Local: `npm run dev`.
+- **Marketing (page + worker):** `cd marketing && npm install && npx wrangler deploy`. Local dev: `npx wrangler dev`. (CI: `deploy.yml` via wrangler-action.)
 - **app / api:** _(to be added once scaffolded June 6 — e.g. `cd app && npm install && npx expo start`)._
 
 ## Conventions
+- **Package manager: npm + Node ≥22** everywhere (local and CI). Commit `package-lock.json`. Don't use bun for project deps (gstack's own CLI runs on bun, that's separate).
 - Match the style of surrounding code; keep diffs small and explicit.
 - Prose/writing (READMEs, copy, messages): **no em dashes.**
 - _(Team to provide: language/lint/format rules, file structure, naming, testing approach.)_
