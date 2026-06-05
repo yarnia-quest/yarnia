@@ -17,3 +17,7 @@ dist/
 # bun (we standardize on npm; gstack's own CLI uses bun separately)
 bun.lock
 bun.lockb
+
+# installed agent skills (reproducible via: npx skills add ...)
+.agents/
+skills-lock.json

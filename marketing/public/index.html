@@ -2,232 +2,375 @@
 <!--
   Yarnia landing page (marketing / waitlist). Single self-contained static file, served by the
   yarnia-marketing Cloudflare Worker (Static Assets). The signup is written CLIENT-SIDE to InstantDB
-  via @instantdb/core (public app id, guest, create-only permission) — no secret on this page.
+  via @instantdb/core (public app id, guest, create-only permission), no secret on this page.
+  Copy + design produced by applying 11 official Anthropic skills (competitive-brief, user-research,
+  brand-guidelines, content-creation, ux-copy, seo-audit, theme-factory, frontend-design) and reviewed
+  by brand-review, design-critique, and accessibility-review.
 -->
 <html lang="en">
 <head>
+<script>document.documentElement.classList.add('js')</script>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Yarnia: bedtime stories that remember your kid</title>
-<meta name="description" content="Bedtime they love, without the screen you regret. A warm voice tells your child a story where they are the hero, and remembers them night after night." />
+<title>Yarnia: Bedtime Stories That Remember Your Kid</title>
+<meta name="description" content="A screen-off bedtime story app. A warm voice tells your kid a story where they are the hero, and remembers them night after night. Join the waitlist." />
+<link rel="canonical" href="https://yarnia.quest/" />
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><path d='M21 23a9 9 0 1 1 0-14 7 7 0 1 0 0 14z' fill='%23f0c46a'/></svg>" />
 <meta property="og:type" content="website" />
-<meta property="og:title" content="Yarnia: bedtime stories that remember your kid" />
-<meta property="og:description" content="Bedtime they love, without the screen you regret. A warm voice tells your child a story where they are the hero, and remembers them night after night." />
+<meta property="og:title" content="Yarnia: Bedtime Stories That Remember Your Kid" />
+<meta property="og:description" content="A screen-off bedtime story app. A warm voice tells your kid a story where they are the hero, and remembers them night after night. Join the waitlist." />
 <meta property="og:url" content="https://yarnia.quest" />
 <meta property="og:image" content="https://yarnia.quest/og.png" />
 <meta name="twitter:card" content="summary_large_image" />
-<meta name="twitter:title" content="Yarnia: bedtime stories that remember your kid" />
-<meta name="twitter:description" content="Bedtime they love, without the screen you regret. A warm voice tells your child a story where they are the hero, and remembers them night after night." />
+<meta name="twitter:title" content="Yarnia: Bedtime Stories That Remember Your Kid" />
+<meta name="twitter:description" content="A screen-off bedtime story app. A warm voice tells your kid a story where they are the hero, and remembers them night after night. Join the waitlist." />
 <meta name="twitter:image" content="https://yarnia.quest/og.png" />
-<meta name="theme-color" content="#0a0b18" />
+<meta name="theme-color" content="#12132a" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,400;1,9..144,500&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,400;1,9..144,500&family=Lora:ital,wght@0,400;0,500;0,600;1,400;1,500&display=swap" rel="stylesheet" />
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "SoftwareApplication",
+      "@id": "https://yarnia.quest/#app",
+      "name": "Yarnia",
+      "applicationCategory": "LifestyleApplication",
+      "applicationSubCategory": "Kids Bedtime Story App",
+      "operatingSystem": "iOS, Android",
+      "url": "https://yarnia.quest",
+      "image": "https://yarnia.quest/og.png",
+      "description": "A screen-off, voice-in-the-dark bedtime story app for parents of children around 3 to 7. The app tells a personalized story where the child is the hero, and remembers the child across nights: the characters they love, the fears to steer around, and what helped them fall asleep. Every story runs through age and safety checks.",
+      "audience": {
+        "@type": "PeopleAudience",
+        "suggestedMinAge": 3,
+        "suggestedMaxAge": 7
+      },
+      "featureList": [
+        "Screen goes dark while a warm voice tells the story",
+        "Your child is the hero of a story that grows with them",
+        "Remembers the child across nights: favorite characters, fears to steer around, and what helped them fall asleep",
+        "Every story runs through age and safety checks",
+        "Send tonight's story to grandma or a co-parent"
+      ],
+      "offers": {
+        "@type": "Offer",
+        "price": "8.00",
+        "priceCurrency": "EUR",
+        "description": "EUR 8/mo when we launch. Free to claim an early spot on the waitlist.",
+        "availability": "https://schema.org/PreOrder"
+      },
+      "publisher": {
+        "@id": "https://yarnia.quest/#org"
+      }
+    },
+    {
+      "@type": "Organization",
+      "@id": "https://yarnia.quest/#org",
+      "name": "Yarnia",
+      "url": "https://yarnia.quest",
+      "email": "hi@yarnia.quest",
+      "description": "Built by two parents who were done handing over the iPad at 8pm."
+    },
+    {
+      "@type": "WebSite",
+      "@id": "https://yarnia.quest/#website",
+      "url": "https://yarnia.quest",
+      "name": "Yarnia",
+      "description": "Bedtime they love, without the screen you regret. A warm voice tells your kid a story where they are the hero, and remembers them night after night.",
+      "publisher": {
+        "@id": "https://yarnia.quest/#org"
+      }
+    },
+    {
+      "@type": "FAQPage",
+      "@id": "https://yarnia.quest/#faq",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "Is Yarnia just another screen at bedtime?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "No. You open Yarnia and the screen goes dark. A warm voice tells the story, so there is no glowing iPad to pry away at lights-out."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Are the stories safe and age-appropriate?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Every story runs through age and safety checks, and is shaped to steer around the things that scare your child, so you do not have to preview each one yourself."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How does Yarnia remember my child?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yarnia carries what matters across nights: the characters they love, the fears to steer around, and what helped them drift off last night."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "What does Yarnia cost?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "It is free to claim an early spot on the waitlist. We are testing a price of EUR 8/mo when we launch."
+          }
+        }
+      ]
+    }
+  ]
+}
+</script>
 <style>
   :root{
-    --ink:#0a0b18; --ink2:#13153100; --glow:#222654;
-    --cream:#f4ecd8; --muted:#9a9fc4; --dim:#6f74a0;
-    --moon:#f0c46a; --moon-2:#ffd98a; --lav:#b9b6e6;
-    --line:rgba(244,236,216,.10);
-    --serif:"Newsreader",Georgia,"Times New Roman",serif;
-    --display:"Fraunces","Newsreader",Georgia,serif;
+    --bg:#12132a; --bg-deep:#0c0d1f; --bg-glow:#232a57;
+    --ink:#f6efe0; --ink-soft:#ddd8ef; --muted:#a9add0; --dim:#8e93bd;
+    --moon:#f1c673; --moon-soft:#ffdd96; --moon-deep:#c89a3f; --moon-ink:#1c1505;
+    --dusk-blue:#7fa8d4; --ember:#e08a5f;
+    --line:rgba(246,239,224,0.10); --line-warm:rgba(241,198,115,0.16);
+    --field-bg:rgba(246,239,224,0.045); --field-border:rgba(246,239,224,0.34);
+    --gap-lg:clamp(72px, 13vh, 130px); --gap-sm:clamp(56px, 9vh, 96px);
+    --body:"Lora",Georgia,"Times New Roman",serif;
+    --display:"Fraunces","Lora",Georgia,serif;
   }
-  *{box-sizing:border-box;margin:0;padding:0}
+  *{box-sizing:border-box; margin:0; padding:0}
   html{scroll-behavior:smooth}
   body{
-    min-height:100vh; color:var(--cream); font-family:var(--serif);
-    font-size:18px; line-height:1.7; letter-spacing:.005em;
+    min-height:100vh; color:var(--ink); font-family:var(--body);
+    font-size:18px; line-height:1.62; letter-spacing:.004em;
     -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
     background:
-      radial-gradient(125% 85% at 78% -8%, #232856 0%, #11132e 38%, var(--ink) 72%),
-      var(--ink);
+      radial-gradient(132% 78% at 76% -10%, var(--bg-glow) 0%, #161836 36%, var(--bg) 70%),
+      var(--bg-deep);
     position:relative; overflow-x:hidden;
   }
-  /* starfield + grain layers */
+  /* starfield + grain atmosphere layers */
   body::before{
-    content:""; position:fixed; inset:0; z-index:0; pointer-events:none; opacity:.7;
+    content:""; position:fixed; inset:0; z-index:0; pointer-events:none; opacity:.72;
     background-image:
-      radial-gradient(1.4px 1.4px at 12% 18%, rgba(244,236,216,.7), transparent 60%),
-      radial-gradient(1.2px 1.2px at 84% 12%, rgba(244,236,216,.55), transparent 60%),
-      radial-gradient(1px 1px at 62% 26%, rgba(244,236,216,.5), transparent 60%),
-      radial-gradient(1.3px 1.3px at 30% 40%, rgba(185,182,230,.45), transparent 60%),
-      radial-gradient(1px 1px at 90% 48%, rgba(244,236,216,.4), transparent 60%),
-      radial-gradient(1.1px 1.1px at 8% 64%, rgba(244,236,216,.4), transparent 60%),
-      radial-gradient(1px 1px at 48% 72%, rgba(185,182,230,.35), transparent 60%),
-      radial-gradient(1.2px 1.2px at 72% 84%, rgba(244,236,216,.35), transparent 60%);
+      radial-gradient(1.5px 1.5px at 12% 16%, rgba(246,239,224,.7), transparent 60%),
+      radial-gradient(1.2px 1.2px at 84% 11%, rgba(246,239,224,.55), transparent 60%),
+      radial-gradient(1px 1px at 62% 24%, rgba(127,168,212,.55), transparent 60%),
+      radial-gradient(1.3px 1.3px at 28% 38%, rgba(241,198,115,.4), transparent 60%),
+      radial-gradient(1px 1px at 90% 46%, rgba(246,239,224,.4), transparent 60%),
+      radial-gradient(1.1px 1.1px at 8% 62%, rgba(246,239,224,.4), transparent 60%),
+      radial-gradient(1px 1px at 46% 70%, rgba(127,168,212,.38), transparent 60%),
+      radial-gradient(1.2px 1.2px at 72% 82%, rgba(246,239,224,.35), transparent 60%),
+      radial-gradient(1px 1px at 38% 90%, rgba(241,198,115,.3), transparent 60%);
     background-repeat:no-repeat;
   }
   body::after{
-    content:""; position:fixed; inset:0; z-index:0; pointer-events:none; opacity:.04; mix-blend-mode:overlay;
+    content:""; position:fixed; inset:0; z-index:0; pointer-events:none; opacity:.045; mix-blend-mode:overlay;
     background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
   }
-  .wrap{position:relative; z-index:1; max-width:720px; margin:0 auto; padding:38px 26px 72px}
+  .wrap{position:relative; z-index:1; max-width:720px; margin:0 auto; padding:38px 26px 76px}
+
+  a:focus-visible, button:focus-visible, input:focus-visible, [tabindex]:focus-visible{
+    outline:2px solid var(--dusk-blue); outline-offset:3px; border-radius:8px;
+  }
+  .sr-only{
+    position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden;
+    clip:rect(0,0,0,0); white-space:nowrap; border:0;
+  }
 
   /* header */
-  header{display:flex; align-items:center; gap:11px; margin-bottom:14vh}
-  .glyph{width:22px; height:22px; flex:none}
-  .brand{font-family:var(--display); font-weight:500; font-size:19px; letter-spacing:.02em}
-  .brand-note{margin-left:auto; font-size:13px; color:var(--dim); letter-spacing:.16em; text-transform:uppercase}
+  header{display:flex; align-items:center; gap:11px; margin-bottom:var(--gap-lg)}
+  .glyph{width:23px; height:23px; flex:none; filter:drop-shadow(0 0 6px rgba(241,198,115,.4))}
+  .brand{font-family:var(--display); font-weight:500; font-size:20px; letter-spacing:.015em; color:var(--ink)}
+  .brand-note{margin-left:auto; font-family:var(--display); font-size:12px; color:var(--dim); letter-spacing:.2em; text-transform:uppercase; font-style:italic}
 
   /* hero */
-  .moon-wrap{margin-bottom:30px}
+  .moon-wrap{margin-bottom:32px; line-height:0}
   .moon{
-    width:74px; height:74px; border-radius:50%;
-    background:radial-gradient(circle at 36% 32%, var(--moon-2), var(--moon) 58%, #c89a3f);
-    box-shadow:0 0 4px var(--moon), 0 0 38px 6px rgba(240,196,106,.4), 0 0 90px 18px rgba(240,196,106,.16);
-    position:relative;
-  }
-  .moon::after{
-    content:""; position:absolute; top:-9px; right:-12px; width:64px; height:64px; border-radius:50%;
-    background:var(--ink); box-shadow:-3px 4px 0 1px rgba(20,22,46,.6);
+    width:80px; height:80px; display:block;
+    filter:drop-shadow(0 0 8px rgba(241,198,115,.55)) drop-shadow(0 0 38px rgba(241,198,115,.3)) drop-shadow(0 0 78px rgba(127,168,212,.18));
   }
   h1{
     font-family:var(--display); font-weight:400; font-optical-sizing:auto;
-    font-size:clamp(38px,8.4vw,62px); line-height:1.06; letter-spacing:-.012em;
-    color:#fbf6e9; margin-bottom:22px; max-width:14ch;
+    font-size:clamp(37px,8.2vw,60px); line-height:1.07; letter-spacing:-.014em;
+    color:var(--ink); margin-bottom:22px; max-width:15ch; text-wrap:balance;
   }
   h1 em{font-style:italic; color:var(--moon); font-weight:500}
-  .lede{font-size:clamp(18px,2.5vw,21px); color:#dcd8ee; max-width:40ch; margin-bottom:30px}
+  .lede{font-size:clamp(18px,2.5vw,21px); color:var(--ink-soft); max-width:42ch; margin-bottom:32px; line-height:1.6}
 
   /* form */
-  form{display:flex; gap:10px; flex-wrap:wrap; max-width:460px}
-  .field{flex:1 1 230px; position:relative}
+  form{display:flex; gap:10px; flex-wrap:wrap; max-width:470px}
+  .field{flex:1 1 240px; position:relative}
   input[type=email]{
-    width:100%; padding:15px 17px; border-radius:13px; font-family:var(--serif); font-size:16px;
-    color:var(--cream); background:rgba(244,236,216,.045); border:1px solid var(--line); outline:none;
-    transition:border-color .2s, background .2s, box-shadow .2s;
+    width:100%; padding:15px 17px; border-radius:13px; font-family:var(--body); font-size:16px;
+    color:var(--ink); background:var(--field-bg); border:1px solid var(--field-border); outline:none;
+    transition:border-color .22s, background .22s, box-shadow .22s;
   }
-  input[type=email]::placeholder{color:#7479a4}
-  input[type=email]:focus{border-color:rgba(240,196,106,.55); background:rgba(240,196,106,.06); box-shadow:0 0 0 4px rgba(240,196,106,.09)}
+  input[type=email]::placeholder{color:#9aa0cb; font-style:italic}
+  input[type=email]:focus{border-color:rgba(241,198,115,.7); background:rgba(241,198,115,.06); box-shadow:0 0 0 4px rgba(241,198,115,.1)}
+  input[type=email][aria-invalid=true]{border-color:var(--ember); box-shadow:0 0 0 4px rgba(224,138,95,.12)}
   button{
-    padding:15px 24px; border:0; border-radius:13px; cursor:pointer; white-space:nowrap;
-    font-family:var(--display); font-weight:600; font-size:15.5px; letter-spacing:.01em; color:#241d07;
-    background:linear-gradient(180deg, var(--moon-2), var(--moon)); box-shadow:0 6px 22px rgba(240,196,106,.22);
-    transition:transform .12s ease, box-shadow .2s, filter .2s;
+    padding:15px 26px; border:0; border-radius:13px; cursor:pointer; white-space:nowrap; min-width:150px;
+    font-family:var(--display); font-weight:600; font-size:15.5px; letter-spacing:.008em; color:var(--moon-ink);
+    background:linear-gradient(180deg, var(--moon-soft), var(--moon)); box-shadow:0 6px 24px rgba(241,198,115,.22);
+    transition:transform .12s ease, box-shadow .22s, filter .22s;
   }
-  button:hover{transform:translateY(-1px); box-shadow:0 9px 28px rgba(240,196,106,.32)}
+  button:hover{transform:translateY(-1px); box-shadow:0 10px 30px rgba(241,198,115,.32)}
   button:active{transform:translateY(0)}
-  button:disabled{filter:saturate(.5) brightness(.9); cursor:default; transform:none}
+  button:disabled{filter:saturate(.5) brightness(.92); cursor:default; transform:none}
   .hp{position:absolute; left:-9999px; width:1px; height:1px; opacity:0}
-  .fineprint{margin-top:15px; font-size:14.5px; color:var(--muted)}
-  .fineprint b{color:#d7d2ea; font-weight:500}
-  .founder{margin-top:9px; font-size:13.5px; color:var(--dim); font-style:italic}
-  .thanks{margin-top:15px; font-size:18px; font-style:italic; color:var(--moon-2); display:none}
+  .err{margin-top:14px; font-size:14.5px; color:var(--ember); font-style:italic}
+  .err:empty{display:none}
+  .fineprint{margin-top:16px; font-size:14.5px; color:var(--muted); max-width:44ch}
+  .fineprint b{color:var(--ink-soft); font-weight:500}
+  .founder{margin-top:10px; font-size:14px; color:var(--dim); font-style:italic; max-width:46ch}
+  .thanks{margin-top:16px; font-size:18.5px; font-family:var(--display); font-style:italic; color:var(--moon-soft); display:none; max-width:42ch; line-height:1.5}
 
   /* sections */
-  section{margin-top:15vh}
-  .eyebrow{font-family:var(--display); font-size:12.5px; letter-spacing:.26em; text-transform:uppercase; color:var(--lav); margin-bottom:26px; opacity:.85}
-  .beats{display:grid; gap:30px}
+  section{margin-top:var(--gap-lg)}
+  .eyebrow{font-family:var(--display); font-size:12.5px; font-weight:500; letter-spacing:.26em; text-transform:uppercase; color:var(--dusk-blue); margin-bottom:30px; opacity:.92}
+
+  .beats{display:grid; gap:32px}
   .beat{display:grid; grid-template-columns:auto 1fr; gap:20px; align-items:start}
-  .bnum{
-    width:38px; height:38px; border-radius:50%; flex:none; display:grid; place-items:center;
-    font-family:var(--display); font-size:15px; color:var(--moon);
-    border:1px solid rgba(240,196,106,.32); background:radial-gradient(circle at 40% 35%, rgba(240,196,106,.14), transparent 70%);
-  }
-  .beat h3{font-family:var(--display); font-weight:500; font-size:21px; color:#fbf6e9; margin-bottom:5px; letter-spacing:-.01em}
-  .beat p{color:var(--muted); font-size:17px}
-  .beat p .q{color:#dcd8ee; font-style:italic}
+  .bmark{flex:none; color:var(--moon); padding-top:3px; filter:drop-shadow(0 0 6px rgba(241,198,115,.45))}
+  .bmark svg{display:block; width:24px; height:24px}
+  .bcue{font-family:var(--display); font-style:italic; font-size:13.5px; letter-spacing:.02em; color:var(--moon); margin-bottom:5px}
+  .beat h3{font-family:var(--display); font-weight:500; font-size:21px; color:var(--ink); margin-bottom:7px; letter-spacing:-.01em; line-height:1.2}
+  .beat p{color:var(--muted); font-size:17px; line-height:1.6}
+  .beat p .q{color:var(--ink-soft); font-style:italic}
 
   .moat{
-    margin-top:15vh; padding:34px 30px; border-radius:20px; position:relative; overflow:hidden;
-    background:linear-gradient(180deg, rgba(240,196,106,.07), rgba(240,196,106,.015));
-    border:1px solid rgba(240,196,106,.16);
+    margin-top:var(--gap-lg); padding:36px 32px; border-radius:22px; position:relative; overflow:hidden;
+    background:linear-gradient(180deg, rgba(241,198,115,.07), rgba(241,198,115,.012));
+    border:1px solid var(--line-warm);
   }
-  .moat::before{content:""; position:absolute; top:-40px; right:-30px; width:140px; height:140px; border-radius:50%;
-    background:radial-gradient(circle, rgba(240,196,106,.18), transparent 70%); pointer-events:none}
-  .moat h2{font-family:var(--display); font-weight:500; font-size:clamp(24px,4.4vw,30px); line-height:1.2; color:#fbf6e9; margin-bottom:14px; letter-spacing:-.012em; max-width:20ch}
-  .moat p{color:#dcd8ee; font-size:17.5px; max-width:46ch}
-  .moat .send{margin-top:16px; font-size:15.5px; color:var(--muted)}
+  .moat::before{content:""; position:absolute; top:-44px; right:-34px; width:150px; height:150px; border-radius:50%;
+    background:radial-gradient(circle, rgba(241,198,115,.18), transparent 70%); pointer-events:none}
+  .moat h2{font-family:var(--display); font-weight:500; font-size:clamp(24px,4.4vw,30px); line-height:1.22; color:var(--ink); margin-bottom:16px; letter-spacing:-.012em; max-width:22ch}
+  .moat p{color:var(--ink-soft); font-size:17.5px; max-width:48ch; line-height:1.6}
+  .moat .send{margin-top:18px; font-size:16px; color:var(--muted)}
   .moat .send b{color:var(--moon); font-weight:500}
 
-  .trust{margin-top:9vh; display:flex; gap:13px; align-items:flex-start; color:var(--dim); font-size:14.5px; max-width:48ch}
+  .trust{margin-top:var(--gap-sm); display:flex; gap:14px; align-items:flex-start; color:var(--dim); font-size:14.5px; max-width:50ch; line-height:1.6}
   .trust svg{flex:none; margin-top:3px}
 
-  .closer{margin-top:14vh; text-align:center}
-  .closer h2{font-family:var(--display); font-weight:500; font-size:clamp(24px,4.6vw,32px); color:#fbf6e9; letter-spacing:-.012em; margin-bottom:22px}
+  .closer{margin-top:var(--gap-lg); text-align:center}
+  .closer h2{font-family:var(--display); font-weight:500; font-style:italic; font-size:clamp(25px,4.8vw,33px); color:var(--ink); letter-spacing:-.012em; margin-bottom:24px}
   .cta2{
-    display:inline-block; padding:15px 30px; border-radius:13px; text-decoration:none;
-    font-family:var(--display); font-weight:600; font-size:15.5px; letter-spacing:.01em; color:#241d07;
-    background:linear-gradient(180deg, var(--moon-2), var(--moon)); box-shadow:0 6px 22px rgba(240,196,106,.22);
-    transition:transform .12s ease, box-shadow .2s;
+    display:inline-block; padding:15px 32px; border-radius:13px; text-decoration:none;
+    font-family:var(--display); font-weight:600; font-size:15.5px; letter-spacing:.008em; color:var(--moon-ink);
+    background:linear-gradient(180deg, var(--moon-soft), var(--moon)); box-shadow:0 6px 24px rgba(241,198,115,.22);
+    transition:transform .12s ease, box-shadow .22s;
   }
-  .cta2:hover{transform:translateY(-1px); box-shadow:0 9px 28px rgba(240,196,106,.32)}
+  .cta2:hover{transform:translateY(-1px); box-shadow:0 10px 30px rgba(241,198,115,.32)}
   #signup{scroll-margin-top:24px}
 
-  footer{margin-top:13vh; padding-top:24px; border-top:1px solid var(--line); display:flex; flex-wrap:wrap; gap:8px 16px; align-items:center; justify-content:space-between; font-size:14px; color:var(--dim)}
+  footer{margin-top:var(--gap-lg); padding-top:26px; border-top:1px solid var(--line); display:flex; flex-wrap:wrap; gap:8px 16px; align-items:center; justify-content:space-between; font-size:14px; color:var(--dim)}
   footer a{color:var(--moon); text-decoration:none}
   footer a:hover{text-decoration:underline}
-  .price{font-family:var(--display); color:var(--muted)}
 
-  /* motion (reduced-motion safe: elements visible by default) */
+  /* hero load stagger + scroll reveals (reduced-motion safe + no-JS safe: visible by default) */
   .reveal{opacity:1}
+  .scroll-reveal{opacity:1}
   @media (prefers-reduced-motion: no-preference){
     .reveal{opacity:0; transform:translateY(18px); animation:rise 1s cubic-bezier(.2,.7,.2,1) forwards; animation-delay:var(--d,0s)}
+    html.js .scroll-reveal{opacity:0; transform:translateY(20px); transition:opacity .8s ease, transform .8s cubic-bezier(.2,.7,.2,1)}
+    html.js .scroll-reveal.in{opacity:1; transform:none}
     .moon{animation:breathe 7s ease-in-out infinite}
     body::before{animation:twinkle 6s ease-in-out infinite alternate}
   }
   @keyframes rise{to{opacity:1; transform:none}}
   @keyframes breathe{0%,100%{transform:translateY(0)} 50%{transform:translateY(-7px)}}
-  @keyframes twinkle{from{opacity:.55} to{opacity:.85}}
+  @keyframes twinkle{from{opacity:.56} to{opacity:.86}}
 
-  @media (max-width:560px){
-    header{margin-bottom:11vh}
+  @media (max-width:600px){
     .brand-note{display:none}
-    section,.moat{margin-top:13vh}
-    button{flex:1 1 100%}
+    form button{flex:1 1 100%}
   }
 </style>
 </head>
 <body>
   <div class="wrap">
     <header class="reveal">
-      <svg class="glyph" viewBox="0 0 32 32" aria-hidden="true"><path d="M21 23a9 9 0 1 1 0-14 7 7 0 1 0 0 14z" fill="#f0c46a"/></svg>
+      <svg class="glyph" viewBox="0 0 32 32" aria-hidden="true"><path d="M21 23a9 9 0 1 1 0-14 7 7 0 1 0 0 14z" fill="#f1c673"/></svg>
       <span class="brand">Yarnia</span>
       <span class="brand-note">a voice in the dark</span>
     </header>
 
-    <div class="moon-wrap reveal" style="--d:.05s"><div class="moon" aria-hidden="true"></div></div>
+    <main>
+    <div class="moon-wrap reveal" style="--d:.05s">
+      <svg class="moon" viewBox="0 0 32 32" aria-hidden="true">
+        <defs><radialGradient id="mg" cx="38%" cy="32%" r="78%">
+          <stop offset="0%" stop-color="#ffdd96" /><stop offset="58%" stop-color="#f1c673" /><stop offset="100%" stop-color="#c89a3f" />
+        </radialGradient></defs>
+        <path d="M21 23a9 9 0 1 1 0-14 7 7 0 1 0 0 14z" fill="url(#mg)" />
+      </svg>
+    </div>
 
-    <h1 class="reveal" style="--d:.12s">Bedtime they love, <em>without the screen</em> you regret.</h1>
-    <p class="lede reveal" style="--d:.2s">Open Yarnia and the screen goes dark. A warm voice tells your child a story where they are the hero, and every night it remembers a little more: the characters they love, the fears to skip, and what finally helps them drift off.</p>
+    <h1 class="reveal" style="--d:.12s">Tonight, the screen goes dark and <em>the story begins</em></h1>
+    <p class="lede reveal" style="--d:.2s">Yarnia is a voice-in-the-dark bedtime app for kids ages 3 to 7. Open it, the screen goes dark, and a warm voice tells a story where your kid is the hero. Night after night, it remembers them.</p>
 
     <form id="signup" class="reveal" style="--d:.28s" novalidate>
       <input type="text" name="_gotcha" class="hp" tabindex="-1" autocomplete="off" aria-hidden="true" />
-      <div class="field"><input type="email" name="email" placeholder="your@email.com" autocomplete="email" required /></div>
-      <button type="submit">Get early access</button>
+      <div class="field">
+        <label for="email" class="sr-only">Email address</label>
+        <input id="email" type="email" name="email" placeholder="Your email, for the first night" autocomplete="email" required aria-describedby="email-error fineprint" />
+      </div>
+      <button type="submit">Save my spot</button>
     </form>
-    <p class="fineprint reveal" id="fineprint" style="--d:.32s">Free to claim your early spot. <b>&euro;8/mo</b> when we launch. No spam, just one email the night it is ready.</p>
-    <p class="founder reveal" style="--d:.36s">From two parents who were done handing over the iPad at 8pm.</p>
-    <p class="thanks" id="thanks">You are on the list. We will wake you the night Yarnia is ready.</p>
+    <p class="err reveal" id="email-error" role="alert" aria-live="assertive" style="--d:.3s"></p>
+    <p class="fineprint reveal" id="fineprint" style="--d:.32s">Free to claim your early spot. <b>EUR 8/mo</b> when we launch. No spam, one email.</p>
+    <p class="founder reveal" style="--d:.36s">Built by a parent who has stood in that dim bedroom at 8pm, reaching for the iPad they regret, and wished this existed.</p>
+    <p class="thanks" id="thanks" role="status" tabindex="-1">You are on the list. We will reach you before the first night, nothing sooner.</p>
 
-    <section class="reveal">
-      <div class="eyebrow">How a bedtime goes</div>
+    <section class="scroll-reveal" aria-labelledby="beats-eyebrow">
+      <h2 class="eyebrow" id="beats-eyebrow">How a bedtime goes</h2>
       <div class="beats">
-        <div class="beat"><div class="bnum">1</div><div><h3>The screen goes dark, the fight ends</h3><p>No glow, no feed, no negotiation. Your child hears their own name in a calm voice, and the room settles.</p></div></div>
-        <div class="beat"><div class="bnum">2</div><div><h3>They help invent it, so they lean in</h3><p><span class="q">"An owl, or a dragon? In our town?"</span> Their idea, their world. A few gentle questions and the story is theirs, not something they are parked in front of.</p></div></div>
-        <div class="beat"><div class="bnum">3</div><div><h3>Tomorrow it remembers</h3><p>The dragon comes back, the thunder stays away. The bedtime that helped last night is ready again tonight.</p></div></div>
+        <div class="beat">
+          <div class="bmark" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M21 23a9 9 0 1 1 0-14 7 7 0 1 0 0 14z" fill="currentColor" /></svg></div>
+          <div>
+            <div class="bcue">Tonight</div>
+            <h3>Open the app, and the screen goes dark</h3>
+            <p>No glowing iPad to pry away at lights-out. You open Yarnia, the screen fades to black, and a warm voice takes over the room. You get to just sit with your kid in the dark.</p>
+          </div>
+        </div>
+        <div class="beat">
+          <div class="bmark" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M21 23a9 9 0 1 1 0-14 7 7 0 1 0 0 14z" fill="currentColor" /></svg></div>
+          <div>
+            <div class="bcue">In the story</div>
+            <h3>Your kid becomes the hero of the story</h3>
+            <p>Not a stock tale with their name dropped in, but a story built around this kid: the characters they love, the world they want to be in. The dragon they adore is in it. <span class="q">The dark they fear is not.</span></p>
+          </div>
+        </div>
+        <div class="beat">
+          <div class="bmark" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M21 23a9 9 0 1 1 0-14 7 7 0 1 0 0 14z" fill="currentColor" /></svg></div>
+          <div>
+            <div class="bcue">Tomorrow night</div>
+            <h3>The story remembers them</h3>
+            <p>Yarnia carries what matters from one night to the next: the favorite characters, the fears to steer around, and what helped them drift off last night. It knows your kid the way a grandparent who knows them would.</p>
+          </div>
+        </div>
       </div>
     </section>
 
-    <div class="moat reveal">
-      <h2>Most sleep apps play the same recording for every child.</h2>
-      <p>Yarnia makes your child the hero of a story that grows with them, remembering what they love and what scares them. The five quiet minutes that settled them last night, ready again tonight.</p>
-      <p class="send">And the story is theirs to keep. <b>Send tonight's tale to grandma</b> with one tap.</p>
-    </div>
-
-    <p class="trust reveal">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#9a9fc4" stroke-width="1.6" aria-hidden="true"><path d="M12 3l7 3v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3z"/></svg>
-      <span>Every story runs through age and safety checks, and quietly steers around the exact things that scare your child, because Yarnia remembers them.</span>
-    </p>
-
-    <section class="closer reveal">
-      <h2>Ready for a calmer bedtime?</h2>
-      <a href="#signup" class="cta2">Join the waitlist</a>
+    <section class="moat scroll-reveal" aria-labelledby="moat-h2">
+      <h2 id="moat-h2">Most personalized story apps keep your kid looking at a screen</h2>
+      <p>We built Yarnia to do the opposite. We made it for one thing: this kid, at 8pm, with the screen off. The story is theirs and grows with them, and it remembers your actual kid, not just a recurring cast of characters. No catalog to scroll, no illustrations to lean into, no new app to add to the pile. Just a warm voice in the dark, made for that hard hour at the end of the day.</p>
+      <p class="send">And when tonight's story lands just right, you will be able to <b>send it to grandma</b> or a co-parent who is not in the room, so the people who love your kid can hear it too.</p>
     </section>
 
-    <footer class="reveal">
-      <span>Built by two parents who refuse to hand over the iPad at bedtime.</span>
+    <p class="trust scroll-reveal">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#7fa8d4" stroke-width="1.6" aria-hidden="true"><path d="M12 3l7 3v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3z"/></svg>
+      <span>Every story runs through age and safety checks before your child hears it, and is shaped to steer around the things that scare them, so you do not have to preview each one yourself.</span>
+    </p>
+
+    <section class="closer scroll-reveal" aria-labelledby="closer-h2">
+      <h2 id="closer-h2">Be there for the first night</h2>
+      <a href="#signup" class="cta2">Save my spot</a>
+    </section>
+    </main>
+
+    <footer class="scroll-reveal">
+      <span>Built by parents who were done handing over the iPad at 8pm.</span>
       <a href="mailto:hi@yarnia.quest">hi@yarnia.quest</a>
     </footer>
   </div>
@@ -240,14 +383,23 @@
     const f = document.getElementById("signup");
     const fineprint = document.getElementById("fineprint");
     const thanks = document.getElementById("thanks");
-    const showThanks = () => { f.style.display = "none"; fineprint.style.display = "none"; thanks.style.display = "block"; };
+    const emailInput = f.querySelector('input[name=email]');
+    const emailError = document.getElementById("email-error");
+
+    const fail = (msg) => { emailError.textContent = msg; emailInput.setAttribute("aria-invalid", "true"); };
+    const clearFail = () => { emailError.textContent = ""; emailInput.removeAttribute("aria-invalid"); };
+    const showThanks = () => {
+      f.style.display = "none"; fineprint.style.display = "none"; clearFail();
+      thanks.style.display = "block"; thanks.focus();
+    };
 
     f.addEventListener("submit", async (e) => {
       e.preventDefault();
       if (f.querySelector('input[name=_gotcha]').value) return; // honeypot
       const btn = f.querySelector("button");
-      const email = f.querySelector('input[name=email]').value.trim().toLowerCase();
-      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { fineprint.textContent = "That email looks off. Mind checking it?"; return; }
+      const email = emailInput.value.trim().toLowerCase();
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { fail("That email looks a little off. Mind checking it?"); emailInput.focus(); return; }
+      clearFail();
       btn.disabled = true; btn.textContent = "Saving your spot...";
       try {
         await db.transact(db.tx.signups[id()].create({ email, createdAt: Date.now(), source: "landing" }));
@@ -255,10 +407,18 @@
       } catch (err) {
         const msg = String(err?.message ?? err);
         if (/unique|already|exists|duplicate/i.test(msg)) { showThanks(); return; } // already on the list
-        btn.disabled = false; btn.textContent = "Get early access";
-        fineprint.textContent = "That did not go through. One more try?";
+        btn.disabled = false; btn.textContent = "Save my spot";
+        fail("That did not go through. Take a breath and try once more.");
       }
     });
+
+    // Reveal below-the-fold sections as they enter the viewport (motion-safe + no-JS safe).
+    if (window.matchMedia && matchMedia("(prefers-reduced-motion: no-preference)").matches && "IntersectionObserver" in window) {
+      const io = new IntersectionObserver((entries) => {
+        entries.forEach((en) => { if (en.isIntersecting) { en.target.classList.add("in"); io.unobserve(en.target); } });
+      }, { rootMargin: "0px 0px -10% 0px", threshold: 0.12 });
+      document.querySelectorAll(".scroll-reveal").forEach((el) => io.observe(el));
+    }
   </script>
 </body>
 </html>
