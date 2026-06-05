@@ -1,13 +1,8 @@
 <!doctype html>
 <!--
-  Yarnia landing page (marketing / waitlist — NOT the product app).
-  Purpose: collect real email signups as demand evidence before the hackathon.
-
-  BACKEND: one Cloudflare Worker (../src/worker.ts) serves this page (Static Assets) AND handles the signup.
-  The form POSTs same-origin to /api/signup; the worker writes the email into InstantDB using the admin
-  token (a Worker secret). Served at https://yarnia.quest. The admin token must NEVER be in this page/repo.
-
-  Rule note: this is customer validation, separate from the product codebase. Fine to ship tonight.
+  Yarnia landing page (marketing / waitlist). Single self-contained static file, served by the
+  yarnia-marketing Cloudflare Worker (Static Assets). The signup is written CLIENT-SIDE to InstantDB
+  via @instantdb/core (public app id, guest, create-only permission) — no secret on this page.
 -->
 <html lang="en">
 <head>
@@ -15,7 +10,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Yarnia — bedtime stories that remember your kid</title>
 <meta name="description" content="Open the app. The screen goes off. A voice tells your child a story made just for them, and it remembers them night after night." />
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='13' fill='%23e9c46a'/></svg>" />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><path d='M21 23a9 9 0 1 1 0-14 7 7 0 1 0 0 14z' fill='%23f0c46a'/></svg>" />
 <meta property="og:type" content="website" />
 <meta property="og:title" content="Yarnia — bedtime stories that remember your kid" />
 <meta property="og:description" content="The screen goes off and a voice tells your kid a story made just for them, and remembers them night after night." />
@@ -25,87 +20,197 @@
 <meta name="twitter:title" content="Yarnia — bedtime stories that remember your kid" />
 <meta name="twitter:description" content="The screen goes off and a voice tells your kid a story made just for them, and remembers them night after night." />
 <meta name="twitter:image" content="https://yarnia.quest/og.png" />
+<meta name="theme-color" content="#0a0b18" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,400;1,9..144,500&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&display=swap" rel="stylesheet" />
 <style>
   :root{
-    --ink:#0b0d1a; --ink2:#11142a; --cream:#f4ecd8; --muted:#9aa0c0;
-    --moon:#e9c46a; --soft:#7c83b8; --line:rgba(244,236,216,.12);
+    --ink:#0a0b18; --ink2:#13153100; --glow:#222654;
+    --cream:#f4ecd8; --muted:#9a9fc4; --dim:#6f74a0;
+    --moon:#f0c46a; --moon-2:#ffd98a; --lav:#b9b6e6;
+    --line:rgba(244,236,216,.10);
+    --serif:"Newsreader",Georgia,"Times New Roman",serif;
+    --display:"Fraunces","Newsreader",Georgia,serif;
   }
   *{box-sizing:border-box;margin:0;padding:0}
   html{scroll-behavior:smooth}
   body{
-    background:radial-gradient(1200px 700px at 70% -10%, #1b1f3b 0%, var(--ink) 55%) , var(--ink);
-    color:var(--cream); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
-    line-height:1.55; -webkit-font-smoothing:antialiased; min-height:100vh;
+    min-height:100vh; color:var(--cream); font-family:var(--serif);
+    font-size:18px; line-height:1.7; letter-spacing:.005em;
+    -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+    background:
+      radial-gradient(125% 85% at 78% -8%, #232856 0%, #11132e 38%, var(--ink) 72%),
+      var(--ink);
+    position:relative; overflow-x:hidden;
   }
-  .wrap{max-width:680px; margin:0 auto; padding:64px 24px 80px}
-  .moon{width:14px;height:14px;border-radius:50%;background:var(--moon);
-    box-shadow:0 0 24px 6px rgba(233,196,106,.45); display:inline-block; vertical-align:middle}
-  .brand{font-size:15px; letter-spacing:.22em; text-transform:uppercase; color:var(--muted); margin-left:10px}
-  h1{font-family:Georgia,"Times New Roman",serif; font-weight:500; font-size:clamp(34px,6vw,52px);
-    line-height:1.1; margin:40px 0 18px; color:var(--cream)}
-  h1 .em{color:var(--moon); font-style:italic}
-  .lede{font-size:clamp(17px,2.4vw,20px); color:#d7d2e8; max-width:34ch}
-  form{margin:34px 0 14px; display:flex; gap:10px; flex-wrap:wrap}
-  input[type=email]{flex:1 1 240px; padding:15px 16px; border-radius:12px; border:1px solid var(--line);
-    background:rgba(244,236,216,.04); color:var(--cream); font-size:16px; outline:none}
-  input[type=email]::placeholder{color:#7e84a6}
-  input[type=email]:focus{border-color:var(--moon); background:rgba(233,196,106,.06)}
-  button{padding:15px 22px; border:0; border-radius:12px; background:var(--moon); color:#23200c;
-    font-size:16px; font-weight:650; cursor:pointer; transition:transform .08s ease}
-  button:hover{transform:translateY(-1px)}
-  .fineprint{font-size:13px;color:var(--muted)}
-  .hp{position:absolute;left:-9999px}
-  section{margin-top:56px}
-  .eyebrow{font-size:13px; letter-spacing:.18em; text-transform:uppercase; color:var(--soft); margin-bottom:14px}
-  .beats{display:grid; gap:18px}
-  .beat{display:flex; gap:14px; align-items:flex-start}
-  .num{flex:0 0 28px; height:28px; border-radius:50%; border:1px solid var(--line);
-    display:grid; place-items:center; font-size:13px; color:var(--moon)}
-  .beat p{color:#d7d2e8}
-  .beat b{color:var(--cream)}
-  .moat{margin-top:56px; padding:24px; border:1px solid var(--line); border-radius:16px;
-    background:linear-gradient(180deg, rgba(233,196,106,.06), rgba(233,196,106,0))}
-  .moat p{color:#e7e3f3}
-  .quietnote{margin-top:14px;font-size:14px;color:var(--muted)}
-  footer{margin-top:64px; padding-top:24px; border-top:1px solid var(--line); font-size:14px; color:var(--muted)}
-  a{color:var(--moon)}
+  /* starfield + grain layers */
+  body::before{
+    content:""; position:fixed; inset:0; z-index:0; pointer-events:none; opacity:.7;
+    background-image:
+      radial-gradient(1.4px 1.4px at 12% 18%, rgba(244,236,216,.7), transparent 60%),
+      radial-gradient(1.2px 1.2px at 84% 12%, rgba(244,236,216,.55), transparent 60%),
+      radial-gradient(1px 1px at 62% 26%, rgba(244,236,216,.5), transparent 60%),
+      radial-gradient(1.3px 1.3px at 30% 40%, rgba(185,182,230,.45), transparent 60%),
+      radial-gradient(1px 1px at 90% 48%, rgba(244,236,216,.4), transparent 60%),
+      radial-gradient(1.1px 1.1px at 8% 64%, rgba(244,236,216,.4), transparent 60%),
+      radial-gradient(1px 1px at 48% 72%, rgba(185,182,230,.35), transparent 60%),
+      radial-gradient(1.2px 1.2px at 72% 84%, rgba(244,236,216,.35), transparent 60%);
+    background-repeat:no-repeat;
+  }
+  body::after{
+    content:""; position:fixed; inset:0; z-index:0; pointer-events:none; opacity:.04; mix-blend-mode:overlay;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+  .wrap{position:relative; z-index:1; max-width:720px; margin:0 auto; padding:38px 26px 72px}
+
+  /* header */
+  header{display:flex; align-items:center; gap:11px; margin-bottom:14vh}
+  .glyph{width:22px; height:22px; flex:none}
+  .brand{font-family:var(--display); font-weight:500; font-size:19px; letter-spacing:.02em}
+  .brand-note{margin-left:auto; font-size:13px; color:var(--dim); letter-spacing:.16em; text-transform:uppercase}
+
+  /* hero */
+  .moon-wrap{margin-bottom:30px}
+  .moon{
+    width:74px; height:74px; border-radius:50%;
+    background:radial-gradient(circle at 36% 32%, var(--moon-2), var(--moon) 58%, #c89a3f);
+    box-shadow:0 0 4px var(--moon), 0 0 38px 6px rgba(240,196,106,.4), 0 0 90px 18px rgba(240,196,106,.16);
+    position:relative;
+  }
+  .moon::after{
+    content:""; position:absolute; top:-9px; right:-12px; width:64px; height:64px; border-radius:50%;
+    background:var(--ink); box-shadow:-3px 4px 0 1px rgba(20,22,46,.6);
+  }
+  h1{
+    font-family:var(--display); font-weight:400; font-optical-sizing:auto;
+    font-size:clamp(38px,8.4vw,62px); line-height:1.06; letter-spacing:-.012em;
+    color:#fbf6e9; margin-bottom:22px; max-width:14ch;
+  }
+  h1 em{font-style:italic; color:var(--moon); font-weight:500}
+  .lede{font-size:clamp(18px,2.5vw,21px); color:#dcd8ee; max-width:40ch; margin-bottom:30px}
+
+  /* form */
+  form{display:flex; gap:10px; flex-wrap:wrap; max-width:460px}
+  .field{flex:1 1 230px; position:relative}
+  input[type=email]{
+    width:100%; padding:15px 17px; border-radius:13px; font-family:var(--serif); font-size:16px;
+    color:var(--cream); background:rgba(244,236,216,.045); border:1px solid var(--line); outline:none;
+    transition:border-color .2s, background .2s, box-shadow .2s;
+  }
+  input[type=email]::placeholder{color:#7479a4}
+  input[type=email]:focus{border-color:rgba(240,196,106,.55); background:rgba(240,196,106,.06); box-shadow:0 0 0 4px rgba(240,196,106,.09)}
+  button{
+    padding:15px 24px; border:0; border-radius:13px; cursor:pointer; white-space:nowrap;
+    font-family:var(--display); font-weight:600; font-size:15.5px; letter-spacing:.01em; color:#241d07;
+    background:linear-gradient(180deg, var(--moon-2), var(--moon)); box-shadow:0 6px 22px rgba(240,196,106,.22);
+    transition:transform .12s ease, box-shadow .2s, filter .2s;
+  }
+  button:hover{transform:translateY(-1px); box-shadow:0 9px 28px rgba(240,196,106,.32)}
+  button:active{transform:translateY(0)}
+  button:disabled{filter:saturate(.5) brightness(.9); cursor:default; transform:none}
+  .hp{position:absolute; left:-9999px; width:1px; height:1px; opacity:0}
+  .fineprint{margin-top:15px; font-size:14.5px; color:var(--muted)}
+  .fineprint b{color:#d7d2ea; font-weight:500}
+  .thanks{margin-top:15px; font-size:18px; font-style:italic; color:var(--moon-2); display:none}
+
+  /* sections */
+  section{margin-top:15vh}
+  .eyebrow{font-family:var(--display); font-size:12.5px; letter-spacing:.26em; text-transform:uppercase; color:var(--lav); margin-bottom:26px; opacity:.85}
+  .beats{display:grid; gap:30px}
+  .beat{display:grid; grid-template-columns:auto 1fr; gap:20px; align-items:start}
+  .bnum{
+    width:38px; height:38px; border-radius:50%; flex:none; display:grid; place-items:center;
+    font-family:var(--display); font-size:15px; color:var(--moon);
+    border:1px solid rgba(240,196,106,.32); background:radial-gradient(circle at 40% 35%, rgba(240,196,106,.14), transparent 70%);
+  }
+  .beat h3{font-family:var(--display); font-weight:500; font-size:21px; color:#fbf6e9; margin-bottom:5px; letter-spacing:-.01em}
+  .beat p{color:var(--muted); font-size:17px}
+  .beat p .q{color:#dcd8ee; font-style:italic}
+
+  .moat{
+    margin-top:15vh; padding:34px 30px; border-radius:20px; position:relative; overflow:hidden;
+    background:linear-gradient(180deg, rgba(240,196,106,.07), rgba(240,196,106,.015));
+    border:1px solid rgba(240,196,106,.16);
+  }
+  .moat::before{content:""; position:absolute; top:-40px; right:-30px; width:140px; height:140px; border-radius:50%;
+    background:radial-gradient(circle, rgba(240,196,106,.18), transparent 70%); pointer-events:none}
+  .moat h2{font-family:var(--display); font-weight:500; font-size:clamp(24px,4.4vw,30px); line-height:1.2; color:#fbf6e9; margin-bottom:14px; letter-spacing:-.012em; max-width:20ch}
+  .moat p{color:#dcd8ee; font-size:17.5px; max-width:46ch}
+  .moat .send{margin-top:16px; font-size:15.5px; color:var(--muted)}
+  .moat .send b{color:var(--moon); font-weight:500}
+
+  .trust{margin-top:9vh; display:flex; gap:13px; align-items:flex-start; color:var(--dim); font-size:14.5px; max-width:48ch}
+  .trust svg{flex:none; margin-top:3px}
+
+  footer{margin-top:13vh; padding-top:24px; border-top:1px solid var(--line); display:flex; flex-wrap:wrap; gap:8px 16px; align-items:center; justify-content:space-between; font-size:14px; color:var(--dim)}
+  footer a{color:var(--moon); text-decoration:none}
+  footer a:hover{text-decoration:underline}
+  .price{font-family:var(--display); color:var(--muted)}
+
+  /* motion (reduced-motion safe: elements visible by default) */
+  .reveal{opacity:1}
+  @media (prefers-reduced-motion: no-preference){
+    .reveal{opacity:0; transform:translateY(18px); animation:rise 1s cubic-bezier(.2,.7,.2,1) forwards; animation-delay:var(--d,0s)}
+    .moon{animation:breathe 7s ease-in-out infinite}
+    body::before{animation:twinkle 6s ease-in-out infinite alternate}
+  }
+  @keyframes rise{to{opacity:1; transform:none}}
+  @keyframes breathe{0%,100%{transform:translateY(0)} 50%{transform:translateY(-7px)}}
+  @keyframes twinkle{from{opacity:.55} to{opacity:.85}}
+
+  @media (max-width:560px){
+    header{margin-bottom:11vh}
+    .brand-note{display:none}
+    section,.moat{margin-top:13vh}
+    button{flex:1 1 100%}
+  }
 </style>
 </head>
 <body>
   <div class="wrap">
-    <header>
-      <span class="moon"></span><span class="brand">Yarnia</span>
+    <header class="reveal">
+      <svg class="glyph" viewBox="0 0 32 32" aria-hidden="true"><path d="M21 23a9 9 0 1 1 0-14 7 7 0 1 0 0 14z" fill="#f0c46a"/></svg>
+      <span class="brand">Yarnia</span>
+      <span class="brand-note">a voice in the dark</span>
     </header>
 
-    <h1>Open the app. The screen goes off. A voice tells your kid a story made <span class="em">just for them</span>.</h1>
-    <p class="lede">It's 8pm. Instead of handing over the iPad, your child hears a bedtime story they helped invent, in a calm voice in the dark. And Yarnia remembers them, night after night.</p>
+    <div class="moon-wrap reveal" style="--d:.05s"><div class="moon" aria-hidden="true"></div></div>
 
-    <!-- signup is written client-side to InstantDB (public app id, guest create-only perm) -->
-    <form id="signup">
+    <h1 class="reveal" style="--d:.12s">Open the app. The screen goes dark. A voice tells your kid a story made <em>just for them</em>.</h1>
+    <p class="lede reveal" style="--d:.2s">It is 8pm. Instead of handing over the iPad, your child hears a calm bedtime story they helped invent, in the dark. And Yarnia remembers them, night after night.</p>
+
+    <form id="signup" class="reveal" style="--d:.28s" novalidate>
       <input type="text" name="_gotcha" class="hp" tabindex="-1" autocomplete="off" aria-hidden="true" />
-      <input type="email" name="email" placeholder="your@email.com" required />
+      <div class="field"><input type="email" name="email" placeholder="your@email.com" autocomplete="email" required /></div>
       <button type="submit">Get early access</button>
     </form>
-    <p class="fineprint" id="fineprint">Be the first to try it. €8/mo when we launch. No spam, just a heads-up.</p>
-    <p class="fineprint" id="thanks" style="display:none;color:var(--moon)">Thank you. We'll email you the moment Yarnia is ready. 🌙</p>
+    <p class="fineprint reveal" id="fineprint" style="--d:.32s">Be the first to tuck them in with it. <b>&euro;8/mo</b> when we launch. No spam, just one heads-up.</p>
+    <p class="thanks" id="thanks">You are on the list. We will wake you the night Yarnia is ready.</p>
 
-    <section>
+    <section class="reveal">
       <div class="eyebrow">How a bedtime goes</div>
       <div class="beats">
-        <div class="beat"><div class="num">1</div><p><b>You open it, the screen dims.</b> No feed, no scroll. Just a warm voice greeting your child by name.</p></div>
-        <div class="beat"><div class="num">2</div><p><b>Your kid helps invent it.</b> "An owl, or a dragon? In our town?" Then it settles into a calm, narrated story.</p></div>
-        <div class="beat"><div class="num">3</div><p><b>It remembers.</b> Tomorrow it knows they love dragons, get scared of thunder, and fell asleep faster with a cat in the story.</p></div>
+        <div class="beat"><div class="bnum">1</div><div><h3>The screen goes off</h3><p>No feed, no glow. Just a warm voice in the dark, greeting your child by name.</p></div></div>
+        <div class="beat"><div class="bnum">2</div><div><h3>Your kid helps invent it</h3><p><span class="q">"An owl, or a dragon? In our town?"</span> A few questions, then it settles into a slow, calm story.</p></div></div>
+        <div class="beat"><div class="bnum">3</div><div><h3>It remembers</h3><p>Tomorrow it knows the dragons stay and the thunder goes, and that a cat in the story helps them drift off.</p></div></div>
       </div>
     </section>
 
-    <div class="moat">
-      <div class="eyebrow">Why it's different</div>
-      <p>Sleep apps play the same recordings for every kid. Yarnia makes your child the hero of a story that grows with them, and you can send tonight's story to grandma with one tap.</p>
+    <div class="moat reveal">
+      <h2>Every other sleep app plays the same recording for every child.</h2>
+      <p>Yarnia makes your kid the hero of a story that grows with them, remembering what they love and what scares them.</p>
+      <p class="send">And the story is theirs to keep. <b>Send tonight's tale to grandma</b> with one tap.</p>
     </div>
-    <p class="quietnote">Every story runs through age and safety checks, and Yarnia steers clear of the exact things that scare your kid, because it remembers them.</p>
 
-    <footer>
-      Built by parents who refuse to hand over the iPad at bedtime. · <a href="mailto:hi@yarnia.quest">hi@yarnia.quest</a>
+    <p class="trust reveal">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#9a9fc4" stroke-width="1.6" aria-hidden="true"><path d="M12 3l7 3v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3z"/></svg>
+      <span>Every story passes age and safety checks, and steers clear of the exact things that scare your kid, because it remembers them.</span>
+    </p>
+
+    <footer class="reveal">
+      <span>Built by parents who refuse to hand over the iPad at bedtime.</span>
+      <a href="mailto:hi@yarnia.quest">hi@yarnia.quest</a>
     </footer>
   </div>
 
@@ -125,7 +230,7 @@
       const btn = f.querySelector("button");
       const email = f.querySelector('input[name=email]').value.trim().toLowerCase();
       if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { fineprint.textContent = "That email looks off. Try again?"; return; }
-      btn.disabled = true; btn.textContent = "Sending...";
+      btn.disabled = true; btn.textContent = "Saving your spot...";
       try {
         await db.transact(db.tx.signups[id()].create({ email, createdAt: Date.now(), source: "landing" }));
         showThanks();
