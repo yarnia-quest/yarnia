@@ -3,32 +3,30 @@
   Yarnia landing page (marketing / waitlist). Single self-contained static file, served by the
   yarnia-marketing Cloudflare Worker (Static Assets). The signup is written CLIENT-SIDE to InstantDB
   via @instantdb/core (public app id, guest, create-only permission), no secret on this page.
-  Copy + design produced by applying 11 official Anthropic skills (competitive-brief, user-research,
-  brand-guidelines, content-creation, ux-copy, seo-audit, theme-factory, frontend-design) and reviewed
-  by brand-review, design-critique, and accessibility-review.
+  Positioning (from ideation/): the kid decides/invents tonight's story, a warm voice tells it
+  screen-free, and Yarnia remembers them night after night. Intentionally minimal: one signup.
 -->
 <html lang="en">
 <head>
-<script>document.documentElement.classList.add('js')</script>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Yarnia: Bedtime Stories That Remember Your Kid</title>
-<meta name="description" content="A screen-off bedtime story app. A warm voice tells your kid a story where they are the hero, and remembers them night after night. Join the waitlist." />
+<title>Yarnia: A Bedtime Story Your Kid Dreams Up</title>
+<meta name="description" content="A screen-free bedtime app where your kid decides the story. A warm voice tells whatever they dream up, and Yarnia remembers them night after night. Join the waitlist." />
 <link rel="canonical" href="https://yarnia.quest/" />
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><path d='M21 23a9 9 0 1 1 0-14 7 7 0 1 0 0 14z' fill='%23f0c46a'/></svg>" />
 <meta property="og:type" content="website" />
-<meta property="og:title" content="Yarnia: Bedtime Stories That Remember Your Kid" />
-<meta property="og:description" content="A screen-off bedtime story app. A warm voice tells your kid a story where they are the hero, and remembers them night after night. Join the waitlist." />
+<meta property="og:title" content="Yarnia: A Bedtime Story Your Kid Dreams Up" />
+<meta property="og:description" content="A screen-free bedtime app where your kid decides the story. A warm voice tells whatever they dream up, and Yarnia remembers them night after night. Join the waitlist." />
 <meta property="og:url" content="https://yarnia.quest" />
 <meta property="og:image" content="https://yarnia.quest/og.png" />
 <meta name="twitter:card" content="summary_large_image" />
-<meta name="twitter:title" content="Yarnia: Bedtime Stories That Remember Your Kid" />
-<meta name="twitter:description" content="A screen-off bedtime story app. A warm voice tells your kid a story where they are the hero, and remembers them night after night. Join the waitlist." />
+<meta name="twitter:title" content="Yarnia: A Bedtime Story Your Kid Dreams Up" />
+<meta name="twitter:description" content="A screen-free bedtime app where your kid decides the story. A warm voice tells whatever they dream up, and Yarnia remembers them night after night. Join the waitlist." />
 <meta name="twitter:image" content="https://yarnia.quest/og.png" />
 <meta name="theme-color" content="#12132a" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,400;1,9..144,500&family=Lora:ital,wght@0,400;0,500;0,600;1,400;1,500&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,400;1,9..144,500&family=Lora:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet" />
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
@@ -42,16 +40,16 @@
       "operatingSystem": "iOS, Android",
       "url": "https://yarnia.quest",
       "image": "https://yarnia.quest/og.png",
-      "description": "A screen-off, voice-in-the-dark bedtime story app for parents of children around 3 to 7. The app tells a personalized story where the child is the hero, and remembers the child across nights: the characters they love, the fears to steer around, and what helped them fall asleep. Every story runs through age and safety checks.",
+      "description": "Yarnia is a screen-free, personalized bedtime story app for kids around 3 to 7. Your child decides what tonight's story is about, a warm voice tells it, and Yarnia remembers them across nights: the characters they love and what helps them fall asleep. Every story runs through age and safety checks.",
       "audience": {
         "@type": "PeopleAudience",
         "suggestedMinAge": 3,
         "suggestedMaxAge": 7
       },
       "featureList": [
-        "Screen goes dark while a warm voice tells the story",
-        "Your child is the hero of a story that grows with them",
-        "Remembers the child across nights: favorite characters, fears to steer around, and what helped them fall asleep",
+        "Screen-free: a warm voice tells the story",
+        "Your child decides what tonight's story is about",
+        "Remembers the child across nights: favorite characters and what helps them sleep",
         "Every story runs through age and safety checks",
         "Send tonight's story to grandma or a co-parent"
       ],
@@ -62,9 +60,7 @@
         "description": "EUR 8/mo when we launch. Free to claim an early spot on the waitlist.",
         "availability": "https://schema.org/PreOrder"
       },
-      "publisher": {
-        "@id": "https://yarnia.quest/#org"
-      }
+      "publisher": { "@id": "https://yarnia.quest/#org" }
     },
     {
       "@type": "Organization",
@@ -72,55 +68,15 @@
       "name": "Yarnia",
       "url": "https://yarnia.quest",
       "email": "hi@yarnia.quest",
-      "description": "Built by two parents who were done handing over the iPad at 8pm."
+      "description": "Built by parents who were done handing over the iPad at bedtime."
     },
     {
       "@type": "WebSite",
       "@id": "https://yarnia.quest/#website",
       "url": "https://yarnia.quest",
       "name": "Yarnia",
-      "description": "Bedtime they love, without the screen you regret. A warm voice tells your kid a story where they are the hero, and remembers them night after night.",
-      "publisher": {
-        "@id": "https://yarnia.quest/#org"
-      }
-    },
-    {
-      "@type": "FAQPage",
-      "@id": "https://yarnia.quest/#faq",
-      "mainEntity": [
-        {
-          "@type": "Question",
-          "name": "Is Yarnia just another screen at bedtime?",
-          "acceptedAnswer": {
-            "@type": "Answer",
-            "text": "No. You open Yarnia and the screen goes dark. A warm voice tells the story, so there is no glowing iPad to pry away at lights-out."
-          }
-        },
-        {
-          "@type": "Question",
-          "name": "Are the stories safe and age-appropriate?",
-          "acceptedAnswer": {
-            "@type": "Answer",
-            "text": "Every story runs through age and safety checks, and is shaped to steer around the things that scare your child, so you do not have to preview each one yourself."
-          }
-        },
-        {
-          "@type": "Question",
-          "name": "How does Yarnia remember my child?",
-          "acceptedAnswer": {
-            "@type": "Answer",
-            "text": "Yarnia carries what matters across nights: the characters they love, the fears to steer around, and what helped them drift off last night."
-          }
-        },
-        {
-          "@type": "Question",
-          "name": "What does Yarnia cost?",
-          "acceptedAnswer": {
-            "@type": "Answer",
-            "text": "It is free to claim an early spot on the waitlist. We are testing a price of EUR 8/mo when we launch."
-          }
-        }
-      ]
+      "description": "A bedtime story your kid dreams up. Screen-free, a different story every night, and Yarnia remembers them.",
+      "publisher": { "@id": "https://yarnia.quest/#org" }
     }
   ]
 }
@@ -131,9 +87,8 @@
     --ink:#f6efe0; --ink-soft:#ddd8ef; --muted:#a9add0; --dim:#8e93bd;
     --moon:#f1c673; --moon-soft:#ffdd96; --moon-deep:#c89a3f; --moon-ink:#1c1505;
     --dusk-blue:#7fa8d4; --ember:#e08a5f;
-    --line:rgba(246,239,224,0.10); --line-warm:rgba(241,198,115,0.16);
+    --line:rgba(246,239,224,0.10);
     --field-bg:rgba(246,239,224,0.045); --field-border:rgba(246,239,224,0.34);
-    --gap-lg:clamp(72px, 13vh, 130px); --gap-sm:clamp(56px, 9vh, 96px);
     --body:"Lora",Georgia,"Times New Roman",serif;
     --display:"Fraunces","Lora",Georgia,serif;
   }
@@ -141,65 +96,62 @@
   html{scroll-behavior:smooth}
   body{
     min-height:100vh; color:var(--ink); font-family:var(--body);
-    font-size:18px; line-height:1.62; letter-spacing:.004em;
+    font-size:18px; line-height:1.6; letter-spacing:.004em;
     -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
     background:
-      radial-gradient(132% 78% at 76% -10%, var(--bg-glow) 0%, #161836 36%, var(--bg) 70%),
+      radial-gradient(125% 80% at 50% -8%, var(--bg-glow) 0%, #161836 38%, var(--bg) 72%),
       var(--bg-deep);
     position:relative; overflow-x:hidden;
   }
-  /* starfield + grain atmosphere layers */
+  /* calm night-sky starfield + faint grain */
   body::before{
-    content:""; position:fixed; inset:0; z-index:0; pointer-events:none; opacity:.72;
+    content:""; position:fixed; inset:0; z-index:0; pointer-events:none; opacity:.7;
     background-image:
-      radial-gradient(1.5px 1.5px at 12% 16%, rgba(246,239,224,.7), transparent 60%),
-      radial-gradient(1.2px 1.2px at 84% 11%, rgba(246,239,224,.55), transparent 60%),
-      radial-gradient(1px 1px at 62% 24%, rgba(127,168,212,.55), transparent 60%),
-      radial-gradient(1.3px 1.3px at 28% 38%, rgba(241,198,115,.4), transparent 60%),
-      radial-gradient(1px 1px at 90% 46%, rgba(246,239,224,.4), transparent 60%),
-      radial-gradient(1.1px 1.1px at 8% 62%, rgba(246,239,224,.4), transparent 60%),
-      radial-gradient(1px 1px at 46% 70%, rgba(127,168,212,.38), transparent 60%),
-      radial-gradient(1.2px 1.2px at 72% 82%, rgba(246,239,224,.35), transparent 60%),
-      radial-gradient(1px 1px at 38% 90%, rgba(241,198,115,.3), transparent 60%);
+      radial-gradient(1.5px 1.5px at 14% 16%, rgba(246,239,224,.7), transparent 60%),
+      radial-gradient(1.2px 1.2px at 82% 13%, rgba(246,239,224,.5), transparent 60%),
+      radial-gradient(1px 1px at 64% 22%, rgba(127,168,212,.5), transparent 60%),
+      radial-gradient(1.3px 1.3px at 26% 30%, rgba(241,198,115,.38), transparent 60%),
+      radial-gradient(1px 1px at 90% 40%, rgba(246,239,224,.38), transparent 60%),
+      radial-gradient(1.1px 1.1px at 9% 50%, rgba(246,239,224,.36), transparent 60%),
+      radial-gradient(1px 1px at 48% 72%, rgba(127,168,212,.34), transparent 60%),
+      radial-gradient(1.2px 1.2px at 74% 82%, rgba(246,239,224,.32), transparent 60%);
     background-repeat:no-repeat;
   }
   body::after{
-    content:""; position:fixed; inset:0; z-index:0; pointer-events:none; opacity:.045; mix-blend-mode:overlay;
+    content:""; position:fixed; inset:0; z-index:0; pointer-events:none; opacity:.04; mix-blend-mode:overlay;
     background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
   }
-  .wrap{position:relative; z-index:1; max-width:720px; margin:0 auto; padding:38px 26px 76px}
 
-  a:focus-visible, button:focus-visible, input:focus-visible, [tabindex]:focus-visible{
+  .wrap{
+    position:relative; z-index:1; max-width:600px; margin:0 auto; min-height:100vh;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    text-align:center; padding:56px 26px;
+  }
+
+  a:focus-visible, button:focus-visible, input:focus-visible{
     outline:2px solid var(--dusk-blue); outline-offset:3px; border-radius:8px;
   }
-  .sr-only{
-    position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden;
-    clip:rect(0,0,0,0); white-space:nowrap; border:0;
-  }
+  .sr-only{position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0}
 
-  /* header */
-  header{display:flex; align-items:center; gap:11px; margin-bottom:var(--gap-lg)}
-  .glyph{width:23px; height:23px; flex:none; filter:drop-shadow(0 0 6px rgba(241,198,115,.4))}
-  .brand{font-family:var(--display); font-weight:500; font-size:20px; letter-spacing:.015em; color:var(--ink)}
-  .brand-note{margin-left:auto; font-family:var(--display); font-size:12px; color:var(--dim); letter-spacing:.2em; text-transform:uppercase; font-style:italic}
-
-  /* hero */
-  .moon-wrap{margin-bottom:32px; line-height:0}
+  /* brand lockup: moon + wordmark */
+  .lockup{display:flex; align-items:center; gap:18px; margin-bottom:40px}
   .moon{
-    width:80px; height:80px; display:block;
-    filter:drop-shadow(0 0 8px rgba(241,198,115,.55)) drop-shadow(0 0 38px rgba(241,198,115,.3)) drop-shadow(0 0 78px rgba(127,168,212,.18));
+    width:66px; height:66px; display:block; flex:none;
+    filter:drop-shadow(0 0 8px rgba(241,198,115,.55)) drop-shadow(0 0 34px rgba(241,198,115,.32)) drop-shadow(0 0 70px rgba(127,168,212,.18));
   }
+  .wordmark{font-family:var(--display); font-weight:500; font-size:clamp(32px,7vw,42px); letter-spacing:.012em; color:var(--ink)}
+
   h1{
     font-family:var(--display); font-weight:400; font-optical-sizing:auto;
-    font-size:clamp(37px,8.2vw,60px); line-height:1.07; letter-spacing:-.014em;
-    color:var(--ink); margin-bottom:22px; max-width:15ch; text-wrap:balance;
+    font-size:clamp(33px,6.6vw,54px); line-height:1.08; letter-spacing:-.014em;
+    color:var(--ink); margin-bottom:20px; max-width:17ch; text-wrap:balance;
   }
   h1 em{font-style:italic; color:var(--moon); font-weight:500}
-  .lede{font-size:clamp(18px,2.5vw,21px); color:var(--ink-soft); max-width:42ch; margin-bottom:32px; line-height:1.6}
+  .lede{font-size:clamp(17px,2.4vw,20px); color:var(--ink-soft); max-width:46ch; margin-bottom:36px; line-height:1.55}
 
   /* form */
-  form{display:flex; gap:10px; flex-wrap:wrap; max-width:470px}
-  .field{flex:1 1 240px; position:relative}
+  form{display:flex; gap:10px; flex-wrap:wrap; max-width:460px; width:100%; justify-content:center}
+  .field{flex:1 1 240px; position:relative; text-align:left}
   input[type=email]{
     width:100%; padding:15px 17px; border-radius:13px; font-family:var(--body); font-size:16px;
     color:var(--ink); background:var(--field-bg); border:1px solid var(--field-border); outline:none;
@@ -209,7 +161,7 @@
   input[type=email]:focus{border-color:rgba(241,198,115,.7); background:rgba(241,198,115,.06); box-shadow:0 0 0 4px rgba(241,198,115,.1)}
   input[type=email][aria-invalid=true]{border-color:var(--ember); box-shadow:0 0 0 4px rgba(224,138,95,.12)}
   button{
-    padding:15px 26px; border:0; border-radius:13px; cursor:pointer; white-space:nowrap; min-width:150px;
+    padding:15px 28px; border:0; border-radius:13px; cursor:pointer; white-space:nowrap; min-width:150px;
     font-family:var(--display); font-weight:600; font-size:15.5px; letter-spacing:.008em; color:var(--moon-ink);
     background:linear-gradient(180deg, var(--moon-soft), var(--moon)); box-shadow:0 6px 24px rgba(241,198,115,.22);
     transition:transform .12s ease, box-shadow .22s, filter .22s;
@@ -220,160 +172,59 @@
   .hp{position:absolute; left:-9999px; width:1px; height:1px; opacity:0}
   .err{margin-top:14px; font-size:14.5px; color:var(--ember); font-style:italic}
   .err:empty{display:none}
-  .fineprint{margin-top:16px; font-size:14.5px; color:var(--muted); max-width:44ch}
+  .fineprint{margin-top:18px; font-size:14px; color:var(--muted); max-width:46ch}
   .fineprint b{color:var(--ink-soft); font-weight:500}
-  .founder{margin-top:10px; font-size:14px; color:var(--dim); font-style:italic; max-width:46ch}
-  .thanks{margin-top:16px; font-size:18.5px; font-family:var(--display); font-style:italic; color:var(--moon-soft); display:none; max-width:42ch; line-height:1.5}
+  .thanks{margin-top:18px; font-size:19px; font-family:var(--display); font-style:italic; color:var(--moon-soft); display:none; max-width:42ch; line-height:1.45}
 
-  /* sections */
-  section{margin-top:var(--gap-lg)}
-  .eyebrow{font-family:var(--display); font-size:12.5px; font-weight:500; letter-spacing:.26em; text-transform:uppercase; color:var(--dusk-blue); margin-bottom:30px; opacity:.92}
-
-  .beats{display:grid; gap:32px}
-  .beat{display:grid; grid-template-columns:auto 1fr; gap:20px; align-items:start}
-  .bmark{flex:none; color:var(--moon); padding-top:3px; filter:drop-shadow(0 0 6px rgba(241,198,115,.45))}
-  .bmark svg{display:block; width:24px; height:24px}
-  .bcue{font-family:var(--display); font-style:italic; font-size:13.5px; letter-spacing:.02em; color:var(--moon); margin-bottom:5px}
-  .beat h3{font-family:var(--display); font-weight:500; font-size:21px; color:var(--ink); margin-bottom:7px; letter-spacing:-.01em; line-height:1.2}
-  .beat p{color:var(--muted); font-size:17px; line-height:1.6}
-  .beat p .q{color:var(--ink-soft); font-style:italic}
-
-  .moat{
-    margin-top:var(--gap-lg); padding:36px 32px; border-radius:22px; position:relative; overflow:hidden;
-    background:linear-gradient(180deg, rgba(241,198,115,.07), rgba(241,198,115,.012));
-    border:1px solid var(--line-warm);
-  }
-  .moat::before{content:""; position:absolute; top:-44px; right:-34px; width:150px; height:150px; border-radius:50%;
-    background:radial-gradient(circle, rgba(241,198,115,.18), transparent 70%); pointer-events:none}
-  .moat h2{font-family:var(--display); font-weight:500; font-size:clamp(24px,4.4vw,30px); line-height:1.22; color:var(--ink); margin-bottom:16px; letter-spacing:-.012em; max-width:22ch}
-  .moat p{color:var(--ink-soft); font-size:17.5px; max-width:48ch; line-height:1.6}
-  .moat .send{margin-top:18px; font-size:16px; color:var(--muted)}
-  .moat .send b{color:var(--moon); font-weight:500}
-
-  .trust{margin-top:var(--gap-sm); display:flex; gap:14px; align-items:flex-start; color:var(--dim); font-size:14.5px; max-width:50ch; line-height:1.6}
-  .trust svg{flex:none; margin-top:3px}
-
-  .closer{margin-top:var(--gap-lg); text-align:center}
-  .closer h2{font-family:var(--display); font-weight:500; font-style:italic; font-size:clamp(25px,4.8vw,33px); color:var(--ink); letter-spacing:-.012em; margin-bottom:24px}
-  .cta2{
-    display:inline-block; padding:15px 32px; border-radius:13px; text-decoration:none;
-    font-family:var(--display); font-weight:600; font-size:15.5px; letter-spacing:.008em; color:var(--moon-ink);
-    background:linear-gradient(180deg, var(--moon-soft), var(--moon)); box-shadow:0 6px 24px rgba(241,198,115,.22);
-    transition:transform .12s ease, box-shadow .22s;
-  }
-  .cta2:hover{transform:translateY(-1px); box-shadow:0 10px 30px rgba(241,198,115,.32)}
-  #signup{scroll-margin-top:24px}
-
-  footer{margin-top:var(--gap-lg); padding-top:26px; border-top:1px solid var(--line); display:flex; flex-wrap:wrap; gap:8px 16px; align-items:center; justify-content:space-between; font-size:14px; color:var(--dim)}
+  footer{margin-top:54px; font-size:14px; color:var(--dim)}
   footer a{color:var(--moon); text-decoration:none}
   footer a:hover{text-decoration:underline}
 
-  /* hero load stagger + scroll reveals (reduced-motion safe + no-JS safe: visible by default) */
+  /* one gentle load reveal (reduced-motion safe: visible by default) */
   .reveal{opacity:1}
-  .scroll-reveal{opacity:1}
   @media (prefers-reduced-motion: no-preference){
-    .reveal{opacity:0; transform:translateY(18px); animation:rise 1s cubic-bezier(.2,.7,.2,1) forwards; animation-delay:var(--d,0s)}
-    html.js .scroll-reveal{opacity:0; transform:translateY(20px); transition:opacity .8s ease, transform .8s cubic-bezier(.2,.7,.2,1)}
-    html.js .scroll-reveal.in{opacity:1; transform:none}
+    .reveal{opacity:0; transform:translateY(16px); animation:rise .95s cubic-bezier(.2,.7,.2,1) forwards; animation-delay:var(--d,0s)}
     .moon{animation:breathe 7s ease-in-out infinite}
     body::before{animation:twinkle 6s ease-in-out infinite alternate}
   }
   @keyframes rise{to{opacity:1; transform:none}}
-  @keyframes breathe{0%,100%{transform:translateY(0)} 50%{transform:translateY(-7px)}}
-  @keyframes twinkle{from{opacity:.56} to{opacity:.86}}
+  @keyframes breathe{0%,100%{transform:translateY(0)} 50%{transform:translateY(-6px)}}
+  @keyframes twinkle{from{opacity:.55} to{opacity:.82}}
 
   @media (max-width:600px){
-    .brand-note{display:none}
     form button{flex:1 1 100%}
   }
 </style>
 </head>
 <body>
-  <div class="wrap">
-    <header class="reveal">
-      <svg class="glyph" viewBox="0 0 32 32" aria-hidden="true"><path d="M21 23a9 9 0 1 1 0-14 7 7 0 1 0 0 14z" fill="#f1c673"/></svg>
-      <span class="brand">Yarnia</span>
-      <span class="brand-note">a voice in the dark</span>
-    </header>
-
-    <main>
-    <div class="moon-wrap reveal" style="--d:.05s">
+  <main class="wrap">
+    <div class="lockup reveal" style="--d:.04s">
       <svg class="moon" viewBox="0 0 32 32" aria-hidden="true">
         <defs><radialGradient id="mg" cx="38%" cy="32%" r="78%">
           <stop offset="0%" stop-color="#ffdd96" /><stop offset="58%" stop-color="#f1c673" /><stop offset="100%" stop-color="#c89a3f" />
         </radialGradient></defs>
         <path d="M21 23a9 9 0 1 1 0-14 7 7 0 1 0 0 14z" fill="url(#mg)" />
       </svg>
+      <span class="wordmark">Yarnia</span>
     </div>
 
-    <h1 class="reveal" style="--d:.12s">Tonight, the screen goes dark and <em>the story begins</em></h1>
-    <p class="lede reveal" style="--d:.2s">Yarnia is a voice-in-the-dark bedtime app for kids ages 3 to 7. Open it, the screen goes dark, and a warm voice tells a story where your kid is the hero. Night after night, it remembers them.</p>
+    <h1 class="reveal" style="--d:.12s">A bedtime story <em>your kid dreams up</em></h1>
+    <p class="lede reveal" style="--d:.2s">Your kid decides what tonight's story is. An owl or a dragon, in your town or far away. A warm voice tells whatever they dream up, screen-free, and Yarnia remembers them night after night.</p>
 
     <form id="signup" class="reveal" style="--d:.28s" novalidate>
       <input type="text" name="_gotcha" class="hp" tabindex="-1" autocomplete="off" aria-hidden="true" />
       <div class="field">
         <label for="email" class="sr-only">Email address</label>
-        <input id="email" type="email" name="email" placeholder="Your email, for the first night" autocomplete="email" required aria-describedby="email-error fineprint" />
+        <input id="email" type="email" name="email" placeholder="Your email" autocomplete="email" required aria-describedby="email-error fineprint" />
       </div>
       <button type="submit">Save my spot</button>
     </form>
     <p class="err reveal" id="email-error" role="alert" aria-live="assertive" style="--d:.3s"></p>
     <p class="fineprint reveal" id="fineprint" style="--d:.32s">Free to claim your early spot. <b>EUR 8/mo</b> when we launch. No spam, one email.</p>
-    <p class="founder reveal" style="--d:.36s">Built by a parent who has stood in that dim bedroom at 8pm, reaching for the iPad they regret, and wished this existed.</p>
-    <p class="thanks" id="thanks" role="status" tabindex="-1">You are on the list. We will reach you before the first night, nothing sooner.</p>
+    <p class="thanks" id="thanks" role="status" tabindex="-1">You are on the list. We will reach you before the first story, nothing sooner.</p>
 
-    <section class="scroll-reveal" aria-labelledby="beats-eyebrow">
-      <h2 class="eyebrow" id="beats-eyebrow">How a bedtime goes</h2>
-      <div class="beats">
-        <div class="beat">
-          <div class="bmark" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M21 23a9 9 0 1 1 0-14 7 7 0 1 0 0 14z" fill="currentColor" /></svg></div>
-          <div>
-            <div class="bcue">Tonight</div>
-            <h3>Open the app, and the screen goes dark</h3>
-            <p>No glowing iPad to pry away at lights-out. You open Yarnia, the screen fades to black, and a warm voice takes over the room. You get to just sit with your kid in the dark.</p>
-          </div>
-        </div>
-        <div class="beat">
-          <div class="bmark" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M21 23a9 9 0 1 1 0-14 7 7 0 1 0 0 14z" fill="currentColor" /></svg></div>
-          <div>
-            <div class="bcue">In the story</div>
-            <h3>Your kid becomes the hero of the story</h3>
-            <p>Not a stock tale with their name dropped in, but a story built around this kid: the characters they love, the world they want to be in. The dragon they adore is in it. <span class="q">The dark they fear is not.</span></p>
-          </div>
-        </div>
-        <div class="beat">
-          <div class="bmark" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M21 23a9 9 0 1 1 0-14 7 7 0 1 0 0 14z" fill="currentColor" /></svg></div>
-          <div>
-            <div class="bcue">Tomorrow night</div>
-            <h3>The story remembers them</h3>
-            <p>Yarnia carries what matters from one night to the next: the favorite characters, the fears to steer around, and what helped them drift off last night. It knows your kid the way a grandparent who knows them would.</p>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section class="moat scroll-reveal" aria-labelledby="moat-h2">
-      <h2 id="moat-h2">Most personalized story apps keep your kid looking at a screen</h2>
-      <p>We built Yarnia to do the opposite. We made it for one thing: this kid, at 8pm, with the screen off. The story is theirs and grows with them, and it remembers your actual kid, not just a recurring cast of characters. No catalog to scroll, no illustrations to lean into, no new app to add to the pile. Just a warm voice in the dark, made for that hard hour at the end of the day.</p>
-      <p class="send">And when tonight's story lands just right, you will be able to <b>send it to grandma</b> or a co-parent who is not in the room, so the people who love your kid can hear it too.</p>
-    </section>
-
-    <p class="trust scroll-reveal">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#7fa8d4" stroke-width="1.6" aria-hidden="true"><path d="M12 3l7 3v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3z"/></svg>
-      <span>Every story runs through age and safety checks before your child hears it, and is shaped to steer around the things that scare them, so you do not have to preview each one yourself.</span>
-    </p>
-
-    <section class="closer scroll-reveal" aria-labelledby="closer-h2">
-      <h2 id="closer-h2">Be there for the first night</h2>
-      <a href="#signup" class="cta2">Save my spot</a>
-    </section>
-    </main>
-
-    <footer class="scroll-reveal">
-      <span>Built by parents who were done handing over the iPad at 8pm.</span>
-      <a href="mailto:hi@yarnia.quest">hi@yarnia.quest</a>
-    </footer>
-  </div>
+    <footer class="reveal" style="--d:.4s"><a href="mailto:hi@yarnia.quest">hi@yarnia.quest</a></footer>
+  </main>
 
   <script type="module">
     import { init, id } from "https://esm.sh/@instantdb/core@1.0.43";
@@ -411,14 +262,6 @@
         fail("That did not go through. Take a breath and try once more.");
       }
     });
-
-    // Reveal below-the-fold sections as they enter the viewport (motion-safe + no-JS safe).
-    if (window.matchMedia && matchMedia("(prefers-reduced-motion: no-preference)").matches && "IntersectionObserver" in window) {
-      const io = new IntersectionObserver((entries) => {
-        entries.forEach((en) => { if (en.isIntersecting) { en.target.classList.add("in"); io.unobserve(en.target); } });
-      }, { rootMargin: "0px 0px -10% 0px", threshold: 0.12 });
-      document.querySelectorAll(".scroll-reveal").forEach((el) => io.observe(el));
-    }
   </script>
 </body>
 </html>
