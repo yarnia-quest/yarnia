@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "instantdb": {
+      "source": "instantdb/skills",
+      "sourceType": "github",
+      "skillPath": "skills/instantdb/SKILL.md",
+      "computedHash": "2060fabac98d6b64cf5407235c21664173352664613d684dfb3304746fe1fa65"
+    }
+  }
+}

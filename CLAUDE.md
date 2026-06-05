@@ -9,7 +9,8 @@
 - `client/` — the Yarnia app (Expo / React Native). The product frontend.
 - `server/` — product backend (Cloudflare Worker): story gen + ElevenLabs TTS + InstantDB + content-safety guardrail.
 - `marketing/` — waitlist landing page (`index.html`) + signup `worker/` (Cloudflare Worker → InstantDB). Already built.
-- `infra/` — config, secrets, CI notes.
+- `infra/` — Terraform (Cloudflare IaC) + config/CI notes.
+- `instant/` — InstantDB schema + permissions as code (applied by `push-schema.yml`).
 - `ideation/` — strategy/pitch docs (not code).
 
 ## Domains (keep marketing and app cleanly separate)
