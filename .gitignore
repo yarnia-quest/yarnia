@@ -20,3 +20,7 @@ dist/
 *.tfstate.*
 *.tfvars
 !*.tfvars.example
+
+# bun lockfiles (CI uses npm)
+bun.lock
+bun.lockb

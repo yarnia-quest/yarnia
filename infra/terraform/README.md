@@ -5,7 +5,7 @@ Manages the declarative Cloudflare resources: zone settings (SSL Full, Always Us
 **Not managed here (to avoid conflicts):**
 - signup Worker + `signups.yarnia.quest` → wrangler (`marketing/worker/`)
 - InstantDB schema/perms → `instant-cli` / Platform API (see schema workflow)
-- `api.yarnia.quest` → add when `server/` ships
+- `api.yarnia.quest` → add when `api/` ships
 
 ## Prereqs
 - Terraform >= 1.6 (or OpenTofu): `brew install terraform`.

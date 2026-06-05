@@ -6,8 +6,8 @@
 **What we're building:** Yarnia — a screen-off voice app that tells a child a personalized bedtime story and remembers them across nights. One sentence: *"We help a parent at 8pm get their kid to sleep with a screen-off voice story that remembers their child."*
 
 ## Repo layout
-- `client/` — the Yarnia app (Expo / React Native). The product frontend.
-- `server/` — product backend (Cloudflare Worker): story gen + ElevenLabs TTS + InstantDB + content-safety guardrail.
+- `app/` — the Yarnia app (Expo / React Native). The product frontend.
+- `api/` — product backend (Cloudflare Worker): story gen + ElevenLabs TTS + InstantDB + content-safety guardrail.
 - `marketing/` — waitlist landing page (`index.html`) + signup `worker/` (Cloudflare Worker → InstantDB). Already built.
 - `infra/` — Terraform (Cloudflare IaC) + config/CI notes.
 - `instant/` — InstantDB schema + permissions as code (applied by `push-schema.yml`).
@@ -16,7 +16,7 @@
 ## Domains (keep marketing and app cleanly separate)
 - `yarnia.quest` (naked/apex) → **marketing** landing page (Cloudflare Pages, serves `marketing/`).
 - `signups.yarnia.quest` → **marketing** waitlist Worker (`marketing/worker/`).
-- `api.yarnia.quest` → **app backend** (`server/`). Reserved; the marketing side must not use it.
+- `api.yarnia.quest` → **app backend** (`api/`). Reserved; the marketing side must not use it.
 
 ## Stack
 - **Frontend:** Expo (React Native).
@@ -33,7 +33,7 @@
 
 ## Commands
 - **Marketing signup worker:** `cd marketing/worker && npm install && bash deploy.sh` (reads root `.env`). Local: `npm run dev`.
-- **client / server:** _(to be added once scaffolded June 6 — e.g. `cd client && npm install && npx expo start`)._
+- **app / api:** _(to be added once scaffolded June 6 — e.g. `cd app && npm install && npx expo start`)._
 
 ## Conventions
 - Match the style of surrounding code; keep diffs small and explicit.
@@ -41,7 +41,7 @@
 - _(Team to provide: language/lint/format rules, file structure, naming, testing approach.)_
 
 ## Day-of integrity (build constraint)
-- The product (`client/` + `server/`) is built **June 6** with real commit history from that day. No prebuilt product code, no faked history/demo/evidence. (`marketing/` + `ideation/` are allowed pre-event prep.)
+- The product (`app/` + `api/`) is built **June 6** with real commit history from that day. No prebuilt product code, no faked history/demo/evidence. (`marketing/` + `ideation/` are allowed pre-event prep.)
 
 ## Official docs (read before using a tool; verified 2026-06-05)
 - **Cloudflare Workers:** https://developers.cloudflare.com/workers/
@@ -56,14 +56,14 @@
 - **ElevenLabs (voice):** https://elevenlabs.io/docs · **OpenAI:** https://platform.openai.com/docs · **Qwen:** https://qwen.readthedocs.io/
 - **Mollie (payments, if used):** https://docs.mollie.com/
 
-Verified facts in use: InstantDB admin `init({appId, adminToken})` + `db.transact([db.tx.X[lookup('attr', val)].update({...})])` (SDK uses `fetch`, runs on Workers). Schema: `i.entity({ email: i.string().unique().indexed(), ... })`, push with `npx instant-cli@latest push schema`. Wrangler custom domain: `[[routes]] pattern="signups.yarnia.quest" custom_domain=true` (marketing waitlist worker; `api.yarnia.quest` is the app backend). InstantDB schema in CI: `instant-cli push schema --token <per_…>` (Personal Access Token from dashboard settings); Platform SDK is `@instantdb/platform`. Terraform Cloudflare provider `~> 5` resources: `cloudflare_zone_setting`, `cloudflare_pages_project`, `cloudflare_pages_domain`, `cloudflare_dns_record`.
+Verified facts in use: InstantDB admin `init({appId, adminToken})` + `db.transact([db.tx.X[lookup('attr', val)].update({...})])` (SDK uses `fetch`, runs on Workers). Schema: `i.entity({ email: i.string().unique().indexed(), ... })`, push with `npx instant-cli@latest push schema`. Wrangler custom domain: `[[routes]] pattern="signups.yarnia.quest" custom_domain=true` (marketing waitlist worker; `api.yarnia.quest` is the app backend). InstantDB schema/perms in CI: `instant-cli push schema --app <id> --token <INSTANT_ADMIN_TOKEN> --yes` — the app admin token works as the CLI `--token` (verified 2026-06-05), no separate PAT. Platform SDK is `@instantdb/platform`. Terraform Cloudflare provider `~> 5` resources: `cloudflare_zone_setting`, `cloudflare_pages_project`, `cloudflare_pages_domain`, `cloudflare_dns_record`.
 
 ## Deploy & automation
 - **Cloudflare infra (declarative):** `infra/terraform/` — zone settings, Pages project, apex/www domains + DNS. Run locally: `terraform apply` with `CLOUDFLARE_API_TOKEN` in env (state is local for now).
 - **Marketing page:** `.github/workflows/deploy-marketing.yml` → `wrangler pages deploy marketing` on push to `marketing/**`.
 - **Signup Worker:** `.github/workflows/deploy-worker.yml` (+ `marketing/worker/deploy.sh`) → wrangler; serves `signups.yarnia.quest`.
 - **InstantDB schema/perms:** `.github/workflows/push-schema.yml` → `instant-cli push schema/perms --token` on changes to `instant.schema.ts`/`instant.perms.ts`.
-- **GitHub repo secrets (mirror `.env`):** `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, `INSTANT_APP_ID`, `INSTANT_ADMIN_TOKEN` (worker runtime), `INSTANT_PERSONAL_ACCESS_TOKEN` (`per_…`, for schema CI).
+- **GitHub repo secrets (mirror `.env`):** `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, `INSTANT_APP_ID`, `INSTANT_ADMIN_TOKEN` (worker runtime AND schema-push CI — the app admin token doubles as the instant-cli `--token`, so no separate PAT).
 
 ## Tooling: gstack
 - Both machines need the base install (`~/.claude/skills/gstack`, needs Bun). Gives `/office-hours`, `/plan-ceo-review`, `/review`, `/qa`, `/ship`. Optional team-mode repo bootstrap (`gstack-team-init optional`) can be run once on this repo. Full notes: `ideation/STRATEGY.md` history / `infra/README.md`.

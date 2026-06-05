@@ -17,7 +17,7 @@ jobs:
       run:
         working-directory: instant
     env:
-      INSTANT_PERSONAL_ACCESS_TOKEN: ${{ secrets.INSTANT_PERSONAL_ACCESS_TOKEN }}
+      INSTANT_ADMIN_TOKEN: ${{ secrets.INSTANT_ADMIN_TOKEN }}
       INSTANT_APP_ID: ${{ secrets.INSTANT_APP_ID }}
     steps:
       - uses: actions/checkout@v4
@@ -26,6 +26,6 @@ jobs:
           node-version: "20"
       - run: npm install
       - name: Push schema
-        run: npx instant-cli@latest push schema --app "$INSTANT_APP_ID" --token "$INSTANT_PERSONAL_ACCESS_TOKEN" --yes
+        run: npx instant-cli@latest push schema --app "$INSTANT_APP_ID" --token "$INSTANT_ADMIN_TOKEN" --yes
       - name: Push permissions
-        run: npx instant-cli@latest push perms --app "$INSTANT_APP_ID" --token "$INSTANT_PERSONAL_ACCESS_TOKEN" --yes
+        run: npx instant-cli@latest push perms --app "$INSTANT_APP_ID" --token "$INSTANT_ADMIN_TOKEN" --yes

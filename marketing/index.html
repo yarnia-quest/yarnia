@@ -7,7 +7,7 @@
   the Worker writes the email into InstantDB using the admin token, kept server-side as a Worker secret.
   SETUP + DEPLOY: see marketing/worker/README.md. The <form action> below points to the marketing waitlist
   Worker at https://signups.yarnia.quest. This page is served by Cloudflare Pages on https://yarnia.quest.
-  (api.yarnia.quest is reserved for the app's backend in server/, kept separate from marketing.)
+  (api.yarnia.quest is reserved for the app's backend in api/, kept separate from marketing.)
   The public InstantDB App ID is safe in client code; the admin token must NEVER be in this page or the repo.
 
   Rule note: this is customer validation, separate from the product codebase. Fine to ship tonight.

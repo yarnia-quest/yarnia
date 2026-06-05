@@ -7,6 +7,6 @@
 - **InstantDB:** `INSTANT_APP_ID` is public; `INSTANT_ADMIN_TOKEN` is a secret used server-side by Workers.
 
 ## Add these as GitHub repo secrets (Settings -> Secrets and variables -> Actions)
-`CLOUDFLARE_ACCOUNT_ID` · `CLOUDFLARE_API_TOKEN` · `INSTANT_APP_ID` · `INSTANT_ADMIN_TOKEN` · `INSTANT_PERSONAL_ACCESS_TOKEN`
+`CLOUDFLARE_ACCOUNT_ID` · `CLOUDFLARE_API_TOKEN` · `INSTANT_APP_ID` · `INSTANT_ADMIN_TOKEN`
 
 (The names match `.env` exactly, so the workflows pick them up with no edits.)

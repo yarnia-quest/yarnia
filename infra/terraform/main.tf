@@ -3,7 +3,7 @@
 # Does NOT manage (avoid conflicts):
 #   - the signup Worker + signups.yarnia.quest  -> owned by wrangler (marketing/worker/wrangler.toml)
 #   - InstantDB schema                          -> owned by instant-cli
-#   - api.yarnia.quest                          -> add when server/ ships (June 6)
+#   - api.yarnia.quest                          -> add when api/ ships (June 6)
 
 # --- Zone settings ---
 resource "cloudflare_zone_setting" "ssl" {
