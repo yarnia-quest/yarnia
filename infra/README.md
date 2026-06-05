@@ -1,12 +1,13 @@
-# infra — config, secrets, deployment
+# infra — config, secrets, CI
 
-- **Config source of truth:** repo-root `.env` (gitignored) + `.env.example` (committed). All IDs and tokens live there.
-- **CI/CD (`.github/workflows/`):** `deploy-marketing.yml` (Pages), `deploy-worker.yml` (signup Worker), `push-schema.yml` (InstantDB schema/perms). All read GitHub repo secrets that mirror `.env`.
-- **Cloudflare infra as code:** `infra/terraform/` (zone settings, Pages project, apex/www domains + DNS). Run locally with `CLOUDFLARE_API_TOKEN` in env; see `infra/terraform/README.md`.
-- **Cloudflare:** `CLOUDFLARE_ACCOUNT_ID` / `CLOUDFLARE_ZONE_ID` are identifiers (fine in `.env`); `CLOUDFLARE_API_TOKEN` is a secret (CI only; local uses `wrangler login`).
-- **InstantDB:** `INSTANT_APP_ID` is public; `INSTANT_ADMIN_TOKEN` is a secret used server-side by Workers.
+- **Config source of truth:** repo-root `.env` (gitignored) + `.env.example` (committed). IDs/tokens live there.
+- **CI/CD (`.github/workflows/`):**
+  - `deploy.yml` — `cloudflare/wrangler-action@v3` deploys the `yarnia-marketing` Worker (page + assets) to `yarnia.quest` on push to `marketing/**`. No app secrets.
+  - `push-schema.yml` — `instant-cli push schema/perms` to the InstantDB app on changes to `instant/**`.
+- **Cloudflare zone settings:** managed via dashboard/API (SSL Full, Always Use HTTPS). The worker's custom domain + DNS are managed by wrangler on deploy. No Terraform.
+- **Tokens:** `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` for deploys; `INSTANT_ADMIN_TOKEN` (god-mode) used ONLY by schema CI; the public `INSTANT_APP_ID` lives in the page (the marketing worker holds no secret).
 
-## Add these as GitHub repo secrets (Settings -> Secrets and variables -> Actions)
-`CLOUDFLARE_ACCOUNT_ID` · `CLOUDFLARE_API_TOKEN` · `INSTANT_APP_ID` · `INSTANT_ADMIN_TOKEN`
+## GitHub repo secrets (Settings -> Secrets and variables -> Actions)
+`CLOUDFLARE_API_TOKEN` · `CLOUDFLARE_ACCOUNT_ID` · `INSTANT_APP_ID` · `INSTANT_ADMIN_TOKEN`
 
-(The names match `.env` exactly, so the workflows pick them up with no edits.)
+(Names match `.env`, so the workflows pick them up with no edits.)

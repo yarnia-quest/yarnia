@@ -9,7 +9,7 @@
 - `app/` — the Yarnia app (Expo / React Native). The product frontend.
 - `api/` — product backend (Cloudflare Worker): story gen + ElevenLabs TTS + InstantDB + content-safety guardrail.
 - `marketing/` — landing page (`public/`) served by an assets-only Cloudflare Worker (`src/worker.ts`) at yarnia.quest. The signup writes client-side to InstantDB (no secret). **Deployed.**
-- `infra/` — Terraform (zone settings) + config/CI notes.
+- `infra/` — config / secrets / CI notes.
 - `instant/` — InstantDB schema + permissions as code (applied by `push-schema.yml`).
 - `ideation/` — strategy/pitch docs (not code).
 
@@ -49,18 +49,17 @@
 - **Cloudflare Pages:** https://developers.cloudflare.com/pages/ · custom domains: https://developers.cloudflare.com/pages/configuration/custom-domains/ · direct upload: https://developers.cloudflare.com/pages/get-started/direct-upload/
 - **Cloudflare docs for LLMs:** https://developers.cloudflare.com/workers/llms.txt
 - **InstantDB:** https://www.instantdb.com/docs · backend/admin SDK: https://www.instantdb.com/docs/backend · schema/modeling: https://www.instantdb.com/docs/modeling-data · permissions: https://www.instantdb.com/docs/permissions · **Platform API (IaC):** https://www.instantdb.com/docs/platform-api · CLI: https://www.instantdb.com/docs/cli
-- **Terraform:** https://developer.hashicorp.com/terraform/docs · **Cloudflare provider (v5):** https://registry.terraform.io/providers/cloudflare/cloudflare/latest/docs
 - **GitHub Actions:** https://docs.github.com/actions
 - **Expo (client):** https://docs.expo.dev/
 - **ElevenLabs (voice):** https://elevenlabs.io/docs · **OpenAI:** https://platform.openai.com/docs · **Qwen:** https://qwen.readthedocs.io/
 - **Mollie (payments, if used):** https://docs.mollie.com/
 
-Verified facts in use (2026-06-05). **Pattern (from prism):** one Worker with Static Assets per app — `[assets] directory binding=ASSETS` + the worker falls through to `env.ASSETS.fetch()`; deployed via `cloudflare/wrangler-action@v3`. Marketing: `[[routes]] pattern="yarnia.quest" custom_domain=true` (the worker serves the page; `api.yarnia.quest` is the app backend). **Client write (no token):** the page uses `@instantdb/core` `db.transact(db.tx.signups[id()].create({...}))` as a guest, gated by a `signups.create:true` permission (`view/update/delete:false`). **Admin token** (`@instantdb/admin`, bypasses perms) is used ONLY by schema CI: `instant-cli push schema/perms --app <id> --token <INSTANT_ADMIN_TOKEN> --yes` (the app admin token works as the CLI `--token`; no separate PAT). Schema: `i.entity({ email: i.string().unique().indexed(), ... })`. Tooling: use **Node ≥22** (nvm v24 here), not Bun, for wrangler. Terraform provider `~> 5`: `cloudflare_zone_setting`.
+Verified facts in use (2026-06-05). **Pattern (from prism):** one Worker with Static Assets per app — `[assets] directory binding=ASSETS` + the worker falls through to `env.ASSETS.fetch()`; deployed via `cloudflare/wrangler-action@v3`. Marketing: `[[routes]] pattern="yarnia.quest" custom_domain=true` (the worker serves the page; `api.yarnia.quest` is the app backend). **Client write (no token):** the page uses `@instantdb/core` `db.transact(db.tx.signups[id()].create({...}))` as a guest, gated by a `signups.create:true` permission (`view/update/delete:false`). **Admin token** (`@instantdb/admin`, bypasses perms) is used ONLY by schema CI: `instant-cli push schema/perms --app <id> --token <INSTANT_ADMIN_TOKEN> --yes` (the app admin token works as the CLI `--token`; no separate PAT). Schema: `i.entity({ email: i.string().unique().indexed(), ... })`. Tooling: use **Node ≥22** (nvm v24 here), not Bun, for wrangler.
 
 ## Deploy & automation
 - **Marketing site:** `.github/workflows/deploy.yml` → `cloudflare/wrangler-action@v3` deploys the `yarnia-marketing` Worker (page + assets) to `yarnia.quest` on push to `marketing/**`. No app secrets (signup is client-side).
 - **InstantDB schema/perms:** `.github/workflows/push-schema.yml` → `instant-cli push schema/perms --token <INSTANT_ADMIN_TOKEN>` on changes to `instant/**`.
-- **Cloudflare infra:** `infra/terraform/` — zone settings only (the worker custom domain + DNS are managed by wrangler on deploy).
+- **Cloudflare zone settings:** managed via dashboard/API (SSL Full, Always Use HTTPS — already set). The worker's custom domain + DNS are managed by wrangler on deploy.
 - **GitHub repo secrets:** `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` (deploys); `INSTANT_APP_ID`, `INSTANT_ADMIN_TOKEN` (schema CI only). The marketing Worker holds NO secret.
 
 ## Tooling: gstack

@@ -14,13 +14,6 @@ dist/
 *.log
 .gstack/
 
-# terraform
-**/.terraform/*
-*.tfstate
-*.tfstate.*
-*.tfvars
-!*.tfvars.example
-
 # bun lockfiles (CI uses npm)
 bun.lock
 bun.lockb
