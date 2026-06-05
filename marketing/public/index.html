@@ -4,11 +4,10 @@
   yarnia-marketing Cloudflare Worker (Static Assets). The signup is written CLIENT-SIDE to InstantDB
   via @instantdb/core (public app id, guest, create-only permission), no secret on this page.
   Positioning (from ideation/): the kid decides/invents tonight's story, a warm voice tells it
-  screen-free, and Yarnia remembers them. Hero signup up top, a few short beats below, closer CTA.
+  screen-free, and Yarnia remembers them. Minimal: hero + email signup, contact link in the footer.
 -->
 <html lang="en">
 <head>
-<script>document.documentElement.classList.add('js')</script>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Yarnia: A Bedtime Story Your Kid Dreams Up</title>
@@ -177,25 +176,14 @@
   .thanks{margin-top:18px; font-size:19px; font-family:var(--display); font-style:italic; color:var(--moon-soft); display:none; max-width:42ch; line-height:1.45}
 
   /* a few content beats below the signup */
-  .points{margin-top:var(--gap); display:flex; flex-wrap:wrap; gap:14px 28px; justify-content:center; max-width:540px; margin-left:auto; margin-right:auto}
-  .point{display:inline-flex; align-items:center; gap:9px; font-size:15.5px; color:var(--muted)}
-  .point svg{width:15px; height:15px; color:var(--moon); flex:none; filter:drop-shadow(0 0 5px rgba(241,198,115,.4))}
-
-  .closer{margin-top:var(--gap); text-align:center}
-  .closer p{font-family:var(--display); font-style:italic; font-size:clamp(20px,4vw,26px); color:var(--ink); margin-bottom:20px; letter-spacing:-.01em}
-  #signup{scroll-margin-top:28px}
-
   footer{margin-top:var(--gap); padding-top:24px; border-top:1px solid var(--line); text-align:center; font-size:14px; color:var(--dim)}
   footer a{color:var(--moon); text-decoration:none}
   footer a:hover{text-decoration:underline}
 
-  /* hero load stagger + scroll reveals (reduced-motion + no-JS safe: visible by default) */
+  /* one gentle load stagger (reduced-motion safe: visible by default) */
   .reveal{opacity:1}
-  .scroll-reveal{opacity:1}
   @media (prefers-reduced-motion: no-preference){
     .reveal{opacity:0; transform:translateY(16px); animation:rise .95s cubic-bezier(.2,.7,.2,1) forwards; animation-delay:var(--d,0s)}
-    html.js .scroll-reveal{opacity:0; transform:translateY(20px); transition:opacity .8s ease, transform .8s cubic-bezier(.2,.7,.2,1)}
-    html.js .scroll-reveal.in{opacity:1; transform:none}
     .moon{animation:breathe 7s ease-in-out infinite}
     body::before{animation:twinkle 6s ease-in-out infinite alternate}
   }
@@ -238,19 +226,9 @@
       <p class="thanks" id="thanks" role="status" tabindex="-1">You are on the list. We will reach you before the first story, nothing sooner.</p>
     </div>
 
-    <section class="points scroll-reveal" aria-label="What Yarnia is">
-      <span class="point"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M21 23a9 9 0 1 1 0-14 7 7 0 1 0 0 14z" fill="currentColor"/></svg>Screen off, just a warm voice</span>
-      <span class="point"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M21 23a9 9 0 1 1 0-14 7 7 0 1 0 0 14z" fill="currentColor"/></svg>Your kid invents the story</span>
-      <span class="point"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M21 23a9 9 0 1 1 0-14 7 7 0 1 0 0 14z" fill="currentColor"/></svg>Yarnia remembers them</span>
-    </section>
-
-    <div class="closer scroll-reveal">
-      <p>Tonight could be calmer.</p>
-      <a href="#signup" class="btn-gold">Save my spot</a>
-    </div>
     </main>
 
-    <footer class="scroll-reveal"><a href="mailto:hi@yarnia.quest">hi@yarnia.quest</a></footer>
+    <footer class="reveal" style="--d:.44s"><a href="mailto:hi@yarnia.quest">hi@yarnia.quest</a></footer>
   </div>
 
   <script type="module">
@@ -289,14 +267,6 @@
         fail("That did not go through. Take a breath and try once more.");
       }
     });
-
-    // Reveal the below-the-fold beats as they enter the viewport (motion-safe + no-JS safe).
-    if (window.matchMedia && matchMedia("(prefers-reduced-motion: no-preference)").matches && "IntersectionObserver" in window) {
-      const io = new IntersectionObserver((entries) => {
-        entries.forEach((en) => { if (en.isIntersecting) { en.target.classList.add("in"); io.unobserve(en.target); } });
-      }, { rootMargin: "0px 0px -10% 0px", threshold: 0.12 });
-      document.querySelectorAll(".scroll-reveal").forEach((el) => io.observe(el));
-    }
   </script>
 </body>
 </html>
