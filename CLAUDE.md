@@ -35,7 +35,7 @@
 - **app / api:** _(to be added once scaffolded June 6 — e.g. `cd app && npm install && npx expo start`)._
 
 ## Conventions
-- **Package manager: npm + Node ≥22** everywhere (local and CI). Commit `package-lock.json`. Don't use bun for project deps (gstack's own CLI runs on bun, that's separate).
+- **Package manager: npm + Node 24 (LTS)** everywhere (local and CI). Commit `package-lock.json`. Don't use bun for project deps (gstack's own CLI runs on bun, that's separate).
 - Match the style of surrounding code; keep diffs small and explicit.
 - Prose/writing (READMEs, copy, messages): **no em dashes.**
 - _(Team to provide: language/lint/format rules, file structure, naming, testing approach.)_
@@ -55,7 +55,7 @@
 - **ElevenLabs (voice):** https://elevenlabs.io/docs · **OpenAI:** https://platform.openai.com/docs · **Qwen:** https://qwen.readthedocs.io/
 - **Mollie (payments, if used):** https://docs.mollie.com/
 
-Verified facts in use (2026-06-05). **Pattern (from prism):** one Worker with Static Assets per app — `[assets] directory binding=ASSETS` + the worker falls through to `env.ASSETS.fetch()`; deployed via `cloudflare/wrangler-action@v3`. Marketing: `[[routes]] pattern="yarnia.quest" custom_domain=true` (the worker serves the page; `api.yarnia.quest` is the app backend). **Client write (no token):** the page uses `@instantdb/core` `db.transact(db.tx.signups[id()].create({...}))` as a guest, gated by a `signups.create:true` permission (`view/update/delete:false`). **Admin token** (`@instantdb/admin`, bypasses perms) is used ONLY by schema CI: `instant-cli push schema/perms --app <id> --token <INSTANT_ADMIN_TOKEN> --yes` (the app admin token works as the CLI `--token`; no separate PAT). Schema: `i.entity({ email: i.string().unique().indexed(), ... })`. Tooling: use **Node ≥22** (nvm v24 here), not Bun, for wrangler.
+Verified facts in use (2026-06-05). **Pattern (from prism):** one Worker with Static Assets per app — `[assets] directory binding=ASSETS` + the worker falls through to `env.ASSETS.fetch()`; deployed via `cloudflare/wrangler-action@v3`. Marketing: `[[routes]] pattern="yarnia.quest" custom_domain=true` (the worker serves the page; `api.yarnia.quest` is the app backend). **Client write (no token):** the page uses `@instantdb/core` `db.transact(db.tx.signups[id()].create({...}))` as a guest, gated by a `signups.create:true` permission (`view/update/delete:false`). **Admin token** (`@instantdb/admin`, bypasses perms) is used ONLY by schema CI: `instant-cli push schema/perms --app <id> --token <INSTANT_ADMIN_TOKEN> --yes` (the app admin token works as the CLI `--token`; no separate PAT). Schema: `i.entity({ email: i.string().unique().indexed(), ... })`. Tooling: use **Node 24 (LTS)**, not Bun, for wrangler.
 
 ## Deploy & automation
 - **Marketing site:** `.github/workflows/deploy.yml` → `cloudflare/wrangler-action@v3` deploys the `yarnia-marketing` Worker (page + assets) to `yarnia.quest` on push to `marketing/**`. No app secrets (signup is client-side).
