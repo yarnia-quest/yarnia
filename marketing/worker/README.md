@@ -26,7 +26,7 @@ npm install
 npx wrangler login        # one-time browser auth (or set CLOUDFLARE_API_TOKEN in .env)
 bash deploy.sh            # reads .env, sets the secret, deploys with the app id as a --var
 ```
-`wrangler.toml` serves the Worker at **`https://api.yarnia.quest`** (a Worker custom domain — Cloudflare provisions DNS + cert on deploy; requires `yarnia.quest` to be an active zone in the account). The form action in `../index.html` already points there. To use the free `*.workers.dev` URL instead, delete the `[[routes]]` block and set the form action to the printed `workers.dev` URL.
+`wrangler.toml` serves this marketing waitlist Worker at **`https://signups.yarnia.quest`** (a Worker custom domain — Cloudflare provisions DNS + cert on deploy; requires `yarnia.quest` to be an active zone). **`api.yarnia.quest` is reserved for the app's backend (`server/`)** — keep marketing and app endpoints separate. The form action in `../index.html` already points to `signups.yarnia.quest`. To use the free `*.workers.dev` URL instead, delete the `[[routes]]` block and set the form action to the printed `workers.dev` URL.
 
 Lock CORS to the site once it's live: `bash deploy.sh` then redeploy with `npx wrangler deploy --var ALLOWED_ORIGINS:https://yarnia.quest` (the Worker defaults to open CORS if unset).
 

@@ -12,6 +12,11 @@
 - `infra/` — config, secrets, CI notes.
 - `ideation/` — strategy/pitch docs (not code).
 
+## Domains (keep marketing and app cleanly separate)
+- `yarnia.quest` (naked/apex) → **marketing** landing page (Cloudflare Pages, serves `marketing/`).
+- `signups.yarnia.quest` → **marketing** waitlist Worker (`marketing/worker/`).
+- `api.yarnia.quest` → **app backend** (`server/`). Reserved; the marketing side must not use it.
+
 ## Stack
 - **Frontend:** Expo (React Native).
 - **Backend:** Cloudflare Workers (thin layers; wrangler).
@@ -48,7 +53,7 @@
 - **ElevenLabs (voice):** https://elevenlabs.io/docs · **OpenAI:** https://platform.openai.com/docs · **Qwen:** https://qwen.readthedocs.io/
 - **Mollie (payments, if used):** https://docs.mollie.com/
 
-Verified facts in use: InstantDB admin `init({appId, adminToken})` + `db.transact([db.tx.X[lookup('attr', val)].update({...})])` (SDK uses `fetch`, runs on Workers). Schema: `i.entity({ email: i.string().unique().indexed(), ... })`, push with `npx instant-cli@latest push schema`. Wrangler custom domain: `[[routes]] pattern="api.yarnia.quest" custom_domain=true`. Pages apex domain auto-configures because the zone is on Cloudflare.
+Verified facts in use: InstantDB admin `init({appId, adminToken})` + `db.transact([db.tx.X[lookup('attr', val)].update({...})])` (SDK uses `fetch`, runs on Workers). Schema: `i.entity({ email: i.string().unique().indexed(), ... })`, push with `npx instant-cli@latest push schema`. Wrangler custom domain: `[[routes]] pattern="signups.yarnia.quest" custom_domain=true` (marketing waitlist worker; `api.yarnia.quest` is the app backend). Pages apex domain auto-configures because the zone is on Cloudflare.
 
 ## Tooling: gstack
 - Both machines need the base install (`~/.claude/skills/gstack`, needs Bun). Gives `/office-hours`, `/plan-ceo-review`, `/review`, `/qa`, `/ship`. Optional team-mode repo bootstrap (`gstack-team-init optional`) can be run once on this repo. Full notes: `ideation/STRATEGY.md` history / `infra/README.md`.
