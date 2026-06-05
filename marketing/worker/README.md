@@ -1,6 +1,6 @@
 # Yarnia signups — Cloudflare Worker + InstantDB
 
-Captures landing-page email signups. The static page (`../index.html`) POSTs `{email}` here; this Worker writes it to InstantDB using the **admin token**, kept server-side (never in code/repo). All ids/secrets come from the repo-root `.env` (see `.env.example`).
+Captures landing-page email signups. The static page (`../public/index.html`) POSTs `{email}` here; this Worker writes it to InstantDB using the **admin token**, kept server-side (never in code/repo). All ids/secrets come from the repo-root `.env` (see `.env.example`).
 
 ## One-time: add the `signups` entity to your InstantDB schema
 In your InstantDB project (App ID in `.env`), add to `instant.schema.ts`:
@@ -26,7 +26,7 @@ npm install
 npx wrangler login        # one-time browser auth (or set CLOUDFLARE_API_TOKEN in .env)
 bash deploy.sh            # reads .env, sets the secret, deploys with the app id as a --var
 ```
-`wrangler.toml` serves this marketing waitlist Worker at **`https://signups.yarnia.quest`** (a Worker custom domain — Cloudflare provisions DNS + cert on deploy; requires `yarnia.quest` to be an active zone). **`api.yarnia.quest` is reserved for the app's backend (`api/`)** — keep marketing and app endpoints separate. The form action in `../index.html` already points to `signups.yarnia.quest`. To use the free `*.workers.dev` URL instead, delete the `[[routes]]` block and set the form action to the printed `workers.dev` URL.
+`wrangler.toml` serves this marketing waitlist Worker at **`https://signups.yarnia.quest`** (a Worker custom domain — Cloudflare provisions DNS + cert on deploy; requires `yarnia.quest` to be an active zone). **`api.yarnia.quest` is reserved for the app's backend (`api/`)** — keep marketing and app endpoints separate. The form action in `../public/index.html` already points to `signups.yarnia.quest`. To use the free `*.workers.dev` URL instead, delete the `[[routes]]` block and set the form action to the printed `workers.dev` URL.
 
 Lock CORS to the site once it's live: `bash deploy.sh` then redeploy with `npx wrangler deploy --var ALLOWED_ORIGINS:https://yarnia.quest` (the Worker defaults to open CORS if unset).
 
@@ -37,7 +37,7 @@ Add the four repo secrets (see `infra/README.md`): `CLOUDFLARE_ACCOUNT_ID`, `CLO
 Create `marketing/worker/.dev.vars` (gitignored) with `INSTANT_APP_ID=...` and `INSTANT_ADMIN_TOKEN=...`, then `npm run dev`.
 
 ## Deploy the page
-Static host. On Cloudflare Pages: point it at the `marketing/` folder (no build step). Then drop the URL into the Discord post + team-board tagline.
+Static host. On Cloudflare Pages: point it at the `marketing/public/` folder (no build step). Then drop the URL into the Discord post + team-board tagline.
 
 ## Security (read once)
 - `INSTANT_ADMIN_TOKEN` / `CLOUDFLARE_API_TOKEN` are **secrets**: only via `.env` (gitignored), `wrangler secret put`, or GitHub repo secrets. Never in `wrangler.toml`, the page, or any committed file.

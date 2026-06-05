@@ -20,4 +20,4 @@ jobs:
         with:
           node-version: "20"
       - name: Deploy to Cloudflare Pages
-        run: npx wrangler@latest pages deploy marketing --project-name=yarnia --branch=main
+        run: npx wrangler@latest pages deploy marketing/public --project-name=yarnia --branch=main
