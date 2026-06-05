@@ -3,8 +3,17 @@ main = "src/index.js"
 compatibility_date = "2026-06-05"
 compatibility_flags = ["nodejs_compat"]
 
+# Serve the Worker at api.yarnia.quest. custom_domain=true makes Cloudflare provision the
+# DNS record + TLS cert automatically on deploy. Requires yarnia.quest to be an active zone
+# in this Cloudflare account. (Prefer the free *.workers.dev URL instead? delete this block.)
+# Docs: https://developers.cloudflare.com/workers/wrangler/configuration/#custom-domains
+[[routes]]
+pattern = "api.yarnia.quest"
+custom_domain = true
+
 # No ids/secrets hardcoded here. They come from the environment / repo-root .env:
 #   account_id          -> CLOUDFLARE_ACCOUNT_ID env var (wrangler reads it automatically)
 #   INSTANT_APP_ID      -> injected at deploy via `--var` (see deploy.sh / CI)
 #   INSTANT_ADMIN_TOKEN -> Worker secret (`wrangler secret put`, or set in CI from a repo secret)
+# Optional CORS lock-down:  wrangler deploy --var ALLOWED_ORIGINS:https://yarnia.quest
 # Local `wrangler dev`: put INSTANT_APP_ID and INSTANT_ADMIN_TOKEN in marketing/worker/.dev.vars (gitignored).

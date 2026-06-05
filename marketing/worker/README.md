@@ -26,7 +26,9 @@ npm install
 npx wrangler login        # one-time browser auth (or set CLOUDFLARE_API_TOKEN in .env)
 bash deploy.sh            # reads .env, sets the secret, deploys with the app id as a --var
 ```
-Deploy prints your Worker URL: `https://yarnia-signups.<your-subdomain>.workers.dev`. Put it in the `<form action>` in `../index.html` (also record it in `.env` as `SIGNUP_WORKER_URL`).
+`wrangler.toml` serves the Worker at **`https://api.yarnia.quest`** (a Worker custom domain — Cloudflare provisions DNS + cert on deploy; requires `yarnia.quest` to be an active zone in the account). The form action in `../index.html` already points there. To use the free `*.workers.dev` URL instead, delete the `[[routes]]` block and set the form action to the printed `workers.dev` URL.
+
+Lock CORS to the site once it's live: `bash deploy.sh` then redeploy with `npx wrangler deploy --var ALLOWED_ORIGINS:https://yarnia.quest` (the Worker defaults to open CORS if unset).
 
 ## Deploy — CI (GitHub)
 Add the four repo secrets (see `infra/README.md`): `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, `INSTANT_APP_ID`, `INSTANT_ADMIN_TOKEN`. Then `.github/workflows/deploy-worker.yml` deploys on push to `marketing/worker/**` (or via "Run workflow").

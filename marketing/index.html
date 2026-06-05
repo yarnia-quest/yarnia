@@ -5,8 +5,8 @@
 
   BACKEND: InstantDB (data) + Cloudflare Worker (capture). This page POSTs JSON to the Worker;
   the Worker writes the email into InstantDB using the admin token, kept server-side as a Worker secret.
-  SETUP + DEPLOY: see marketing/worker/README.md. Then set the <form action="..."> below to your deployed
-  Worker URL (https://yarnia-signups.<your-subdomain>.workers.dev). Deploy this page on Cloudflare Pages.
+  SETUP + DEPLOY: see marketing/worker/README.md. The <form action> below points to the signup Worker at
+  https://api.yarnia.quest (Worker custom domain). This page is served by Cloudflare Pages on https://yarnia.quest.
   The public InstantDB App ID is safe in client code; the admin token must NEVER be in this page or the repo.
 
   Rule note: this is customer validation, separate from the product codebase. Fine to ship tonight.
@@ -17,6 +17,16 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Yarnia — bedtime stories that remember your kid</title>
 <meta name="description" content="Open the app. The screen goes off. A voice tells your child a story made just for them, and it remembers them night after night." />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='13' fill='%23e9c46a'/></svg>" />
+<meta property="og:type" content="website" />
+<meta property="og:title" content="Yarnia — bedtime stories that remember your kid" />
+<meta property="og:description" content="The screen goes off and a voice tells your kid a story made just for them, and remembers them night after night." />
+<meta property="og:url" content="https://yarnia.quest" />
+<meta property="og:image" content="https://yarnia.quest/og.png" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="Yarnia — bedtime stories that remember your kid" />
+<meta name="twitter:description" content="The screen goes off and a voice tells your kid a story made just for them, and remembers them night after night." />
+<meta name="twitter:image" content="https://yarnia.quest/og.png" />
 <style>
   :root{
     --ink:#0b0d1a; --ink2:#11142a; --cream:#f4ecd8; --muted:#9aa0c0;
@@ -72,8 +82,8 @@
     <h1>Open the app. The screen goes off. A voice tells your kid a story made <span class="em">just for them</span>.</h1>
     <p class="lede">It's 8pm. Instead of handing over the iPad, your child hears a bedtime story they helped invent, in a calm voice in the dark. And Yarnia remembers them, night after night.</p>
 
-    <!-- action = your deployed Cloudflare Worker URL (see marketing/worker/README.md). -->
-    <form id="signup" action="https://yarnia-signups.YOUR-SUBDOMAIN.workers.dev" method="POST">
+    <!-- action = the signup Worker at api.yarnia.quest (see marketing/worker/README.md). -->
+    <form id="signup" action="https://api.yarnia.quest" method="POST">
       <input type="text" name="_gotcha" class="hp" tabindex="-1" autocomplete="off" aria-hidden="true" />
       <input type="email" name="email" placeholder="your@email.com" required />
       <button type="submit">Get early access</button>
@@ -97,7 +107,7 @@
     <p class="quietnote">Every story runs through age and safety checks, and Yarnia steers clear of the exact things that scare your kid, because it remembers them.</p>
 
     <footer>
-      Built by parents who refuse to hand over the iPad at bedtime. · <a href="mailto:hi@yarnia.app">hi@yarnia.app</a>
+      Built by parents who refuse to hand over the iPad at bedtime. · <a href="mailto:hi@yarnia.quest">hi@yarnia.quest</a>
     </footer>
   </div>
 

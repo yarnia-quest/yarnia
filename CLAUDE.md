@@ -37,5 +37,18 @@
 ## Day-of integrity (build constraint)
 - The product (`client/` + `server/`) is built **June 6** with real commit history from that day. No prebuilt product code, no faked history/demo/evidence. (`marketing/` + `ideation/` are allowed pre-event prep.)
 
+## Official docs (read before using a tool; verified 2026-06-05)
+- **Cloudflare Workers:** https://developers.cloudflare.com/workers/
+- **Wrangler config** (vars, secrets, routes, custom_domain, compatibility flags): https://developers.cloudflare.com/workers/wrangler/configuration/
+- **Workers routes:** https://developers.cloudflare.com/workers/configuration/routing/routes/
+- **Cloudflare Pages:** https://developers.cloudflare.com/pages/ · custom domains: https://developers.cloudflare.com/pages/configuration/custom-domains/ · direct upload: https://developers.cloudflare.com/pages/get-started/direct-upload/
+- **Cloudflare docs for LLMs:** https://developers.cloudflare.com/workers/llms.txt
+- **InstantDB:** https://www.instantdb.com/docs · backend/admin SDK: https://www.instantdb.com/docs/backend · schema/modeling: https://www.instantdb.com/docs/modeling-data · permissions: https://www.instantdb.com/docs/permissions
+- **Expo (client):** https://docs.expo.dev/
+- **ElevenLabs (voice):** https://elevenlabs.io/docs · **OpenAI:** https://platform.openai.com/docs · **Qwen:** https://qwen.readthedocs.io/
+- **Mollie (payments, if used):** https://docs.mollie.com/
+
+Verified facts in use: InstantDB admin `init({appId, adminToken})` + `db.transact([db.tx.X[lookup('attr', val)].update({...})])` (SDK uses `fetch`, runs on Workers). Schema: `i.entity({ email: i.string().unique().indexed(), ... })`, push with `npx instant-cli@latest push schema`. Wrangler custom domain: `[[routes]] pattern="api.yarnia.quest" custom_domain=true`. Pages apex domain auto-configures because the zone is on Cloudflare.
+
 ## Tooling: gstack
 - Both machines need the base install (`~/.claude/skills/gstack`, needs Bun). Gives `/office-hours`, `/plan-ceo-review`, `/review`, `/qa`, `/ship`. Optional team-mode repo bootstrap (`gstack-team-init optional`) can be run once on this repo. Full notes: `ideation/STRATEGY.md` history / `infra/README.md`.
