@@ -48,12 +48,21 @@
 - **Workers routes:** https://developers.cloudflare.com/workers/configuration/routing/routes/
 - **Cloudflare Pages:** https://developers.cloudflare.com/pages/ · custom domains: https://developers.cloudflare.com/pages/configuration/custom-domains/ · direct upload: https://developers.cloudflare.com/pages/get-started/direct-upload/
 - **Cloudflare docs for LLMs:** https://developers.cloudflare.com/workers/llms.txt
-- **InstantDB:** https://www.instantdb.com/docs · backend/admin SDK: https://www.instantdb.com/docs/backend · schema/modeling: https://www.instantdb.com/docs/modeling-data · permissions: https://www.instantdb.com/docs/permissions
+- **InstantDB:** https://www.instantdb.com/docs · backend/admin SDK: https://www.instantdb.com/docs/backend · schema/modeling: https://www.instantdb.com/docs/modeling-data · permissions: https://www.instantdb.com/docs/permissions · **Platform API (IaC):** https://www.instantdb.com/docs/platform-api · CLI: https://www.instantdb.com/docs/cli
+- **Terraform:** https://developer.hashicorp.com/terraform/docs · **Cloudflare provider (v5):** https://registry.terraform.io/providers/cloudflare/cloudflare/latest/docs
+- **GitHub Actions:** https://docs.github.com/actions
 - **Expo (client):** https://docs.expo.dev/
 - **ElevenLabs (voice):** https://elevenlabs.io/docs · **OpenAI:** https://platform.openai.com/docs · **Qwen:** https://qwen.readthedocs.io/
 - **Mollie (payments, if used):** https://docs.mollie.com/
 
-Verified facts in use: InstantDB admin `init({appId, adminToken})` + `db.transact([db.tx.X[lookup('attr', val)].update({...})])` (SDK uses `fetch`, runs on Workers). Schema: `i.entity({ email: i.string().unique().indexed(), ... })`, push with `npx instant-cli@latest push schema`. Wrangler custom domain: `[[routes]] pattern="signups.yarnia.quest" custom_domain=true` (marketing waitlist worker; `api.yarnia.quest` is the app backend). Pages apex domain auto-configures because the zone is on Cloudflare.
+Verified facts in use: InstantDB admin `init({appId, adminToken})` + `db.transact([db.tx.X[lookup('attr', val)].update({...})])` (SDK uses `fetch`, runs on Workers). Schema: `i.entity({ email: i.string().unique().indexed(), ... })`, push with `npx instant-cli@latest push schema`. Wrangler custom domain: `[[routes]] pattern="signups.yarnia.quest" custom_domain=true` (marketing waitlist worker; `api.yarnia.quest` is the app backend). InstantDB schema in CI: `instant-cli push schema --token <per_…>` (Personal Access Token from dashboard settings); Platform SDK is `@instantdb/platform`. Terraform Cloudflare provider `~> 5` resources: `cloudflare_zone_setting`, `cloudflare_pages_project`, `cloudflare_pages_domain`, `cloudflare_dns_record`.
+
+## Deploy & automation
+- **Cloudflare infra (declarative):** `infra/terraform/` — zone settings, Pages project, apex/www domains + DNS. Run locally: `terraform apply` with `CLOUDFLARE_API_TOKEN` in env (state is local for now).
+- **Marketing page:** `.github/workflows/deploy-marketing.yml` → `wrangler pages deploy marketing` on push to `marketing/**`.
+- **Signup Worker:** `.github/workflows/deploy-worker.yml` (+ `marketing/worker/deploy.sh`) → wrangler; serves `signups.yarnia.quest`.
+- **InstantDB schema/perms:** `.github/workflows/push-schema.yml` → `instant-cli push schema/perms --token` on changes to `instant.schema.ts`/`instant.perms.ts`.
+- **GitHub repo secrets (mirror `.env`):** `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, `INSTANT_APP_ID`, `INSTANT_ADMIN_TOKEN` (worker runtime), `INSTANT_PERSONAL_ACCESS_TOKEN` (`per_…`, for schema CI).
 
 ## Tooling: gstack
 - Both machines need the base install (`~/.claude/skills/gstack`, needs Bun). Gives `/office-hours`, `/plan-ceo-review`, `/review`, `/qa`, `/ship`. Optional team-mode repo bootstrap (`gstack-team-init optional`) can be run once on this repo. Full notes: `ideation/STRATEGY.md` history / `infra/README.md`.

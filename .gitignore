@@ -13,3 +13,10 @@ dist/
 .DS_Store
 *.log
 .gstack/
+
+# terraform
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example

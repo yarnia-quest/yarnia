@@ -1,0 +1,8 @@
+# Copy to terraform.tfvars (gitignored) and fill in. These are identifiers, not secrets.
+cloudflare_account_id = "your-cloudflare-account-id"
+cloudflare_zone_id    = "your-yarnia.quest-zone-id"
+# domain        = "yarnia.quest"   # default
+# pages_project = "yarnia"         # default
+
+# The API TOKEN is a secret — do NOT put it here.
+# Provide it via env:  export CLOUDFLARE_API_TOKEN=...

@@ -1,0 +1,32 @@
+name: Push InstantDB schema
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "**/instant.schema.ts"
+      - "**/instant.perms.ts"
+
+# Non-interactive auth uses an InstantDB Personal Access Token (per_...) created in
+# dashboard settings. Docs: https://www.instantdb.com/docs/platform-api + /docs/cli
+jobs:
+  push:
+    runs-on: ubuntu-latest
+    # NOTE: set working-directory to the folder that holds instant.schema.ts once the
+    # InstantDB app scaffold lands in the repo (e.g. client/ or a dedicated instant/ dir).
+    # defaults:
+    #   run:
+    #     working-directory: client
+    env:
+      INSTANT_PERSONAL_ACCESS_TOKEN: ${{ secrets.INSTANT_PERSONAL_ACCESS_TOKEN }}
+      INSTANT_APP_ID: ${{ secrets.INSTANT_APP_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Push schema
+        run: npx instant-cli@latest push schema --app "$INSTANT_APP_ID" --token "$INSTANT_PERSONAL_ACCESS_TOKEN" --yes
+      - name: Push permissions
+        run: npx instant-cli@latest push perms --app "$INSTANT_APP_ID" --token "$INSTANT_PERSONAL_ACCESS_TOKEN" --yes
