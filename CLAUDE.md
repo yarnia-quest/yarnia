@@ -68,6 +68,6 @@ Verified facts in use (2026-06-05). **Pattern (from prism):** one Worker with St
 ## Tooling: gstack
 - Both machines need the base install (`~/.claude/skills/gstack`, needs Bun). Gives `/office-hours`, `/plan-ceo-review`, `/review`, `/qa`, `/ship`. Optional team-mode repo bootstrap (`gstack-team-init optional`) can be run once on this repo. Full notes: `ideation/STRATEGY.md` history / `infra/README.md`.
 
-## Tooling: agent skills (per-machine, NOT committed)
-- Skills live in `.agents/` + `skills-lock.json`, both **gitignored** — they don't travel via `git pull`. Each engineer installs them locally; reproduce with `npx skills add <owner/repo>`.
-- **Hono skill** (inline Hono API reference + `npx hono request` endpoint testing; by yusukebe, Hono's creator): `npx skills add yusukebe/hono-skill -y`. Burhan: run this once after pulling. (Source: https://skills.sh/yusukebe/hono-skill)
+## Tooling: agent skills
+- **`skills-lock.json` is committed** (the pinned manifest, like `package-lock.json`); **`.agents/`** (the materialized copy, like `node_modules`) is gitignored. After pulling, restore the exact skill set with `npx skills experimental_install`.
+- Add a new skill with `npx skills add <owner/repo> -y` (updates the lock; commit it). Currently pinned: the Hono skill (`yusukebe/hono-skill` — inline Hono API reference + `npx hono request` endpoint testing, by Hono's creator; https://skills.sh/yusukebe/hono-skill) plus the design/marketing/instantdb skills.

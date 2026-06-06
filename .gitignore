@@ -18,6 +18,7 @@ dist/
 bun.lock
 bun.lockb
 
-# installed agent skills (reproducible via: npx skills add ...)
+# installed agent skills: .agents/ is the materialized copy (like node_modules,
+# ignored). skills-lock.json is the committed manifest — restore with
+# `npx skills experimental_install`.
 .agents/
-skills-lock.json
