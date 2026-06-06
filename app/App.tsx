@@ -1,40 +1,104 @@
 import 'react-native-get-random-values';
+import React, { useState, useCallback } from 'react';
+import { View, StyleSheet, ActivityIndicator } from 'react-native';
+import {
+  useFonts,
+  Fraunces_700Bold,
+  Fraunces_700Bold_Italic,
+} from '@expo-google-fonts/fraunces';
+import { Lora_400Regular, Lora_400Regular_Italic } from '@expo-google-fonts/lora';
 import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Text, View } from 'react-native';
-import db from './db';
+
+import GreetingScreen from './screens/GreetingScreen';
+import CoCreationScreen from './screens/CoCreationScreen';
+import PlaybackScreen from './screens/PlaybackScreen';
+import { colors } from './theme';
+
+const API_BASE = process.env.EXPO_PUBLIC_API_BASE_URL ?? 'http://localhost:8787';
+
+// Seeded child for demo — matches the "Lisa" seed in InstantDB
+const DEMO_CHILD = { id: 'lisa-seed', name: 'Lisa' };
+
+type Screen = 'greeting' | 'cocreation' | 'playback';
+
+type StoryResult = {
+  text: string | null;
+  audio: string | null;
+  audioUrl: string | null;
+};
 
 export default function App() {
-  const { isLoading, error, data } = db.useQuery({ signups: {} });
+  const [fontsLoaded] = useFonts({
+    Fraunces_700Bold,
+    Fraunces_700Bold_Italic,
+    Lora_400Regular,
+    Lora_400Regular_Italic,
+  });
 
-  const status = isLoading ? 'loading...' : error ? `error: ${error.message}` : `ok — ${data?.signups?.length ?? 0} signups`;
+  const [screen, setScreen] = useState<Screen>('greeting');
+  const [story, setStory] = useState<StoryResult | null>(null);
+
+  const handleChoice = useCallback(async (choice: string) => {
+    setScreen('playback');
+    try {
+      const res = await fetch(`${API_BASE}/story`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ childId: DEMO_CHILD.id, choice }),
+      });
+      const data = await res.json();
+      setStory({
+        text: data.text ?? null,
+        audio: data.audio ?? null,
+        audioUrl: data.audioUrl ?? null,
+      });
+    } catch (e) {
+      setStory({ text: null, audio: null, audioUrl: null });
+    }
+  }, []);
+
+  const handleRestart = useCallback(() => {
+    setStory(null);
+    setScreen('greeting');
+  }, []);
+
+  if (!fontsLoaded) {
+    return (
+      <View style={styles.loading}>
+        <ActivityIndicator color={colors.gold} />
+      </View>
+    );
+  }
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Yarnia</Text>
-      <Text style={[styles.sub, error ? styles.error : null]}>{status}</Text>
-      <StatusBar style="auto" />
+    <View style={styles.root}>
+      <StatusBar style="light" />
+      {screen === 'greeting' && (
+        <GreetingScreen
+          childName={DEMO_CHILD.name}
+          onBegin={() => setScreen('cocreation')}
+        />
+      )}
+      {screen === 'cocreation' && (
+        <CoCreationScreen
+          childName={DEMO_CHILD.name}
+          onChoice={handleChoice}
+        />
+      )}
+      {screen === 'playback' && (
+        <PlaybackScreen
+          childName={DEMO_CHILD.name}
+          storyText={story?.text ?? null}
+          audioBase64={story?.audio ?? null}
+          audioUrl={story?.audioUrl ?? null}
+          onRestart={handleRestart}
+        />
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#0a0a14',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  title: {
-    color: '#fff',
-    fontSize: 32,
-    fontWeight: '700',
-  },
-  sub: {
-    color: '#888',
-    fontSize: 13,
-    marginTop: 8,
-  },
-  error: {
-    color: '#f87171',
-  },
+  root: { flex: 1, backgroundColor: colors.navy },
+  loading: { flex: 1, backgroundColor: colors.navy, alignItems: 'center', justifyContent: 'center' },
 });
