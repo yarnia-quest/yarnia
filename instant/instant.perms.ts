@@ -13,6 +13,11 @@ const rules = {
       delete: "false",
     },
   },
+  // signup_ticks is an INTENTIONAL public counter: the marketing page shows a live waitlist
+  // count without exposing any email. So view/create are open by design (a guest adds one tick
+  // per signup; the page reads the count). Rows hold no PII, only a timestamp. Emails live in
+  // `signups`, which is create-only and never readable. Do not "lock this down" without first
+  // removing the public live-count feature.
   signup_ticks: {
     allow: {
       view: "true",

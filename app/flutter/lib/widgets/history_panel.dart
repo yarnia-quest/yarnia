@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:just_audio/just_audio.dart';
 import 'package:path_provider/path_provider.dart';
+import '../api_config.dart';
 import '../theme.dart';
 
 class HistoryPanel extends StatefulWidget {
@@ -44,6 +45,7 @@ class _HistoryPanelState extends State<HistoryPanel> {
     try {
       final res = await http.get(
         Uri.parse('${widget.apiBase}/child/${widget.childId}/sessions'),
+        headers: apiHeaders(),
       );
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body) as Map<String, dynamic>;
@@ -238,7 +240,7 @@ class _StoryDetailSheetState extends State<_StoryDetailSheet> {
 
   // Asks the server for a short-lived signed URL for this audio object.
   Future<String> _signedAudioUrl(String audioKey) async {
-    final urlRes = await http.get(Uri.parse('${widget.apiBase}/audio-url/$audioKey'));
+    final urlRes = await http.get(Uri.parse('${widget.apiBase}/audio-url/$audioKey'), headers: apiHeaders());
     if (urlRes.statusCode != 200) throw Exception('URL fetch failed: ${urlRes.statusCode}');
     return (jsonDecode(urlRes.body) as Map<String, dynamic>)['url'] as String;
   }

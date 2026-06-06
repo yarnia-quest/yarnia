@@ -5,6 +5,7 @@ import 'package:elevenlabs_agents/elevenlabs_agents.dart';
 import 'package:http/http.dart' as http;
 import 'package:permission_handler/permission_handler.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
+import '../api_config.dart';
 import '../services/agent_session_prefetch.dart';
 import '../widgets/starfield.dart';
 import '../widgets/history_panel.dart';
@@ -121,6 +122,7 @@ class _AgentScreenState extends State<AgentScreen> with TickerProviderStateMixin
       try {
         final res = await http.get(
           Uri.parse('${widget.apiBase}/child/${widget.childId}/sessions'),
+          headers: apiHeaders(),
         );
         if (res.statusCode == 200) {
           final data = jsonDecode(res.body) as Map<String, dynamic>;
@@ -196,6 +198,7 @@ class _AgentScreenState extends State<AgentScreen> with TickerProviderStateMixin
   Future<AgentSessionData> _fetchSession() async {
     final res = await http.get(
       Uri.parse('${widget.apiBase}/agent/session?childId=${widget.childId}'),
+      headers: apiHeaders(),
     );
     if (res.statusCode != 200) {
       throw Exception('Session ${res.statusCode}: ${res.body}');

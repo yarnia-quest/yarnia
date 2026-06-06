@@ -137,11 +137,13 @@ More detail and worktree/CI notes are in `CLAUDE.md` and each subproject's READM
 - **Content safety:** every story prompt carries an age-appropriate guardrail and avoids the
   child's named fears (`api/src/prompt.ts`).
 - **API access:** CORS is restricted to the app and marketing origins plus localhost (no
-  wildcard). An optional shared secret (`YARNIA_API_TOKEN`) gates every product route behind an
-  `X-Yarnia-Token` header when set; the webhook stays on its own HMAC check. User-supplied
-  story `choice` text is length-capped and stripped of prompt-delimiter characters before it
-  reaches the LLM. For abuse protection in production, enable Cloudflare's rate-limiting rules
-  on the `api.yarnia.quest` route (zero-config, set in the Cloudflare dashboard).
+  wildcard). An optional shared secret gates every product route: set `YARNIA_API_TOKEN` on the
+  Worker and build the client with `--dart-define=API_TOKEN=...`, and the app sends a matching
+  `X-Yarnia-Token` header on every call (left unset, the API is open and nothing breaks). The
+  webhook stays on its own HMAC check (5-minute replay window). User-supplied story `choice`
+  text is length-capped and stripped of prompt-delimiter characters before it reaches the LLM.
+  For abuse protection in production, enable Cloudflare's rate-limiting rules on the
+  `api.yarnia.quest` route (zero-config, set in the Cloudflare dashboard).
 
 ## Reliability and graceful degradation
 

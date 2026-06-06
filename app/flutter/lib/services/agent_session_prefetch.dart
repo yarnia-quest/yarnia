@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:permission_handler/permission_handler.dart';
+import '../api_config.dart';
 
 /// Result of GET /agent/session — the handful of fields AgentScreen needs to start
 /// the ElevenLabs conversation. Kept as a plain holder so it can be cached and handed
@@ -52,7 +53,7 @@ Future<AgentSessionData>? takeAgentSession(String childId) {
 }
 
 Future<AgentSessionData> _fetch(String apiBase, String childId) async {
-  final res = await http.get(Uri.parse('$apiBase/agent/session?childId=$childId'));
+  final res = await http.get(Uri.parse('$apiBase/agent/session?childId=$childId'), headers: apiHeaders());
   if (res.statusCode != 200) {
     throw Exception('Session ${res.statusCode}: ${res.body}');
   }

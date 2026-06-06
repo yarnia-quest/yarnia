@@ -55,7 +55,7 @@ export async function verifyWebhookSignature(
   if (!parsed) return false;
 
   const nowSecs = opts.nowSecs ?? Math.floor(Date.now() / 1000);
-  const tolerance = opts.toleranceSecs ?? 30 * 60; // 30 minutes, per ElevenLabs guidance
+  const tolerance = opts.toleranceSecs ?? 5 * 60; // 5 minutes: tight replay window, ample for network delay
   if (Math.abs(nowSecs - parsed.timestamp) > tolerance) return false;
 
   const key = await crypto.subtle.importKey(

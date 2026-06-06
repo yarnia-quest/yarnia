@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import '../api_config.dart';
 import '../widgets/starfield.dart';
 import '../theme.dart';
 
@@ -58,7 +59,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     try {
       final res = await http.post(
         Uri.parse('${widget.apiBase}/child'),
-        headers: {'Content-Type': 'application/json'},
+        headers: apiHeaders(json: true),
         body: jsonEncode({'name': _nameController.text.trim(), 'age': _age}),
       );
       if (res.statusCode != 200) {

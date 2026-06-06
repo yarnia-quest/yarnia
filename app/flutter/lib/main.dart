@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'api_config.dart';
 import 'screens/onboarding_screen.dart';
 import 'screens/greeting_screen.dart';
 import 'screens/agent_screen.dart';
@@ -153,6 +154,7 @@ class _YarniaRootState extends State<YarniaRoot> {
     try {
       final res = await http.get(
         Uri.parse('$_apiBase/child/$childId/sessions'),
+        headers: apiHeaders(),
       );
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body) as Map<String, dynamic>;
@@ -166,11 +168,13 @@ class _YarniaRootState extends State<YarniaRoot> {
   Future<void> _handleChoice(String choice) async {
     final childId = _childId;
     if (childId == null) return;
-    setState(() => _screen = 'playback');
+    // Show a "weaving your story" state while POST /story runs (gen + narration can take a few
+    // seconds) instead of flashing an empty playback screen.
+    setState(() => _screen = 'generating');
     try {
       final res = await http.post(
         Uri.parse('$_apiBase/story'),
-        headers: {'Content-Type': 'application/json'},
+        headers: apiHeaders(json: true),
         body: jsonEncode({'childId': childId, 'choice': choice}),
       );
       if (res.statusCode == 200) {
@@ -180,10 +184,17 @@ class _YarniaRootState extends State<YarniaRoot> {
           // POST /story returns `audio` already as a full data: URI
           // (data:audio/mpeg;base64,...) or null. PlaybackScreen plays it as-is.
           _audioUrl = data['audio'] as String?;
+          _screen = 'playback';
         });
+      } else {
+        // Surface the failure instead of a blank playback screen: return to co-creation so
+        // the parent can try another idea.
+        debugPrint('Story request failed: ${res.statusCode} ${res.body}');
+        if (mounted) setState(() => _screen = 'cocreation');
       }
     } catch (e) {
       debugPrint('Story fetch failed: $e');
+      if (mounted) setState(() => _screen = 'cocreation');
     }
   }
 
@@ -238,6 +249,27 @@ class _YarniaRootState extends State<YarniaRoot> {
       'cocreation' => CoCreationScreen(
           childName: childName,
           onChoice: _handleChoice,
+        ),
+      'generating' => const Scaffold(
+          backgroundColor: navy,
+          body: Stack(
+            children: [
+              Positioned.fill(child: Starfield()),
+              Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text('🌙', style: TextStyle(fontSize: 40)),
+                    SizedBox(height: 20),
+                    Text(
+                      'Weaving your story…',
+                      style: TextStyle(fontFamily: 'Lora', color: cream, fontSize: 16, letterSpacing: 1),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       _ => PlaybackScreen(
           childName: childName,
