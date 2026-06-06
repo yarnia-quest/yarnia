@@ -86,9 +86,14 @@ Backend endpoints (`api/src/index.ts`):
 - `GET  /audio-url/:key` - signed URL for stored narration (replay)
 - `GET  /share/:shareToken` - public HTML page for a saved story ("send to grandma")
 - `POST /checkout` - start the EUR 8/month subscription (Mollie hosted checkout)
+- `POST /payments/webhook` - Mollie payment callback; grants the subscription after re-fetching
+  and confirming the payment status (never trusts the callback body)
+- `GET  /healthz` - readiness probe reporting which dependencies are configured
 
-Child-scoped routes require the `X-Child-Token` header (minted at onboarding, stored hashed).
-Write routes are rate-limited per IP; the optional `X-Yarnia-Token` gate can lock the whole API.
+Child-scoped routes require the `X-Child-Token` header (the primary per-request auth, minted at
+onboarding and stored hashed). Write routes are rate-limited per IP; the free tier allows a few
+stories per child, after which `POST /story` returns `402 subscription_required`. The optional
+`X-Yarnia-Token` is a secondary network gate on top of the child token.
 
 ## Stack
 
@@ -130,7 +135,7 @@ More detail and worktree/CI notes are in `CLAUDE.md` and each subproject's READM
 
 ## Tests and CI
 
-- `api/` has 129 passing unit tests plus integration tests (Vitest). Run `npm test` in `api/`.
+- `api/` has 138 passing unit tests plus integration tests (Vitest). Run `npm test` in `api/`.
 - GitHub Actions deploy on push by path: `deploy-api.yml`, `deploy-app.yml`, `deploy.yml`
   (marketing), and `push-schema.yml` (InstantDB schema + permissions as code).
 - The demo-critical logic (content-safety guardrail + per-child memory in
@@ -179,17 +184,23 @@ More detail and worktree/CI notes are in `CLAUDE.md` and each subproject's READM
 - Session persistence is webhook-first (survives the phone locking); the client confirms with
   a backoff poll rather than a tight loop.
 - **Observability:** every request path emits structured JSON logs, and errors/analytics
-  (`story_created`, `child_created`, `checkout_*`) are forwarded to optional `ERROR_WEBHOOK` /
-  `ANALYTICS_WEBHOOK` collectors (`api/src/observability.ts`).
+  (`story_created` with token + estimated USD cost, `child_created`, `checkout_*`,
+  `subscription_activated`) are forwarded to optional `ERROR_WEBHOOK` / `ANALYTICS_WEBHOOK`
+  collectors (`api/src/observability.ts`). `GET /healthz` reports dependency readiness for an
+  uptime monitor.
+- **Cost control:** each story's marginal LLM + TTS spend is estimated and logged
+  (`api/src/usage.ts`), and a free-tier quota caps runaway spend on unpaid accounts.
 - **Offline-friendly replay:** narration mp3s are cached on-device after first play, so past
   stories replay from history without re-downloading.
 
 ## Pricing and monetization
 
 EUR 8/month, positioned below the "do I really need this" threshold (Spotify EUR 10, Calm
-EUR 8). Payments are live via Mollie: `POST /checkout` returns a hosted-checkout URL (set
-`MOLLIE_API_KEY`, or a static `MOLLIE_PAYMENT_LINK` fallback), and the app surfaces a
-"Unlock unlimited nights · EUR 8/mo" subscribe flow.
+EUR 8). Payments are live via Mollie and **enforced**: every child gets a small free tier, then
+`POST /story` returns `402 subscription_required` until they subscribe. `POST /checkout` returns
+a hosted-checkout URL (set `MOLLIE_API_KEY`, or a static `MOLLIE_PAYMENT_LINK` fallback) with the
+childId in metadata; `POST /payments/webhook` confirms the payment with Mollie and flips the
+child to subscribed. The app surfaces a "Unlock unlimited nights · EUR 8/mo" subscribe flow.
 
 ## Known limitations / roadmap
 

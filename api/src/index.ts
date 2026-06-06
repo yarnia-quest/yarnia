@@ -8,10 +8,11 @@ import { createStory, type StoryDeps } from "./story";
 import { createAgentSession, getSignedUrl, type ConversationTurn } from "./agent";
 import { persistSession, persistAgentSession, type SaveSessionInput } from "./session";
 import { verifyWebhookSignature } from "./webhook";
-import { createCheckout, type CheckoutResult } from "./payments";
+import { createCheckout, getPaymentStatus, type CheckoutResult } from "./payments";
 import { generateChildToken, hashToken, verifyChildToken } from "./auth";
 import { createRateLimiter } from "./ratelimit";
 import { createTelemetry } from "./observability";
+import { estimateStoryCost } from "./usage";
 
 // Bindings come from api/.dev.vars locally (generated from api/.env) and from
 // `wrangler secret put` / GitHub Actions in production. Never hardcoded. See api/.env.example.
@@ -24,10 +25,13 @@ type Bindings = {
   ELEVENLABS_WEBHOOK_SECRET: string;
   INSTANT_APP_ID: string;
   INSTANT_ADMIN_TOKEN: string;
-  // Optional shared secret. When set (via `wrangler secret put YARNIA_API_TOKEN`), product
-  // routes require a matching `X-Yarnia-Token` header. Left unset it is a no-op, so local dev
-  // and tests need no token. The webhook (HMAC-verified) and health route are never gated.
+  // SECONDARY network gate, on top of the PRIMARY per-child auth (X-Child-Token, always
+  // enforced). When set (`wrangler secret put YARNIA_API_TOKEN`), all product routes also
+  // require a matching `X-Yarnia-Token` header — a coarse "is this our app" check. Optional so
+  // local dev/tests need no token; the real per-request authorization is the child token.
   YARNIA_API_TOKEN?: string;
+  // Set in local dev (.dev.vars) to allow http://localhost CORS; unset in production.
+  ALLOW_LOCALHOST_CORS?: string;
   // Payments (Mollie). MOLLIE_API_KEY enables live checkout; MOLLIE_PAYMENT_LINK is a static
   // fallback hosted-checkout URL. APP_BASE_URL is the post-payment redirect target.
   MOLLIE_API_KEY?: string;
@@ -39,13 +43,14 @@ type Bindings = {
 };
 
 // Browser origins allowed to call the API. Non-browser clients (the Flutter mobile build)
-// send no Origin header, so CORS never applies to them. Localhost (any port) is allowed for
-// local web dev. Everything else is rejected — no more wildcard `*`.
+// send no Origin header, so CORS never applies to them. Localhost is allowed ONLY when
+// ALLOW_LOCALHOST_CORS is set (local dev / `.dev.vars`); production leaves it unset so no
+// localhost origin is ever reflected. Everything else is rejected — no wildcard `*`.
 const ALLOWED_ORIGINS = ["https://app.yarnia.quest", "https://yarnia.quest"];
-function corsOrigin(origin: string): string | null {
+function corsOrigin(origin: string, allowLocalhost: boolean): string | null {
   if (!origin) return null;
   if (ALLOWED_ORIGINS.includes(origin)) return origin;
-  if (/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) return origin;
+  if (allowLocalhost && /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) return origin;
   return null;
 }
 
@@ -82,9 +87,13 @@ type AppDeps = StoryDeps & {
   // tests that don't exercise auth need not provide it (auth is skipped when absent).
   loadChildAuth?: (childId: string) => Promise<{ tokenHash: string | null } | null>;
   // Payments: creates a Mollie checkout (only present when MOLLIE_API_KEY is configured).
-  checkout?: (redirectUrl: string) => Promise<CheckoutResult>;
+  checkout?: (args: { redirectUrl: string; childId?: string; webhookUrl?: string }) => Promise<CheckoutResult>;
   // Static hosted-checkout fallback URL (when no live key).
   paymentLink?: string;
+  // Confirms a payment's real status with Mollie (for the webhook).
+  paymentStatus?: (paymentId: string) => Promise<{ status: string; metadata: Record<string, unknown> }>;
+  // Flips a child to subscribed (called after a confirmed paid checkout).
+  markSubscribed?: (childId: string) => Promise<void>;
 };
 
 // Minimal view of a session for the public /share page.
@@ -212,11 +221,24 @@ function defaultDeps(env: Bindings): AppDeps {
       if (!row) return null;
       return { tokenHash: row.tokenHash ?? null };
     },
-    // Live Mollie checkout, only when a key is configured.
+    // Live Mollie checkout, only when a key is configured. childId rides in metadata so the
+    // webhook can grant the subscription to the right profile.
     checkout: env.MOLLIE_API_KEY
-      ? (redirectUrl) => createCheckout({ apiKey: env.MOLLIE_API_KEY as string, redirectUrl })
+      ? ({ redirectUrl, childId, webhookUrl }) =>
+          createCheckout({
+            apiKey: env.MOLLIE_API_KEY as string,
+            redirectUrl,
+            webhookUrl,
+            metadata: childId ? { childId } : undefined,
+          })
       : undefined,
     paymentLink: env.MOLLIE_PAYMENT_LINK,
+    paymentStatus: env.MOLLIE_API_KEY
+      ? (paymentId) => getPaymentStatus(paymentId, { apiKey: env.MOLLIE_API_KEY as string })
+      : undefined,
+    markSubscribed: async (childId) => {
+      await db.transact(db.tx.children[childId].update({ subscribed: true }));
+    },
   };
 }
 
@@ -228,7 +250,7 @@ const writeLimiter = createRateLimiter({ limit: 60, windowMs: 60_000 }); // 60 w
 export function createApp(makeDeps: (env: Bindings) => AppDeps = defaultDeps) {
   const app = new Hono<{ Bindings: Bindings }>();
 
-  app.use("/*", cors({ origin: corsOrigin }));
+  app.use("/*", cors({ origin: (origin, c) => corsOrigin(origin, !!c.env?.ALLOW_LOCALHOST_CORS) }));
 
   // Optional shared-secret gate. No-op until YARNIA_API_TOKEN is set, so nothing breaks
   // before the secret is provisioned. Skips CORS preflight, the health route, and the
@@ -237,8 +259,17 @@ export function createApp(makeDeps: (env: Bindings) => AppDeps = defaultDeps) {
     const required = c.env?.YARNIA_API_TOKEN;
     if (!required || c.req.method === "OPTIONS") return next();
     const path = c.req.path;
-    // Public routes: health, the HMAC-verified webhook, and the shareable story page.
-    if (path === "/" || path === "/agent/webhook" || path.startsWith("/share/")) return next();
+    // Public routes: health, the HMAC-verified agent webhook, the Mollie payments webhook
+    // (verified by re-fetching status from Mollie), and the shareable story page.
+    if (
+      path === "/" ||
+      path === "/healthz" ||
+      path === "/agent/webhook" ||
+      path === "/payments/webhook" ||
+      path.startsWith("/share/")
+    ) {
+      return next();
+    }
     if (c.req.header("x-yarnia-token") !== required) {
       return c.json({ error: "missing or invalid API token" }, 401);
     }
@@ -271,6 +302,51 @@ export function createApp(makeDeps: (env: Bindings) => AppDeps = defaultDeps) {
 
   app.get("/", (c) => c.json({ service: "yarnia-api", ok: true }));
 
+  // GET /healthz — readiness probe. Reports whether each dependency is configured so a monitor
+  // can alert before users hit failures (no secrets are revealed, only presence booleans).
+  app.get("/healthz", (c) => {
+    const e = c.env ?? ({} as Bindings);
+    const checks = {
+      instant: !!e.INSTANT_APP_ID && !!e.INSTANT_ADMIN_TOKEN,
+      story_gen: !!e.QWEN_API_KEY,
+      voice: !!e.ELEVENLABS_API_KEY && !!e.ELEVENLABS_AGENT_ID,
+      webhook_secret: !!e.ELEVENLABS_WEBHOOK_SECRET,
+      payments: !!e.MOLLIE_API_KEY || !!e.MOLLIE_PAYMENT_LINK,
+    };
+    const ok = checks.instant && checks.story_gen && checks.voice;
+    return c.json({ ok, checks }, ok ? 200 : 503);
+  });
+
+  // POST /payments/webhook — Mollie notifies us of a payment status change with just the id.
+  // We never trust the body: we re-fetch the payment from Mollie, and only on a confirmed
+  // "paid" status grant the subscription to the childId carried in the payment metadata.
+  app.post("/payments/webhook", async (c) => {
+    const deps = makeDeps(c.env);
+    const telemetry = makeTelemetry(c);
+    if (!deps.paymentStatus || !deps.markSubscribed) return c.json({ ok: true, skipped: true });
+    // Mollie sends application/x-www-form-urlencoded: id=tr_xxx
+    let paymentId: string | undefined;
+    try {
+      const form = await c.req.parseBody();
+      paymentId = typeof form.id === "string" ? form.id : undefined;
+    } catch {
+      paymentId = undefined;
+    }
+    if (!paymentId) return c.json({ error: "missing payment id" }, 400);
+    try {
+      const { status, metadata } = await deps.paymentStatus(paymentId);
+      const childId = typeof metadata.childId === "string" ? metadata.childId : undefined;
+      if (status === "paid" && childId) {
+        await deps.markSubscribed(childId);
+        telemetry.track("subscription_activated", { childId, paymentId });
+      }
+      return c.json({ ok: true, status });
+    } catch (err) {
+      telemetry.error("payments_webhook_failed", { paymentId, message: String((err as Error)?.message ?? err) });
+      return c.json({ error: "webhook_failed" }, 502);
+    }
+  });
+
   // POST /story — { childId, choice? } -> { childId, choice, text, audio, audioKey, status }.
   // Stores audio in Instant Storage; returns both the base64 URI (for immediate playback) and the key
   // (for later replay via GET /audio/:key without re-synthesizing).
@@ -294,10 +370,21 @@ export function createApp(makeDeps: (env: Bindings) => AppDeps = defaultDeps) {
 
     const result = await createStory(childId, choice, deps);
     if (!result.ok) {
+      if (result.reason === "subscription_required") {
+        // Free tier exhausted: the client should surface the EUR 8/mo subscribe flow.
+        return c.json({ error: "subscription_required" }, 402);
+      }
       telemetry.error("story_child_not_found", { childId });
       return c.json({ error: result.reason }, 404);
     }
-    telemetry.track("story_created", { childId, hasAudio: result.audio != null });
+    // Cost visibility: estimate and record the marginal LLM/TTS spend of this story.
+    const cost = estimateStoryCost(result.text, result.audio != null);
+    telemetry.track("story_created", {
+      childId,
+      hasAudio: result.audio != null,
+      tokens: cost.tokens,
+      estUsd: cost.totalUsd,
+    });
 
     const audioBase64 = result.audio ?? null;
     const audioKey = audioBase64 ? `stories/${crypto.randomUUID()}.mp3` : null;
@@ -496,12 +583,18 @@ export function createApp(makeDeps: (env: Bindings) => AppDeps = defaultDeps) {
     if (ip && !writeLimiter.check(`checkout:${ip}`).allowed) {
       return c.json({ error: "rate_limited" }, 429);
     }
+    const body = await c.req.json<{ childId?: string }>().catch(() => ({}) as { childId?: string });
     const deps = makeDeps(c.env);
     const telemetry = makeTelemetry(c);
     if (deps.checkout) {
       try {
         const redirectUrl = c.env?.APP_BASE_URL ?? "https://app.yarnia.quest";
-        const result = await deps.checkout(redirectUrl);
+        const origin = new URL(c.req.url).origin;
+        const result = await deps.checkout({
+          redirectUrl,
+          childId: body.childId,
+          webhookUrl: `${origin}/payments/webhook`,
+        });
         telemetry.track("checkout_started", { paymentId: result.paymentId, mode: "live" });
         return c.json({ checkoutUrl: result.checkoutUrl, paymentId: result.paymentId, mode: "live" });
       } catch (err) {

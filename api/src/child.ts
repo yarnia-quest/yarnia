@@ -47,5 +47,6 @@ export async function loadChild(childId: string, query: InstantQuery): Promise<C
     themes: row.themes ?? [],
     fearsToAvoid: row.fearsToAvoid ?? [],
     pastSessions,
+    subscribed: row.subscribed === true,
   };
 }

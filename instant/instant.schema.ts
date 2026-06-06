@@ -34,6 +34,9 @@ const _schema = i.schema({
       // SHA-256 hash of the child's auth token (the raw token is returned to the client once
       // at onboarding and never stored). Child-scoped API routes require the matching token.
       tokenHash: i.string().optional(),
+      // Subscription flag, flipped true by the Mollie payments webhook on a paid checkout.
+      // Free tier = a few stories; after that a subscription is required.
+      subscribed: i.boolean().optional(),
     }),
     // One bedtime session (an "episode"). Stores the full message chain (the archive,
     // for re-reading / continuing) plus a title + summary (the light recall layer that

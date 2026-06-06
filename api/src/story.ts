@@ -3,6 +3,7 @@
 // wires real ones (loadChild over InstantDB admin, generateStory over Qwen).
 import { buildStoryPrompt, type Child, type StoryPrompt } from "./prompt";
 import { isStorySafe, safeFallbackStory } from "./safety";
+import { quotaState } from "./usage";
 
 export type StoryDeps = {
   loadChild: (childId: string) => Promise<Child | null>;
@@ -12,7 +13,8 @@ export type StoryDeps = {
 
 export type CreateStoryResult =
   | { ok: true; text: string; audio: string | null; prompt: StoryPrompt }
-  | { ok: false; reason: "child_not_found" };
+  | { ok: false; reason: "child_not_found" }
+  | { ok: false; reason: "subscription_required" };
 
 export async function createStory(
   childId: string,
@@ -21,6 +23,12 @@ export async function createStory(
 ): Promise<CreateStoryResult> {
   const child = await deps.loadChild(childId);
   if (!child) return { ok: false, reason: "child_not_found" };
+
+  // Free tier: a few stories, then a subscription is required (the checkout actually gates
+  // value, and runaway LLM/TTS spend on free accounts is bounded).
+  if (!quotaState(child.pastSessions.length, child.subscribed === true).allowed) {
+    return { ok: false, reason: "subscription_required" };
+  }
 
   const prompt = buildStoryPrompt(child, choice);
   let text = await deps.generate(prompt);

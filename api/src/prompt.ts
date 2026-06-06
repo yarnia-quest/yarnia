@@ -22,6 +22,7 @@ export type Child = {
   themes: string[];
   fearsToAvoid: string[];
   pastSessions: PastSession[];
+  subscribed?: boolean;
 };
 
 export type StoryPrompt = {

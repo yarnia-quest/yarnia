@@ -65,6 +65,68 @@ describe("per-child token enforcement", () => {
   });
 });
 
+function childWith(n: number, subscribed = false) {
+  return { ...lisa, subscribed, pastSessions: Array.from({ length: n }, () => ({ summary: "s", charactersUsed: [] })) };
+}
+
+describe("free-tier quota + subscription gating", () => {
+  it("402s once the free story limit is reached for a non-subscriber", async () => {
+    const app = appWith({ loadChild: async () => childWith(5, false) });
+    const res = await post(app, "/story", { childId: "lisa-1", choice: "a fox" });
+    expect(res.status).toBe(402);
+    expect((await res.json() as { error: string }).error).toBe("subscription_required");
+  });
+
+  it("allows unlimited stories for a subscriber", async () => {
+    const app = appWith({ loadChild: async () => childWith(50, true) });
+    expect((await post(app, "/story", { childId: "lisa-1", choice: "a fox" })).status).toBe(200);
+  });
+});
+
+describe("GET /healthz", () => {
+  it("reports dependency checks and is 503 when core deps are missing", async () => {
+    const res = await appWith().request("/healthz");
+    const json = (await res.json()) as { ok: boolean; checks: Record<string, boolean> };
+    expect(json.checks).toHaveProperty("instant");
+    expect(json.checks).toHaveProperty("payments");
+    // No env wired in this test -> not ready.
+    expect(res.status).toBe(503);
+    expect(json.ok).toBe(false);
+  });
+});
+
+describe("POST /payments/webhook", () => {
+  it("marks the child subscribed when Mollie confirms a paid payment", async () => {
+    const marked: string[] = [];
+    const app = appWith({
+      paymentStatus: async () => ({ status: "paid", metadata: { childId: "child-9" } }),
+      markSubscribed: async (id: string) => { marked.push(id); },
+    });
+    const res = await app.request("/payments/webhook", {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: "id=tr_123",
+    });
+    expect(res.status).toBe(200);
+    expect(marked).toEqual(["child-9"]);
+  });
+
+  it("does not subscribe when the payment is not paid", async () => {
+    const marked: string[] = [];
+    const app = appWith({
+      paymentStatus: async () => ({ status: "open", metadata: { childId: "child-9" } }),
+      markSubscribed: async (id: string) => { marked.push(id); },
+    });
+    const res = await app.request("/payments/webhook", {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: "id=tr_123",
+    });
+    expect(res.status).toBe(200);
+    expect(marked).toEqual([]);
+  });
+});
+
 describe("POST /checkout", () => {
   it("returns a live Mollie checkout url when configured", async () => {
     const checkout = vi.fn(async () => ({ checkoutUrl: "https://mollie/checkout/x", paymentId: "tr_1" }));

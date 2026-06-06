@@ -8,6 +8,7 @@ export type CheckoutOpts = {
   description?: string;
   redirectUrl: string;
   webhookUrl?: string;
+  metadata?: Record<string, unknown>;
   baseUrl?: string;
   fetch?: typeof fetch;
 };
@@ -26,6 +27,7 @@ export async function createCheckout(opts: CheckoutOpts): Promise<CheckoutResult
     redirectUrl: opts.redirectUrl,
   };
   if (opts.webhookUrl) body.webhookUrl = opts.webhookUrl;
+  if (opts.metadata) body.metadata = opts.metadata;
 
   const res = await doFetch(`${baseUrl}/v2/payments`, {
     method: "POST",
@@ -42,4 +44,22 @@ export async function createCheckout(opts: CheckoutOpts): Promise<CheckoutResult
   const checkoutUrl = data?._links?.checkout?.href;
   if (!checkoutUrl) throw new Error("Mollie response missing checkout url");
   return { checkoutUrl, paymentId: data.id ?? "" };
+}
+
+export type PaymentStatus = { status: string; metadata: Record<string, unknown> };
+
+// Fetches a payment's current status + metadata (used by the webhook to confirm a paid
+// checkout before granting a subscription — never trust the webhook body alone).
+export async function getPaymentStatus(
+  paymentId: string,
+  opts: { apiKey: string; baseUrl?: string; fetch?: typeof fetch },
+): Promise<PaymentStatus> {
+  const doFetch = opts.fetch ?? fetch;
+  const baseUrl = opts.baseUrl ?? DEFAULT_BASE_URL;
+  const res = await doFetch(`${baseUrl}/v2/payments/${encodeURIComponent(paymentId)}`, {
+    headers: { authorization: `Bearer ${opts.apiKey}` },
+  });
+  if (!res.ok) throw new Error(`Mollie get payment failed: ${res.status}`);
+  const data = (await res.json()) as { status?: string; metadata?: Record<string, unknown> };
+  return { status: data.status ?? "unknown", metadata: data.metadata ?? {} };
 }

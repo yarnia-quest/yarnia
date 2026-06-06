@@ -49,9 +49,13 @@ describe("CORS allowlist", () => {
     expect(evil.headers.get("access-control-allow-origin")).not.toBe("https://evil.example.com");
   });
 
-  it("allows localhost for local dev", async () => {
-    const res = await appWith().request("/", { headers: { Origin: "http://localhost:8080" } });
-    expect(res.headers.get("access-control-allow-origin")).toBe("http://localhost:8080");
+  it("allows localhost only when ALLOW_LOCALHOST_CORS is set (dev), not in prod", async () => {
+    // Production (flag unset): localhost is NOT reflected.
+    const prod = await appWith().request("/", { headers: { Origin: "http://localhost:8080" } });
+    expect(prod.headers.get("access-control-allow-origin")).not.toBe("http://localhost:8080");
+    // Dev (flag set): localhost is allowed.
+    const dev = await appWith().request("/", { headers: { Origin: "http://localhost:8080" } }, { ALLOW_LOCALHOST_CORS: "1" });
+    expect(dev.headers.get("access-control-allow-origin")).toBe("http://localhost:8080");
   });
 });
 
