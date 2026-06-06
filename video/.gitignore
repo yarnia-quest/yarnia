@@ -1,0 +1,11 @@
+node_modules
+dist
+.DS_Store
+.env
+
+# The repo-root .gitignore has a global `*.mp3`; re-include the demo's generated speech
+# clips so the video is reproducible (and the committed mp4 has its source audio).
+!public/*.mp3
+
+# The rendered demo (out/yarnia-demo.mp4) IS tracked on purpose so the demo video
+# ships with the repo. Re-render with: npx remotion render YarniaDemo out/yarnia-demo.mp4
