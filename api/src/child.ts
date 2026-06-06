@@ -3,7 +3,9 @@
 // fake in tests) so the mapping logic is unit-testable with no network.
 import type { Child, PastSession } from "./prompt";
 
-export type InstantQuery = (q: unknown) => Promise<any>;
+// The admin SDK's db.query is strongly typed to the schema; loadChild only needs the
+// dynamic query object, so the param is `any` (the result mapping is what we test).
+export type InstantQuery = (q: any) => Promise<any>;
 
 type SessionRow = { summary?: string; charactersUsed?: string[]; createdAt?: number };
 

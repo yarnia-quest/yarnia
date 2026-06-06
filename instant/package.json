@@ -4,6 +4,7 @@
   "type": "module",
   "description": "InstantDB schema + permissions as code (applied by .github/workflows/push-schema.yml)",
   "dependencies": {
+    "@instantdb/admin": "^1.0.43",
     "@instantdb/core": "latest"
   }
 }

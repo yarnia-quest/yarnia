@@ -1,17 +1,32 @@
 import { describe, it, expect } from "vitest";
-import app from "../src/index";
+import app, { createApp } from "../src/index";
+import type { StoryDeps } from "../src/story";
+import type { Child } from "../src/prompt";
 
-// Helper: POST JSON to a route, optionally with fake bindings (env).
-function post(path: string, body: unknown, env?: Record<string, string>) {
-  return app.request(
-    path,
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
-    },
-    env,
-  );
+const lisa: Child = {
+  name: "Lisa",
+  age: 4,
+  favoriteCharacters: ["dragon"],
+  themes: ["friendship"],
+  fearsToAvoid: ["thunder"],
+  pastSessions: [{ summary: "a dragon who shared", charactersUsed: ["dragon"] }],
+};
+
+// Build a test app whose deps are fakes (no InstantDB / Qwen), so the route is fully
+// covered offline. The route never touches real services in these tests.
+function appWith(deps: Partial<StoryDeps>) {
+  return createApp(() => ({
+    loadChild: deps.loadChild ?? (async () => lisa),
+    generate: deps.generate ?? (async () => "Once upon a time, Lisa..."),
+  }));
+}
+
+function post(target: ReturnType<typeof createApp>, body: unknown) {
+  return target.request("/story", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
 }
 
 describe("GET /", () => {
@@ -22,27 +37,29 @@ describe("GET /", () => {
   });
 });
 
-describe("POST /story (frozen contract)", () => {
-  it("400s when childId is missing", async () => {
-    const res = await post("/story", {});
+describe("POST /story", () => {
+  it("400s when childId is missing (without building any deps)", async () => {
+    // Uses the default app: deps factory must NOT run for a bad request.
+    const res = await post(createApp(), {});
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual({ error: "childId required" });
   });
 
-  it("echoes the contract shape for a valid request", async () => {
-    const res = await post("/story", { childId: "lisa", choice: "dragon" });
+  it("returns the generated story for a known child", async () => {
+    const res = await post(appWith({}), { childId: "lisa-1", choice: "dragon" });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
-      childId: "lisa",
+      childId: "lisa-1",
       choice: "dragon",
-      text: null,
+      text: "Once upon a time, Lisa...",
       audio: null,
-      status: "not_implemented",
+      status: "ok",
     });
   });
 
-  it("defaults choice to null when omitted", async () => {
-    const res = await post("/story", { childId: "lisa" });
-    expect(await res.json()).toMatchObject({ childId: "lisa", choice: null });
+  it("404s when the child is not found", async () => {
+    const res = await post(appWith({ loadChild: async () => null }), { childId: "ghost" });
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: "child_not_found" });
   });
 });

@@ -1,5 +1,5 @@
-// InstantDB schema (shared app: Marketing waitlist now, product later).
-// Push: `npx instant-cli@latest push schema --app <INSTANT_APP_ID> --token <per_…>` (CI does this).
+// InstantDB schema (shared app: Marketing waitlist + the Yarnia product).
+// Push: `npx instant-cli@latest push schema --app <INSTANT_APP_ID> --token <admin>` (CI does this).
 // Docs: https://www.instantdb.com/docs/modeling-data
 import { i } from "@instantdb/core";
 
@@ -10,8 +10,29 @@ const _schema = i.schema({
       createdAt: i.number(),
       source: i.string().optional(),
     }),
+    // A child profile — the per-child memory that powers personalized, safe stories.
+    children: i.entity({
+      name: i.string(),
+      age: i.number(),
+      favoriteCharacters: i.json(),
+      themes: i.json(),
+      fearsToAvoid: i.json(),
+      createdAt: i.number(),
+    }),
+    // One bedtime session: a summary + characters used, so future stories remember it.
+    sessions: i.entity({
+      summary: i.string(),
+      charactersUsed: i.json(),
+      createdAt: i.number().indexed(),
+    }),
   },
-  links: {},
+  links: {
+    // A child has many sessions; each session belongs to one child.
+    childSessions: {
+      forward: { on: "sessions", has: "one", label: "child" },
+      reverse: { on: "children", has: "many", label: "sessions" },
+    },
+  },
   rooms: {},
 });
 
