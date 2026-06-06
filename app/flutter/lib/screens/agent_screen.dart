@@ -176,7 +176,7 @@ class _AgentScreenState extends State<AgentScreen> with TickerProviderStateMixin
       }
     } catch (e) {
       debugPrint('Agent bootstrap failed: $e');
-      if (mounted) setState(() => _error = e.toString());
+      if (mounted) setState(() => _error = 'Could not reach Yarnia. Check your connection and try again.');
     }
   }
 
@@ -244,6 +244,18 @@ class _AgentScreenState extends State<AgentScreen> with TickerProviderStateMixin
                       child: Text(
                         'Open Settings',
                         style: TextStyle(color: gold, fontFamily: 'Lora', fontSize: 16),
+                      ),
+                    ),
+                  ] else if (_error != null) ...[
+                    const SizedBox(height: 20),
+                    TextButton(
+                      onPressed: () {
+                        setState(() => _error = null);
+                        _bootstrap();
+                      },
+                      child: Text(
+                        'Try again',
+                        style: TextStyle(color: gold, fontFamily: 'serif', fontSize: 16),
                       ),
                     ),
                   ],
