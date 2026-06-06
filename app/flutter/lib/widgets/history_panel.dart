@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:just_audio/just_audio.dart';
@@ -213,10 +214,19 @@ class _StoryDetailSheetState extends State<_StoryDetailSheet> {
     super.dispose();
   }
 
+  // Native only: path_provider has no web implementation, so this is guarded behind
+  // !kIsWeb in _togglePlay (calling it on web throws MissingPluginException).
   Future<File> _cacheFile(String audioKey) async {
     final dir = await getApplicationDocumentsDirectory();
     final safe = audioKey.replaceAll('/', '_');
     return File('${dir.path}/yarnia_audio/$safe');
+  }
+
+  // Asks the server for a short-lived signed URL for this audio object.
+  Future<String> _signedAudioUrl(String audioKey) async {
+    final urlRes = await http.get(Uri.parse('${widget.apiBase}/audio-url/$audioKey'));
+    if (urlRes.statusCode != 200) throw Exception('URL fetch failed: ${urlRes.statusCode}');
+    return (jsonDecode(urlRes.body) as Map<String, dynamic>)['url'] as String;
   }
 
   Future<void> _togglePlay() async {
@@ -234,19 +244,21 @@ class _StoryDetailSheetState extends State<_StoryDetailSheet> {
 
     setState(() { _loading = true; _audioError = null; });
     try {
-      final cached = await _cacheFile(audioKey);
-
-      if (!await cached.exists()) {
-        // Ask server for the signed URL, then download and cache.
-        final urlRes = await http.get(Uri.parse('${widget.apiBase}/audio-url/$audioKey'));
-        if (urlRes.statusCode != 200) throw Exception('URL fetch failed: ${urlRes.statusCode}');
-        final url = (jsonDecode(urlRes.body) as Map<String, dynamic>)['url'] as String;
-        final bytes = (await http.get(Uri.parse(url))).bodyBytes;
-        await cached.parent.create(recursive: true);
-        await cached.writeAsBytes(bytes);
+      if (kIsWeb) {
+        // No filesystem in the browser (path_provider is native-only): stream straight
+        // from the signed URL. just_audio plays network URLs on web via an <audio> element.
+        await _player.setUrl(await _signedAudioUrl(audioKey));
+      } else {
+        // Native: cache to a file so replays are offline/instant.
+        final cached = await _cacheFile(audioKey);
+        if (!await cached.exists()) {
+          final url = await _signedAudioUrl(audioKey);
+          final bytes = (await http.get(Uri.parse(url))).bodyBytes;
+          await cached.parent.create(recursive: true);
+          await cached.writeAsBytes(bytes);
+        }
+        await _player.setFilePath(cached.path);
       }
-
-      await _player.setFilePath(cached.path);
       if (mounted) setState(() { _loading = false; _playing = true; });
       await _player.play();
 
