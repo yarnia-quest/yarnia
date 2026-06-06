@@ -5,6 +5,7 @@ import 'screens/greeting_screen.dart';
 import 'screens/agent_screen.dart';
 import 'screens/cocreation_screen.dart';
 import 'screens/playback_screen.dart';
+import 'widgets/history_panel.dart';
 import 'theme.dart';
 
 // Base URL of the api/ Worker — chosen at BUILD time via a --dart-define (no runtime
@@ -41,12 +42,30 @@ class YarniaRoot extends StatefulWidget {
 }
 
 class _YarniaRootState extends State<YarniaRoot> {
-  // greeting → agent (primary) → done
-  //                ↓ fallback
-  //           cocreation → playback
   String _screen = 'greeting';
   String? _storyText;
   String? _audioUrl;
+
+  @override
+  void initState() {
+    super.initState();
+    // Warm the history cache in the background so the panel opens instantly.
+    _prefetchHistory();
+  }
+
+  Future<void> _prefetchHistory() async {
+    try {
+      final res = await http.get(
+        Uri.parse('$_apiBase/child/$_demoChildId/sessions'),
+      );
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body) as Map<String, dynamic>;
+        _cachedSessions = (data['sessions'] as List).cast<Map<String, dynamic>>();
+      }
+    } catch (e) {
+      debugPrint('History prefetch failed: $e');
+    }
+  }
 
   Future<void> _handleChoice(String choice) async {
     setState(() => _screen = 'playback');
