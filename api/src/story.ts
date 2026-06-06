@@ -10,7 +10,7 @@ export type StoryDeps = {
 };
 
 export type CreateStoryResult =
-  | { ok: true; text: string; audio: string | null }
+  | { ok: true; text: string; audio: string | null; prompt: StoryPrompt }
   | { ok: false; reason: "child_not_found" };
 
 export async function createStory(
@@ -33,5 +33,5 @@ export async function createStory(
     console.error("synthesize failed, returning story without audio:", err);
   }
 
-  return { ok: true, text, audio };
+  return { ok: true, text, audio, prompt };
 }

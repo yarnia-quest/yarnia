@@ -2,7 +2,10 @@
 // demo-critical logic (content-safety guardrail + per-child memory) is fully testable.
 // Data model follows ideation/YARNIA.md.
 
+// The light recall layer loaded into prompts (NOT the full message archive — that stays
+// in InstantDB and is not injected, to keep prompts small). See ELLA-FINN-EXAMPLE.md.
 export type PastSession = {
+  title?: string;
   summary: string;
   charactersUsed: string[];
 };

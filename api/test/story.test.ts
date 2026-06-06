@@ -9,7 +9,7 @@ type AppDeps = {
   synthesize: (text: string) => Promise<string>;
   agentId: string;
   getSignedUrl: (agentId: string) => Promise<string>;
-  saveSession: (childId: string, input: { summary: string; charactersUsed: string[] }) => Promise<void>;
+  saveSession: (childId: string, input: unknown) => Promise<void>;
 };
 
 const lisa: Child = {

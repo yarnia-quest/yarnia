@@ -7,7 +7,13 @@ import type { Child, PastSession } from "./prompt";
 // dynamic query object, so the param is `any` (the result mapping is what we test).
 export type InstantQuery = (q: any) => Promise<any>;
 
-type SessionRow = { summary?: string; charactersUsed?: string[]; createdAt?: number };
+// messages (the full chain) is stored but intentionally NOT loaded into the recall layer.
+type SessionRow = {
+  title?: string;
+  summary?: string;
+  charactersUsed?: string[];
+  createdAt?: number;
+};
 
 export async function loadChild(childId: string, query: InstantQuery): Promise<Child | null> {
   const res = await query({
@@ -19,7 +25,11 @@ export async function loadChild(childId: string, query: InstantQuery): Promise<C
 
   const pastSessions: PastSession[] = [...((row.sessions as SessionRow[]) ?? [])]
     .sort((a, b) => (a.createdAt ?? 0) - (b.createdAt ?? 0))
-    .map((s) => ({ summary: s.summary ?? "", charactersUsed: s.charactersUsed ?? [] }));
+    .map((s) => ({
+      title: s.title,
+      summary: s.summary ?? "",
+      charactersUsed: s.charactersUsed ?? [],
+    }));
 
   return {
     name: row.name,

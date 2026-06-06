@@ -6,7 +6,7 @@ import { generateStory } from "./generate";
 import { synthesizeStory } from "./synthesize";
 import { createStory, type StoryDeps } from "./story";
 import { createAgentSession, getSignedUrl } from "./agent";
-import { persistSession } from "./session";
+import { persistSession, type SaveSessionInput } from "./session";
 
 // Bindings come from api/.dev.vars locally (generated from api/.env) and from
 // `wrangler secret put` / GitHub Actions in production. Never hardcoded. See api/.env.example.
@@ -22,7 +22,7 @@ type Bindings = {
 type AppDeps = StoryDeps & {
   agentId: string;
   getSignedUrl: (agentId: string) => Promise<string>;
-  saveSession: (childId: string, input: { summary: string; charactersUsed: string[] }) => Promise<void>;
+  saveSession: (childId: string, input: SaveSessionInput) => Promise<void>;
 };
 
 function defaultDeps(env: Bindings): AppDeps {
@@ -37,7 +37,9 @@ function defaultDeps(env: Bindings): AppDeps {
       db.transact(
         db.tx.sessions[id()]
           .update({
+            title: input.title,
             summary: input.summary,
+            messages: input.messages,
             charactersUsed: input.charactersUsed,
             createdAt: Date.now(),
           })
@@ -73,7 +75,7 @@ export function createApp(makeDeps: (env: Bindings) => AppDeps = defaultDeps) {
     // ExecutionContext in unit tests, so guard.)
     try {
       c.executionCtx.waitUntil(
-        persistSession(childId, choice ?? "a gentle surprise", result.text, deps),
+        persistSession(childId, choice ?? "a gentle surprise", result.prompt, result.text, deps),
       );
     } catch {
       // no execution context (e.g. app.request in tests) — skip write-back

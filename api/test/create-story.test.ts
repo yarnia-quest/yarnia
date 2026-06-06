@@ -24,7 +24,8 @@ describe("createStory (orchestration)", () => {
     expect(prompt.system).toContain("thunder"); // safety from the child's fears
     expect(prompt.user.toLowerCase()).toContain("dragon"); // tonight's choice
     expect(synthesize).toHaveBeenCalledWith("Once upon a time, Lisa..."); // narrate the story text
-    expect(res).toEqual({ ok: true, text: "Once upon a time, Lisa...", audio: "BASE64AUDIO" });
+    expect(res).toMatchObject({ ok: true, text: "Once upon a time, Lisa...", audio: "BASE64AUDIO" });
+    if (res.ok) expect(res.prompt.system).toContain("Lisa"); // prompt returned for write-back
   });
 
   it("degrades to audio:null (story still succeeds) when synthesis fails", async () => {
@@ -35,7 +36,7 @@ describe("createStory (orchestration)", () => {
         throw new Error("ElevenLabs request failed: 401");
       }),
     });
-    expect(res).toEqual({ ok: true, text: "A calm story.", audio: null });
+    expect(res).toMatchObject({ ok: true, text: "A calm story.", audio: null });
   });
 
   it("returns child_not_found and never generates or synthesizes when child is missing", async () => {

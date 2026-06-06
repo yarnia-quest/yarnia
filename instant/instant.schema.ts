@@ -19,9 +19,13 @@ const _schema = i.schema({
       fearsToAvoid: i.json(),
       createdAt: i.number(),
     }),
-    // One bedtime session: a summary + characters used, so future stories remember it.
+    // One bedtime session (an "episode"). Stores the full message chain (the archive,
+    // for re-reading / continuing) plus a title + summary (the light recall layer that
+    // gets injected into future prompts). See ideation/ELLA-FINN-EXAMPLE.md.
     sessions: i.entity({
+      title: i.string().optional(),
       summary: i.string(),
+      messages: i.json().optional(), // full prompt/message chain: [{ role, content }, ...]
       charactersUsed: i.json(),
       createdAt: i.number().indexed(),
     }),
