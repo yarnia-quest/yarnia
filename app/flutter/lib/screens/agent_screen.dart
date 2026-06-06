@@ -39,6 +39,7 @@ class _AgentScreenState extends State<AgentScreen> with TickerProviderStateMixin
   bool _done = false;
   String? _error;
   String? _conversationId;
+  bool _storySaving = false;
 
   @override
   void initState() {
@@ -86,33 +87,43 @@ class _AgentScreenState extends State<AgentScreen> with TickerProviderStateMixin
   Future<void> _saveSession() async {
     final cid = _conversationId;
     if (cid == null) return;
+    if (mounted) setState(() => _storySaving = true);
     try {
       await http.post(
         Uri.parse('${widget.apiBase}/session/save'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({'childId': widget.childId, 'conversationId': cid}),
       );
-      // Worker needs ~15s to fetch transcript + synthesize audio + write to InstantDB.
-      // Invalidate now so any manual open fetches fresh, then warm the cache after the delay.
       invalidateHistoryCache();
-      Future.delayed(const Duration(seconds: 18), () => _prefetchHistory());
+      _pollUntilSaved();
     } catch (e) {
       debugPrint('session/save failed: $e');
+      if (mounted) setState(() => _storySaving = false);
     }
   }
 
-  Future<void> _prefetchHistory() async {
-    try {
-      final res = await http.get(
-        Uri.parse('${widget.apiBase}/child/${widget.childId}/sessions'),
-      );
-      if (res.statusCode == 200) {
-        final data = jsonDecode(res.body) as Map<String, dynamic>;
-        warmHistoryCache((data['sessions'] as List).cast<Map<String, dynamic>>());
+  Future<void> _pollUntilSaved() async {
+    final previousCount = _cachedSessions?.length ?? 0;
+    for (int i = 0; i < 10; i++) {
+      await Future.delayed(const Duration(seconds: 3));
+      try {
+        final res = await http.get(
+          Uri.parse('${widget.apiBase}/child/${widget.childId}/sessions'),
+        );
+        if (res.statusCode == 200) {
+          final data = jsonDecode(res.body) as Map<String, dynamic>;
+          final sessions = (data['sessions'] as List).cast<Map<String, dynamic>>();
+          if (sessions.length > previousCount) {
+            warmHistoryCache(sessions);
+            if (mounted) setState(() => _storySaving = false);
+            return;
+          }
+        }
+      } catch (e) {
+        debugPrint('Poll failed: $e');
       }
-    } catch (e) {
-      debugPrint('History prefetch after save failed: $e');
     }
+    if (mounted) setState(() => _storySaving = false);
   }
 
   bool _micDenied = false;
@@ -182,7 +193,7 @@ class _AgentScreenState extends State<AgentScreen> with TickerProviderStateMixin
 
   @override
   Widget build(BuildContext context) {
-    if (_done) return _DoneScreen(onRestart: widget.onDone, childId: widget.childId, apiBase: widget.apiBase);
+    if (_done) return _DoneScreen(onRestart: widget.onDone, childId: widget.childId, apiBase: widget.apiBase, storySaving: _storySaving);
 
     return Scaffold(
       backgroundColor: navy,
@@ -377,8 +388,9 @@ class _DoneScreen extends StatelessWidget {
   final VoidCallback onRestart;
   final String childId;
   final String apiBase;
+  final bool storySaving;
 
-  const _DoneScreen({required this.onRestart, required this.childId, required this.apiBase});
+  const _DoneScreen({required this.onRestart, required this.childId, required this.apiBase, required this.storySaving});
 
   @override
   Widget build(BuildContext context) {
@@ -395,6 +407,28 @@ class _DoneScreen extends StatelessWidget {
               onPressed: () => showHistoryPanel(context, childId: childId, apiBase: apiBase),
             ),
           ),
+          if (storySaving)
+            Positioned(
+              bottom: 48,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SizedBox(
+                      width: 12, height: 12,
+                      child: CircularProgressIndicator(color: gold.withAlpha(160), strokeWidth: 1.5),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Saving story…',
+                      style: TextStyle(fontFamily: 'serif', color: cream.withAlpha(100), fontSize: 12, letterSpacing: 0.5),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           Center(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
