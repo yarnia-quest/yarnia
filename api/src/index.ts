@@ -5,28 +5,36 @@ import { loadChild } from "./child";
 import { generateStory } from "./generate";
 import { synthesizeStory } from "./synthesize";
 import { createStory, type StoryDeps } from "./story";
+import { createAgentSession, getSignedUrl } from "./agent";
 
 // Bindings come from api/.dev.vars locally (generated from api/.env) and from
 // `wrangler secret put` / GitHub Actions in production. Never hardcoded. See api/.env.example.
 type Bindings = {
   QWEN_API_KEY: string;
   ELEVENLABS_API_KEY: string;
+  ELEVENLABS_AGENT_ID: string;
   INSTANT_APP_ID: string;
   INSTANT_ADMIN_TOKEN: string;
 };
 
-// Real story dependencies, built from the Worker env: loadChild over the InstantDB admin
-// SDK, generate over Qwen. Injectable so tests pass fakes (see createApp).
-function defaultDeps(env: Bindings): StoryDeps {
+// Everything the routes need, built from the Worker env. Injectable so tests pass fakes.
+type AppDeps = StoryDeps & {
+  agentId: string;
+  getSignedUrl: (agentId: string) => Promise<string>;
+};
+
+function defaultDeps(env: Bindings): AppDeps {
   const db = init({ appId: env.INSTANT_APP_ID, adminToken: env.INSTANT_ADMIN_TOKEN });
   return {
     loadChild: (childId) => loadChild(childId, db.query.bind(db)),
     generate: (prompt) => generateStory(prompt, { apiKey: env.QWEN_API_KEY }),
     synthesize: (text) => synthesizeStory(text, { apiKey: env.ELEVENLABS_API_KEY }),
+    agentId: env.ELEVENLABS_AGENT_ID,
+    getSignedUrl: (agentId) => getSignedUrl(agentId, { apiKey: env.ELEVENLABS_API_KEY }),
   };
 }
 
-export function createApp(makeDeps: (env: Bindings) => StoryDeps = defaultDeps) {
+export function createApp(makeDeps: (env: Bindings) => AppDeps = defaultDeps) {
   const app = new Hono<{ Bindings: Bindings }>();
 
   // The Expo app (app/) calls this Worker cross-origin.
@@ -53,6 +61,29 @@ export function createApp(makeDeps: (env: Bindings) => StoryDeps = defaultDeps) 
       text: result.text,
       audio: result.audio ? `data:audio/mpeg;base64,${result.audio}` : null,
       status: "ok",
+    });
+  });
+
+  // GET /agent/session?childId=... — start a conversational ElevenLabs Agent session.
+  // Loads the child's memory (admin-only) and hands the client its dynamic variables +
+  // a signed URL. The client (Expo) starts the conversation with these. See
+  // infra/elevenlabs-agent.md. signedUrl may be null (public agent / signing unavailable).
+  app.get("/agent/session", async (c) => {
+    const childId = c.req.query("childId");
+    if (!childId) return c.json({ error: "childId required" }, 400);
+
+    const deps = makeDeps(c.env);
+    const result = await createAgentSession(childId, {
+      loadChild: deps.loadChild,
+      agentId: deps.agentId,
+      getSignedUrl: deps.getSignedUrl,
+    });
+    if (!result.ok) return c.json({ error: result.reason }, 404);
+
+    return c.json({
+      agentId: result.agentId,
+      dynamicVariables: result.dynamicVariables,
+      signedUrl: result.signedUrl,
     });
   });
 

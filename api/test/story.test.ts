@@ -1,7 +1,15 @@
 import { describe, it, expect } from "vitest";
 import app, { createApp } from "../src/index";
-import type { StoryDeps } from "../src/story";
 import type { Child } from "../src/prompt";
+
+// The app's deps: story deps plus the agent-session deps.
+type AppDeps = {
+  loadChild: (childId: string) => Promise<Child | null>;
+  generate: (prompt: unknown) => Promise<string>;
+  synthesize: (text: string) => Promise<string>;
+  agentId: string;
+  getSignedUrl: (agentId: string) => Promise<string>;
+};
 
 const lisa: Child = {
   name: "Lisa",
@@ -14,11 +22,13 @@ const lisa: Child = {
 
 // Build a test app whose deps are fakes (no InstantDB / Qwen), so the route is fully
 // covered offline. The route never touches real services in these tests.
-function appWith(deps: Partial<StoryDeps>) {
+function appWith(deps: Partial<AppDeps>) {
   return createApp(() => ({
     loadChild: deps.loadChild ?? (async () => lisa),
     generate: deps.generate ?? (async () => "Once upon a time, Lisa..."),
     synthesize: deps.synthesize ?? (async () => "BASE64AUDIO"),
+    agentId: deps.agentId ?? "agent_test",
+    getSignedUrl: deps.getSignedUrl ?? (async () => "wss://signed"),
   }));
 }
 
@@ -60,6 +70,36 @@ describe("POST /story", () => {
 
   it("404s when the child is not found", async () => {
     const res = await post(appWith({ loadChild: async () => null }), { childId: "ghost" });
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: "child_not_found" });
+  });
+});
+
+describe("GET /agent/session", () => {
+  it("400s when childId is missing", async () => {
+    const res = await createApp().request("/agent/session");
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "childId required" });
+  });
+
+  it("returns agentId + dynamic variables + signedUrl for a known child", async () => {
+    const res = await appWith({}).request("/agent/session?childId=lisa-1");
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      agentId: "agent_test",
+      dynamicVariables: {
+        child_name: "Lisa",
+        child_age: "4",
+        favorite_characters: "dragon",
+        fears_to_avoid: "thunder",
+        last_story: "a dragon who shared",
+      },
+      signedUrl: "wss://signed",
+    });
+  });
+
+  it("404s when the child is not found", async () => {
+    const res = await appWith({ loadChild: async () => null }).request("/agent/session?childId=ghost");
     expect(res.status).toBe(404);
     expect(await res.json()).toEqual({ error: "child_not_found" });
   });
