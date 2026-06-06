@@ -1,5 +1,6 @@
 # Yarnia dev commands
 # Run: just <recipe>   (requires https://github.com/casey/just)
+
 # ── API ──────────────────────────────────────────────────────────────────────
 
 # Start local API server (logs to stdout)
@@ -36,6 +37,20 @@ flutter-prod:
 # Build release APK against production API
 flutter-release:
     cd app/flutter && flutter build apk --dart-define-from-file=dart_defines/prod.json
+
+# ── Flutter web (app.yarnia.quest) ────────────────────────────────────────────
+
+# Run Flutter web (Chrome) against LOCAL API (requires: just api)
+flutter-web-local:
+    cd app/flutter && flutter run -d chrome --dart-define-from-file=dart_defines/local.json
+
+# Run Flutter web (Chrome) against PRODUCTION API
+flutter-web-prod:
+    cd app/flutter && flutter run -d chrome --dart-define-from-file=dart_defines/prod.json
+
+# Build web client (prod API) + deploy to app.yarnia.quest (requires CLOUDFLARE_API_TOKEN + CLOUDFLARE_ACCOUNT_ID)
+deploy-app:
+    cd app/flutter && flutter build web --release --dart-define-from-file=dart_defines/prod.json && npx wrangler deploy
 
 # ── Combined ─────────────────────────────────────────────────────────────────
 
