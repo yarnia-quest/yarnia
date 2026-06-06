@@ -96,8 +96,8 @@ export function createApp(makeDeps: (env: Bindings) => AppDeps = defaultDeps) {
   // a signed URL. The client (Expo) starts the conversation with these. See
   // infra/elevenlabs-agent.md. signedUrl may be null (public agent / signing unavailable).
   app.get("/agent/session", async (c) => {
+    // childId is optional: streaming voice can start anonymously and ask the name.
     const childId = c.req.query("childId");
-    if (!childId) return c.json({ error: "childId required" }, 400);
 
     const deps = makeDeps(c.env);
     const result = await createAgentSession(childId, {

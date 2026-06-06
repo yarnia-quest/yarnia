@@ -25,6 +25,8 @@ describe("toDynamicVariables", () => {
       session_state: "returning",
       active_story_series: "", // owl + dragon each appear once -> no series
       last_series_episode: "",
+      greeting:
+        "Hello again, Lisa. It's Yarnia. I remember our story about a gentle dragon who learned to share. Are you all cozy and ready for a new one tonight?",
     });
   });
 
@@ -41,6 +43,18 @@ describe("toDynamicVariables", () => {
     expect(v.active_story_series).toContain("Pip the owl");
     expect(v.active_story_series).toContain("the dragon");
     expect(v.last_series_episode).toBe("the dragon shared his stones");
+  });
+
+  it("handles an unknown child (no record yet): empty name, greeting asks for it", () => {
+    const v = toDynamicVariables(null);
+    expect(v.child_name).toBe(""); // empty = "we don't know them yet"
+    expect(v.child_age).toBe("");
+    expect(v.session_state).toBe("first_time");
+    expect(v.fears_to_avoid).toBe("nothing in particular"); // safe default, unknown fears
+    expect(v.last_story).toBe("");
+    expect(v.active_story_series).toBe("");
+    expect(v.greeting.toLowerCase()).toMatch(/name|call you/);
+    expect(v.greeting).not.toContain("{{"); // fully resolved, no literal vars
   });
 
   it("uses gentle fallbacks and first_time for a child with no history", () => {
@@ -60,6 +74,9 @@ describe("toDynamicVariables", () => {
     expect(v.session_state).toBe("first_time");
     expect(v.active_story_series).toBe("");
     expect(v.last_series_episode).toBe("");
+    // first-time greeting: welcomes by name, does NOT claim to remember a past story
+    expect(v.greeting).toContain("Hello Max");
+    expect(v.greeting).not.toMatch(/again|remember/i);
   });
 });
 
@@ -116,13 +133,25 @@ describe("createAgentSession (orchestration)", () => {
     });
   });
 
-  it("returns child_not_found when the child is missing", async () => {
+  it("returns child_not_found when a given childId is unknown", async () => {
     const res = await createAgentSession("nope", {
       loadChild: vi.fn(async () => null),
       agentId: "agent_1",
       getSignedUrl: vi.fn(),
     });
     expect(res).toEqual({ ok: false, reason: "child_not_found" });
+  });
+
+  it("creates an anonymous session when no childId (never calls loadChild)", async () => {
+    const loadChild = vi.fn();
+    const res = await createAgentSession(undefined, {
+      loadChild,
+      agentId: "agent_1",
+      getSignedUrl: vi.fn(async () => "wss://signed"),
+    });
+    expect(loadChild).not.toHaveBeenCalled();
+    expect(res).toMatchObject({ ok: true, agentId: "agent_1", signedUrl: "wss://signed" });
+    if (res.ok) expect(res.dynamicVariables.child_name).toBe("");
   });
 
   it("degrades to signedUrl:null (still returns variables) when signing fails", async () => {

@@ -78,10 +78,12 @@ describe("POST /story", () => {
 });
 
 describe("GET /agent/session", () => {
-  it("400s when childId is missing", async () => {
-    const res = await createApp().request("/agent/session");
-    expect(res.status).toBe(400);
-    expect(await res.json()).toEqual({ error: "childId required" });
+  it("returns an anonymous session (empty name, asks the name) when no childId", async () => {
+    const res = await appWith({}).request("/agent/session");
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as { dynamicVariables: { child_name: string; greeting: string } };
+    expect(json.dynamicVariables.child_name).toBe("");
+    expect(json.dynamicVariables.greeting.toLowerCase()).toMatch(/name/);
   });
 
   it("returns agentId + dynamic variables + signedUrl for a known child", async () => {
@@ -98,6 +100,8 @@ describe("GET /agent/session", () => {
         session_state: "returning",
         active_story_series: "",
         last_series_episode: "",
+        greeting:
+          "Hello again, Lisa. It's Yarnia. I remember our story about a dragon who shared. Are you all cozy and ready for a new one tonight?",
       },
       signedUrl: "wss://signed",
     });

@@ -15,9 +15,28 @@ export type DynamicVariables = {
   session_state: "first_time" | "returning";
   active_story_series: string;
   last_series_episode: string;
+  // Ready-to-speak opener. The "if we know the child" branch lives here (ElevenLabs first
+  // messages can't do conditionals) — the dashboard first message is just {{greeting}}.
+  greeting: string;
 };
 
-export function toDynamicVariables(child: Child): DynamicVariables {
+export function toDynamicVariables(child: Child | null): DynamicVariables {
+  // Anonymous: streaming voice may start before we know who is listening. Empty name signals
+  // "unknown" so the agent's first job is to ask; safety stays on with a neutral fears default.
+  if (!child) {
+    return {
+      child_name: "",
+      child_age: "",
+      favorite_characters: "",
+      fears_to_avoid: "nothing in particular",
+      last_story: "",
+      session_state: "first_time",
+      active_story_series: "",
+      last_series_episode: "",
+      greeting: "Hello! It's Yarnia, your bedtime storyteller. I'm so happy you're here. What's your name?",
+    };
+  }
+
   const sessions = child.pastSessions;
   const last = sessions[sessions.length - 1];
 
@@ -29,6 +48,12 @@ export function toDynamicVariables(child: Child): DynamicVariables {
   const recurring = [...counts.entries()].filter(([, n]) => n >= 2).map(([c]) => c);
   const hasSeries = recurring.length > 0;
 
+  // Branch the opener here, since the ElevenLabs first-message field can't: returning
+  // children get the memory moment; first-timers get a warm welcome with no false memory.
+  const greeting = last
+    ? `Hello again, ${child.name}. It's Yarnia. I remember our story about ${last.summary}. Are you all cozy and ready for a new one tonight?`
+    : `Hello ${child.name}. It's Yarnia, and I'm so glad you're here. Shall we find a cozy story for tonight?`;
+
   return {
     child_name: child.name,
     child_age: String(child.age),
@@ -38,6 +63,7 @@ export function toDynamicVariables(child: Child): DynamicVariables {
     session_state: sessions.length ? "returning" : "first_time",
     active_story_series: hasSeries ? recurring.join(" and ") : "",
     last_series_episode: hasSeries && last ? last.summary : "",
+    greeting,
   };
 }
 
@@ -71,9 +97,11 @@ export async function getSignedUrl(agentId: string, opts: SignedUrlOpts): Promis
   return data.signed_url;
 }
 
-// Orchestrates an agent session: load the child (admin-only), render their dynamic
-// variables, and fetch a signed URL. Signing is best-effort — a public agent can connect
-// with agentId + variables alone, so a signing failure degrades to signedUrl:null.
+// Orchestrates an agent session: load the child if we know one, render dynamic variables,
+// and fetch a signed URL. childId is OPTIONAL — streaming voice can start anonymously (we may
+// not know who is listening until they speak), in which case the agent greets and asks the
+// name. Signing is best-effort: a public agent connects with agentId + variables alone, so a
+// signing failure degrades to signedUrl:null. A given-but-unknown childId is still a 404.
 export type AgentSessionDeps = {
   loadChild: (childId: string) => Promise<Child | null>;
   agentId: string;
@@ -85,11 +113,14 @@ export type AgentSessionResult =
   | { ok: false; reason: "child_not_found" };
 
 export async function createAgentSession(
-  childId: string,
+  childId: string | undefined,
   deps: AgentSessionDeps,
 ): Promise<AgentSessionResult> {
-  const child = await deps.loadChild(childId);
-  if (!child) return { ok: false, reason: "child_not_found" };
+  let child: Child | null = null;
+  if (childId) {
+    child = await deps.loadChild(childId);
+    if (!child) return { ok: false, reason: "child_not_found" };
+  }
 
   const dynamicVariables = toDynamicVariables(child);
 
