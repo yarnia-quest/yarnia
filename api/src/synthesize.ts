@@ -3,8 +3,9 @@
 // `fetch` is injectable so the client is unit-testable with no key and no API spend.
 
 const DEFAULT_BASE_URL = "https://api.elevenlabs.io";
-// "George" — warm, captivating storyteller; a natural fit for bedtime. Override via opts.voiceId.
-const DEFAULT_VOICE = "JBFqnCBsd6RMkjVDRZzb";
+// "Clara" (Relaxing/Calm) — the same voice as the conversational agent, so the child hears
+// one consistent storyteller across /story and the live agent. Override via opts.voiceId.
+const DEFAULT_VOICE = "Qggl4b0xRMiqOwhPtVWT";
 const DEFAULT_MODEL = "eleven_multilingual_v2";
 
 export type SynthesizeOpts = {

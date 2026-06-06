@@ -31,7 +31,7 @@ export type StoryPrompt = {
 // The content-safety guardrail + memory injection. system = the constraints Yarnia must
 // always honor; user = tonight's specific ask (child, chosen character, what to remember).
 export function buildStoryPrompt(child: Child, choice: string): StoryPrompt {
-  const { name, age, fearsToAvoid, pastSessions } = child;
+  const { name, age, themes, fearsToAvoid, pastSessions } = child;
 
   const safety = [
     `You are Yarnia, a warm, calm bedtime storyteller for a ${age}-year-old child named ${name}.`,
@@ -49,6 +49,13 @@ export function buildStoryPrompt(child: Child, choice: string): StoryPrompt {
     `Tell ${name} a short bedtime story.`,
     `Tonight ${name} chose this to be in the story: ${choice}.`,
   ];
+  if (themes.length > 0) {
+    // Themes are the child's gentle preferences (e.g. friendship, courage). Soft steer,
+    // not a mandate — the chosen character above still leads the story.
+    userParts.push(
+      `${name} especially loves stories about ${themes.join(", ")}; gently lean that way if it fits naturally.`,
+    );
+  }
   if (pastSessions.length > 0) {
     // Recall layer: list the few most recent episodes (newest last) as notes the model
     // MAY draw on. Framed as optional so both modes work — serial callbacks when they

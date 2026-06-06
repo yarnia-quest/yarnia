@@ -37,6 +37,18 @@ describe("buildStoryPrompt", () => {
     expect(user.toLowerCase()).toContain("dragon");
   });
 
+  it("gently steers toward the child's themes when set", () => {
+    const { user } = buildStoryPrompt(lisa, "dragon");
+    // Lisa's theme is "friendship" — it should surface as a soft preference for the story.
+    expect(user.toLowerCase()).toContain("friendship");
+  });
+
+  it("omits theme guidance entirely when no themes are set", () => {
+    const noThemes: Child = { ...lisa, themes: [] };
+    const { user } = buildStoryPrompt(noThemes, "dragon");
+    expect(user.toLowerCase()).not.toContain("theme");
+  });
+
   it("injects recent episode notes as optional context, not forced continuity (the moat)", () => {
     const { user } = buildStoryPrompt(lisa, "dragon");
     // The past story surfaces as a recall note the model can use...

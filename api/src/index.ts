@@ -58,8 +58,8 @@ export function createApp(makeDeps: (env: Bindings) => AppDeps = defaultDeps) {
   app.get("/", (c) => c.json({ service: "yarnia-api", ok: true }));
 
   // POST /story — { childId, choice? } -> { childId, choice, text, audio, status }.
-  // Loads the child's memory, builds a safety-constrained prompt, generates the story.
-  // (audio stays null until the ElevenLabs slice lands.)
+  // Loads the child's memory, builds a safety-constrained prompt, generates the story, and
+  // narrates it via ElevenLabs (audio is a data: URI, or null if TTS fails — story still returns).
   app.post("/story", async (c) => {
     const body = await c.req
       .json<{ childId?: string; choice?: string }>()
