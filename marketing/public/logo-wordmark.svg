@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="520" height="160" viewBox="0 0 520 160" role="img" aria-label="Yarnia">
+  <title>Yarnia</title>
+  <desc>Yarnia logo: a gold crescent moon wound like a ball of yarn beside the wordmark "Yarnia" in a serif face.</desc>
+  <defs>
+    <linearGradient id="yw-moon" x1="38" y1="22" x2="116" y2="140" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffdd96"/>
+      <stop offset="0.55" stop-color="#f1c673"/>
+      <stop offset="1" stop-color="#c89a3f"/>
+    </linearGradient>
+    <radialGradient id="yw-sky" cx="64%" cy="30%" r="80%">
+      <stop offset="0" stop-color="#232a57"/>
+      <stop offset="0.6" stop-color="#161836"/>
+      <stop offset="1" stop-color="#0c0d1f"/>
+    </radialGradient>
+  </defs>
+
+  <!-- mark -->
+  <g>
+    <circle cx="80" cy="80" r="78" fill="url(#yw-sky)"/>
+    <circle cx="80" cy="80" r="77.5" fill="none" stroke="rgba(241,198,115,0.16)" stroke-width="1"/>
+    <g fill="#f6efe0">
+      <circle cx="36" cy="40" r="1.5" opacity="0.85"/>
+      <circle cx="120" cy="34" r="1.2" opacity="0.65"/>
+      <circle cx="128" cy="92" r="1.3" opacity="0.7"/>
+      <circle cx="44" cy="118" r="1.1" opacity="0.6"/>
+      <circle cx="26" cy="86" r="1" opacity="0.5"/>
+    </g>
+    <path d="M104 30 A52 52 0 1 0 104 130 A40 40 0 1 1 104 30 Z" fill="url(#yw-moon)"/>
+    <g fill="none" stroke="#1c1505" stroke-width="2.2" stroke-linecap="round" opacity="0.42">
+      <path d="M66 44 A46 46 0 0 0 66 116"/>
+      <path d="M58 52 A37 37 0 0 0 58 108"/>
+      <path d="M52 62 A28 28 0 0 0 52 98"/>
+      <path d="M76 40 A50 50 0 0 0 76 120"/>
+    </g>
+    <path d="M67 116 C 58 132, 40 132, 30 142" fill="none" stroke="#f1c673" stroke-width="2.4" stroke-linecap="round"/>
+    <path d="M30 142 l2.4 5.1 5.6 .7-4.1 3.9 1 5.6-5-2.7-5 2.7 1-5.6-4.1-3.9 5.6-.7z" fill="#ffdd96"/>
+  </g>
+
+  <!-- wordmark -->
+  <text x="186" y="98" font-family="Fraunces, Lora, Georgia, 'Times New Roman', serif" font-size="74" font-weight="500" letter-spacing="0.5" fill="#f6efe0">Yarnia</text>
+  <text x="188" y="128" font-family="Lora, Georgia, serif" font-size="17" letter-spacing="3" fill="#a9add0">BEDTIME STORIES</text>
+</svg>
