@@ -1,0 +1,31 @@
+@import "tailwindcss";
+
+:root {
+  --color-navy: #12132a;
+  --color-navy-light: #1c1e3a;
+  --color-gold: #f1c673;
+  --color-cream: #f6efe0;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--color-navy);
+  color: var(--color-cream);
+  min-height: 100dvh;
+  font-family: var(--font-lora), Georgia, serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.font-display {
+  font-family: var(--font-fraunces), Georgia, serif;
+}
+
+.font-body {
+  font-family: var(--font-lora), Georgia, serif;
+}
