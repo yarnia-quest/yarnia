@@ -14,8 +14,5 @@ compatibility_flags = ["nodejs_compat"]
 pattern = "api.yarnia.quest"
 custom_domain = true
 
-# Audio file storage. Create bucket once: `wrangler r2 bucket create yarnia-audio`
-# (or in Cloudflare dashboard). Local dev stores files in .wrangler/state/r2/ automatically.
-[[r2_buckets]]
-binding = "AUDIO"
-bucket_name = "yarnia-audio"
+# Audio file storage uses Instant Storage (db.storage.uploadFile -> $files), not R2.
+# No bucket/binding needed: the Worker writes/reads via the InstantDB admin SDK.

@@ -16,7 +16,6 @@ type Bindings = {
   ELEVENLABS_AGENT_ID: string;
   INSTANT_APP_ID: string;
   INSTANT_ADMIN_TOKEN: string;
-  AUDIO: R2Bucket;
 };
 
 // Everything the routes need, built from the Worker env. Injectable so tests pass fakes.
@@ -54,14 +53,20 @@ function defaultDeps(env: Bindings): AppDeps {
       ),
     fetchTranscript: (conversationId) =>
       fetchConversationTranscript(conversationId, { apiKey: env.ELEVENLABS_API_KEY }),
+    // Audio lives in Instant Storage (not R2). uploadFile auto-creates a $files entity
+    // keyed by `key` (its path); the path doubles as our audioKey for later replay.
     storeAudio: async (key, base64) => {
       const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
-      await env.AUDIO.put(key, bytes, { httpMetadata: { contentType: "audio/mpeg" } });
+      await db.storage.uploadFile(key, bytes, { contentType: "audio/mpeg" });
     },
     getAudio: async (key) => {
-      const obj = await env.AUDIO.get(key);
-      if (!obj) return null;
-      return obj.arrayBuffer();
+      // Admin query bypasses $files permissions; resolve the CDN url, then proxy the bytes.
+      const res = await db.query({ $files: { $: { where: { path: key } } } });
+      const url = res.$files?.[0]?.url;
+      if (!url) return null;
+      const r = await fetch(url);
+      if (!r.ok) return null;
+      return r.arrayBuffer();
     },
   };
 }
@@ -74,7 +79,7 @@ export function createApp(makeDeps: (env: Bindings) => AppDeps = defaultDeps) {
   app.get("/", (c) => c.json({ service: "yarnia-api", ok: true }));
 
   // POST /story — { childId, choice? } -> { childId, choice, text, audio, audioKey, status }.
-  // Stores audio in R2; returns both the base64 URI (for immediate playback) and the key
+  // Stores audio in Instant Storage; returns both the base64 URI (for immediate playback) and the key
   // (for later replay via GET /audio/:key without re-synthesizing).
   app.post("/story", async (c) => {
     const body = await c.req
@@ -131,7 +136,7 @@ export function createApp(makeDeps: (env: Bindings) => AppDeps = defaultDeps) {
   });
 
   // POST /session/save — { childId, conversationId }
-  // Fetches ElevenLabs transcript, synthesizes audio, stores in R2, saves session.
+  // Fetches ElevenLabs transcript, synthesizes audio, stores in Instant Storage, saves session.
   app.post("/session/save", async (c) => {
     const body = await c.req
       .json<{ childId?: string; conversationId?: string }>()
@@ -208,7 +213,7 @@ export function createApp(makeDeps: (env: Bindings) => AppDeps = defaultDeps) {
     return c.json({ sessions });
   });
 
-  // GET /audio/:key — serve a stored audio file from R2.
+  // GET /audio/:key — serve a stored audio file from Instant Storage.
   app.get("/audio/:key{.+}", async (c) => {
     const key = c.req.param("key");
     const deps = makeDeps(c.env);

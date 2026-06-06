@@ -5,6 +5,13 @@ import { i } from "@instantdb/core";
 
 const _schema = i.schema({
   entities: {
+    // Instant Storage auto-creates $files on db.storage.uploadFile (story narration mp3s).
+    // Required in the schema to query file urls. Created only via uploadFile, never transact;
+    // url is read-only. See https://www.instantdb.com/docs/storage
+    $files: i.entity({
+      path: i.string().unique().indexed(),
+      url: i.string(),
+    }),
     signups: i.entity({
       email: i.string().unique().indexed(),
       createdAt: i.number(),
@@ -28,6 +35,8 @@ const _schema = i.schema({
       messages: i.json().optional(), // full prompt/message chain: [{ role, content }, ...]
       charactersUsed: i.json(),
       continuityNotes: i.json().optional(), // carry-forward facts for future episodes
+      storyText: i.string().optional(), // full narration text, for re-reading
+      audioKey: i.string().optional(), // $files path of the narration mp3 (replay via GET /audio/:key)
       createdAt: i.number().indexed(),
     }),
   },
