@@ -16,6 +16,7 @@ type SessionRow = {
   createdAt?: number;
   storyText?: string;
   audioKey?: string;
+  shareToken?: string;
 };
 
 export async function loadChild(childId: string, query: InstantQuery): Promise<Child | null> {
@@ -36,6 +37,7 @@ export async function loadChild(childId: string, query: InstantQuery): Promise<C
       createdAt: s.createdAt,
       storyText: s.storyText,
       audioKey: s.audioKey,
+      shareToken: s.shareToken,
     }));
 
   return {

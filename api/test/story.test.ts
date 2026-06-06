@@ -113,28 +113,40 @@ describe("POST /child", () => {
       fearsToAvoid: ["spiders"],
     });
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ childId: "child-abc", name: "Mira" });
-    expect(createChild).toHaveBeenCalledWith({
-      name: "Mira",
-      age: 6,
-      favoriteCharacters: ["fox"],
-      themes: [],
-      fearsToAvoid: ["spiders"],
-    });
+    const json = (await res.json()) as { childId: string; name: string; childToken: string };
+    expect(json.childId).toBe("child-abc");
+    expect(json.name).toBe("Mira");
+    expect(json.childToken).toMatch(/^[0-9a-f]{64}$/); // per-child auth token returned once
+    expect(createChild).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: "Mira",
+        age: 6,
+        favoriteCharacters: ["fox"],
+        themes: [],
+        fearsToAvoid: ["spiders"],
+        tokenHash: expect.stringMatching(/^[0-9a-f]{64}$/),
+      }),
+    );
   });
 
   it("trims the name and defaults the optional preference fields", async () => {
     const createChild = vi.fn(async () => "child-xyz");
     const res = await post(appWith({ createChild }), "/child", { name: "  Sam  ", age: 4 });
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ childId: "child-xyz", name: "Sam" });
-    expect(createChild).toHaveBeenCalledWith({
-      name: "Sam",
-      age: 4,
-      favoriteCharacters: [],
-      themes: [],
-      fearsToAvoid: [],
-    });
+    const json = (await res.json()) as { childId: string; name: string; childToken: string };
+    expect(json.childId).toBe("child-xyz");
+    expect(json.name).toBe("Sam");
+    expect(json.childToken).toMatch(/^[0-9a-f]{64}$/);
+    expect(createChild).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: "Sam",
+        age: 4,
+        favoriteCharacters: [],
+        themes: [],
+        fearsToAvoid: [],
+        tokenHash: expect.stringMatching(/^[0-9a-f]{64}$/),
+      }),
+    );
   });
 });
 

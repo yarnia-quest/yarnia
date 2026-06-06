@@ -31,6 +31,9 @@ const _schema = i.schema({
       themes: i.json(),
       fearsToAvoid: i.json(),
       createdAt: i.number(),
+      // SHA-256 hash of the child's auth token (the raw token is returned to the client once
+      // at onboarding and never stored). Child-scoped API routes require the matching token.
+      tokenHash: i.string().optional(),
     }),
     // One bedtime session (an "episode"). Stores the full message chain (the archive,
     // for re-reading / continuing) plus a title + summary (the light recall layer that
@@ -44,6 +47,9 @@ const _schema = i.schema({
       storyText: i.string().optional(), // full narration text, for re-reading
       audioKey: i.string().optional(), // $files path of the narration mp3 (replay via GET /audio/:key)
       createdAt: i.number().indexed(),
+      // Unguessable token for the public share page (/share/:shareToken), so sharing a story
+      // never exposes the internal session id.
+      shareToken: i.string().unique().optional().indexed(),
     }),
   },
   links: {

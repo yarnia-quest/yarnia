@@ -12,6 +12,7 @@ export type PastSession = {
   createdAt?: number;
   storyText?: string;
   audioKey?: string;
+  shareToken?: string;
 };
 
 export type Child = {

@@ -1,4 +1,4 @@
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { cors } from "hono/cors";
 import { init, id } from "@instantdb/admin";
 import { loadChild } from "./child";
@@ -8,6 +8,10 @@ import { createStory, type StoryDeps } from "./story";
 import { createAgentSession, getSignedUrl, type ConversationTurn } from "./agent";
 import { persistSession, persistAgentSession, type SaveSessionInput } from "./session";
 import { verifyWebhookSignature } from "./webhook";
+import { createCheckout, type CheckoutResult } from "./payments";
+import { generateChildToken, hashToken, verifyChildToken } from "./auth";
+import { createRateLimiter } from "./ratelimit";
+import { createTelemetry } from "./observability";
 
 // Bindings come from api/.dev.vars locally (generated from api/.env) and from
 // `wrangler secret put` / GitHub Actions in production. Never hardcoded. See api/.env.example.
@@ -24,6 +28,14 @@ type Bindings = {
   // routes require a matching `X-Yarnia-Token` header. Left unset it is a no-op, so local dev
   // and tests need no token. The webhook (HMAC-verified) and health route are never gated.
   YARNIA_API_TOKEN?: string;
+  // Payments (Mollie). MOLLIE_API_KEY enables live checkout; MOLLIE_PAYMENT_LINK is a static
+  // fallback hosted-checkout URL. APP_BASE_URL is the post-payment redirect target.
+  MOLLIE_API_KEY?: string;
+  MOLLIE_PAYMENT_LINK?: string;
+  APP_BASE_URL?: string;
+  // Optional observability sinks (structured logs are always emitted; these forward them).
+  ERROR_WEBHOOK?: string;
+  ANALYTICS_WEBHOOK?: string;
 };
 
 // Browser origins allowed to call the API. Non-browser clients (the Flutter mobile build)
@@ -63,9 +75,16 @@ type AppDeps = StoryDeps & {
   storeAudio: (key: string, base64: string) => Promise<string>;
   getAudioUrl: (key: string) => Promise<string | null>;
   createChild: (input: NewChild) => Promise<string>;
-  // Loads a single session for the public share page. Optional so test helpers that don't
-  // exercise /share need not provide it.
-  loadSession?: (sessionId: string) => Promise<ShareSession | null>;
+  // Loads a single session for the public share page (by its unguessable shareToken).
+  // Optional so test helpers that don't exercise /share need not provide it.
+  loadSession?: (shareToken: string) => Promise<ShareSession | null>;
+  // Per-child auth: returns the stored token hash (or null for legacy children). Optional so
+  // tests that don't exercise auth need not provide it (auth is skipped when absent).
+  loadChildAuth?: (childId: string) => Promise<{ tokenHash: string | null } | null>;
+  // Payments: creates a Mollie checkout (only present when MOLLIE_API_KEY is configured).
+  checkout?: (redirectUrl: string) => Promise<CheckoutResult>;
+  // Static hosted-checkout fallback URL (when no live key).
+  paymentLink?: string;
 };
 
 // Minimal view of a session for the public /share page.
@@ -116,6 +135,7 @@ type NewChild = {
   favoriteCharacters: string[];
   themes: string[];
   fearsToAvoid: string[];
+  tokenHash?: string;
 };
 
 function defaultDeps(env: Bindings): AppDeps {
@@ -139,6 +159,8 @@ function defaultDeps(env: Bindings): AppDeps {
             storyText: input.storyText ?? null,
             audioKey: input.audioKey ?? null,
             createdAt: Date.now(),
+            // Unguessable public-share handle (never the internal session id).
+            shareToken: generateChildToken(),
           })
           .link({ child: childId }),
       );
@@ -171,19 +193,37 @@ function defaultDeps(env: Bindings): AppDeps {
           themes: input.themes,
           fearsToAvoid: input.fearsToAvoid,
           createdAt: Date.now(),
+          tokenHash: input.tokenHash ?? null,
         }),
       );
       return childId;
     },
-    // Loads one session by id for the public /share page (best-effort; returns null if absent).
-    loadSession: async (sessionId) => {
-      const res = await db.query({ sessions: { $: { where: { id: sessionId } } } });
+    // Loads one session by its public shareToken for /share (best-effort; null if absent).
+    loadSession: async (shareToken) => {
+      const res = await db.query({ sessions: { $: { where: { shareToken } } } });
       const row = res?.sessions?.[0];
       if (!row) return null;
       return { title: row.title, storyText: row.storyText, audioKey: row.audioKey };
     },
+    // Reads just the child's stored token hash for auth checks.
+    loadChildAuth: async (childId) => {
+      const res = await db.query({ children: { $: { where: { id: childId } } } });
+      const row = res?.children?.[0];
+      if (!row) return null;
+      return { tokenHash: row.tokenHash ?? null };
+    },
+    // Live Mollie checkout, only when a key is configured.
+    checkout: env.MOLLIE_API_KEY
+      ? (redirectUrl) => createCheckout({ apiKey: env.MOLLIE_API_KEY as string, redirectUrl })
+      : undefined,
+    paymentLink: env.MOLLIE_PAYMENT_LINK,
   };
 }
+
+// In-isolate rate limiters (best-effort; pair with Cloudflare account-level rules for durable
+// enforcement). Only applied to real edge requests (those carrying cf-connecting-ip).
+const storyLimiter = createRateLimiter({ limit: 30, windowMs: 60_000 }); // 30 stories/min/IP
+const writeLimiter = createRateLimiter({ limit: 60, windowMs: 60_000 }); // 60 writes/min/IP
 
 export function createApp(makeDeps: (env: Bindings) => AppDeps = defaultDeps) {
   const app = new Hono<{ Bindings: Bindings }>();
@@ -205,23 +245,59 @@ export function createApp(makeDeps: (env: Bindings) => AppDeps = defaultDeps) {
     return next();
   });
 
+  // Telemetry bound to the request: structured logs + optional webhook forwarding via waitUntil.
+  type Ctx = Context<{ Bindings: Bindings }>;
+  const makeTelemetry = (c: Ctx) =>
+    createTelemetry({
+      errorWebhook: c.env?.ERROR_WEBHOOK,
+      analyticsWebhook: c.env?.ANALYTICS_WEBHOOK,
+      defer: (p) => {
+        try {
+          c.executionCtx.waitUntil(p);
+        } catch {
+          /* no execution context in tests */
+        }
+      },
+    });
+
+  // Enforces the per-child auth token on child-scoped routes. No-op when loadChildAuth is not
+  // wired (tests) or the child is legacy (no stored hash). Returns a 401 Response when denied.
+  const requireChildToken = async (c: Ctx, deps: AppDeps, childId: string) => {
+    if (!deps.loadChildAuth) return null;
+    const auth = await deps.loadChildAuth(childId);
+    const ok = await verifyChildToken(auth?.tokenHash, c.req.header("x-child-token"));
+    return ok ? null : c.json({ error: "invalid_child_token" }, 401);
+  };
+
   app.get("/", (c) => c.json({ service: "yarnia-api", ok: true }));
 
   // POST /story — { childId, choice? } -> { childId, choice, text, audio, audioKey, status }.
   // Stores audio in Instant Storage; returns both the base64 URI (for immediate playback) and the key
   // (for later replay via GET /audio/:key without re-synthesizing).
   app.post("/story", async (c) => {
+    const ip = c.req.header("cf-connecting-ip");
+    if (ip && !storyLimiter.check(`story:${ip}`).allowed) {
+      return c.json({ error: "rate_limited" }, 429);
+    }
     const body = await c.req
       .json<{ childId?: string; choice?: string }>()
       .catch(() => ({}) as { childId?: string; choice?: string });
     const { childId } = body;
     if (!childId) return c.json({ error: "childId required" }, 400);
+
+    const deps = makeDeps(c.env);
+    const telemetry = makeTelemetry(c);
+    const denied = await requireChildToken(c, deps, childId);
+    if (denied) return denied;
     // Sanitize the caller-supplied choice before it ever reaches the LLM prompt.
     const choice = sanitizeChoice(body.choice ?? "") || "a gentle surprise";
 
-    const deps = makeDeps(c.env);
     const result = await createStory(childId, choice, deps);
-    if (!result.ok) return c.json({ error: result.reason }, 404);
+    if (!result.ok) {
+      telemetry.error("story_child_not_found", { childId });
+      return c.json({ error: result.reason }, 404);
+    }
+    telemetry.track("story_created", { childId, hasAudio: result.audio != null });
 
     const audioBase64 = result.audio ?? null;
     const audioKey = audioBase64 ? `stories/${crypto.randomUUID()}.mp3` : null;
@@ -260,6 +336,10 @@ export function createApp(makeDeps: (env: Bindings) => AppDeps = defaultDeps) {
       themes?: string[];
       fearsToAvoid?: string[];
     };
+    const ip = c.req.header("cf-connecting-ip");
+    if (ip && !writeLimiter.check(`child:${ip}`).allowed) {
+      return c.json({ error: "rate_limited" }, 429);
+    }
     const body = await c.req.json<ChildBody>().catch(() => ({}) as ChildBody);
     // Sanitize every field that later flows into the LLM prompt, not just the per-request
     // `choice` — these are stored once and reused on every story, so injection here persists.
@@ -270,20 +350,29 @@ export function createApp(makeDeps: (env: Bindings) => AppDeps = defaultDeps) {
     }
 
     const deps = makeDeps(c.env);
+    // Mint a per-child auth token; store only its hash, return the raw token to the client once.
+    const childToken = generateChildToken();
     const childId = await deps.createChild({
       name,
       age: body.age,
       favoriteCharacters: sanitizeList(body.favoriteCharacters),
       themes: sanitizeList(body.themes),
       fearsToAvoid: sanitizeList(body.fearsToAvoid),
+      tokenHash: await hashToken(childToken),
     });
-    return c.json({ childId, name });
+    makeTelemetry(c).track("child_created", { childId });
+    return c.json({ childId, name, childToken });
   });
 
   // GET /agent/session?childId=...
   app.get("/agent/session", async (c) => {
     const childId = c.req.query("childId");
     const deps = makeDeps(c.env);
+    // Anonymous starts (no childId) are allowed; a given child requires its token.
+    if (childId) {
+      const denied = await requireChildToken(c, deps, childId);
+      if (denied) return denied;
+    }
     const result = await createAgentSession(childId, {
       loadChild: deps.loadChild,
       agentId: deps.agentId,
@@ -378,6 +467,8 @@ export function createApp(makeDeps: (env: Bindings) => AppDeps = defaultDeps) {
   app.get("/child/:childId/sessions", async (c) => {
     const childId = c.req.param("childId");
     const deps = makeDeps(c.env);
+    const denied = await requireChildToken(c, deps, childId);
+    if (denied) return denied;
     const child = await deps.loadChild(childId);
     if (!child) return c.json({ error: "child_not_found" }, 404);
 
@@ -391,17 +482,47 @@ export function createApp(makeDeps: (env: Bindings) => AppDeps = defaultDeps) {
         createdAt: s.createdAt ?? null,
         storyText: s.storyText ?? null,
         audioKey: s.audioKey ?? null,
+        // Public share handle so the client can build a /share link without exposing the id.
+        shareToken: s.shareToken ?? null,
       }));
 
     return c.json({ sessions });
   });
 
-  // GET /share/:sessionId — public, unauthenticated HTML page for a saved story ("send to
-  // grandma"). Renders the story text and, when available, an audio player. No token required.
-  app.get("/share/:sessionId", async (c) => {
+  // POST /checkout — start the EUR 8/month subscription. Returns a hosted Mollie checkout URL
+  // (live when MOLLIE_API_KEY is set, else a configured static link), or 503 if unconfigured.
+  app.post("/checkout", async (c) => {
+    const ip = c.req.header("cf-connecting-ip");
+    if (ip && !writeLimiter.check(`checkout:${ip}`).allowed) {
+      return c.json({ error: "rate_limited" }, 429);
+    }
+    const deps = makeDeps(c.env);
+    const telemetry = makeTelemetry(c);
+    if (deps.checkout) {
+      try {
+        const redirectUrl = c.env?.APP_BASE_URL ?? "https://app.yarnia.quest";
+        const result = await deps.checkout(redirectUrl);
+        telemetry.track("checkout_started", { paymentId: result.paymentId, mode: "live" });
+        return c.json({ checkoutUrl: result.checkoutUrl, paymentId: result.paymentId, mode: "live" });
+      } catch (err) {
+        telemetry.error("checkout_failed", { message: String((err as Error)?.message ?? err) });
+        return c.json({ error: "checkout_failed" }, 502);
+      }
+    }
+    if (deps.paymentLink) {
+      telemetry.track("checkout_started", { mode: "static" });
+      return c.json({ checkoutUrl: deps.paymentLink, mode: "static" });
+    }
+    return c.json({ error: "payments_not_configured" }, 503);
+  });
+
+  // GET /share/:shareToken — public, unauthenticated HTML page for a saved story ("send to
+  // grandma"). Looked up by an unguessable shareToken (never the internal session id). Renders
+  // the story text and, when available, an audio player. No token required.
+  app.get("/share/:shareToken", async (c) => {
     const deps = makeDeps(c.env);
     if (!deps.loadSession) return c.html(shareNotFoundPage(), 404);
-    const session = await deps.loadSession(c.req.param("sessionId"));
+    const session = await deps.loadSession(c.req.param("shareToken"));
     if (!session || !session.storyText) return c.html(shareNotFoundPage(), 404);
     let audioUrl: string | null = null;
     if (session.audioKey) {
