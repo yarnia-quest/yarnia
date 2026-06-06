@@ -14,6 +14,9 @@ class HistoryPanel extends StatefulWidget {
   State<HistoryPanel> createState() => _HistoryPanelState();
 }
 
+// In-memory cache so reopening the panel is instant.
+List<Map<String, dynamic>>? _cachedSessions;
+
 class _HistoryPanelState extends State<HistoryPanel> {
   List<Map<String, dynamic>>? _sessions;
   String? _error;
@@ -21,7 +24,11 @@ class _HistoryPanelState extends State<HistoryPanel> {
   @override
   void initState() {
     super.initState();
-    _load();
+    if (_cachedSessions != null) {
+      _sessions = _cachedSessions;
+    } else {
+      _load();
+    }
   }
 
   Future<void> _load() async {
@@ -31,9 +38,9 @@ class _HistoryPanelState extends State<HistoryPanel> {
       );
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body) as Map<String, dynamic>;
-        setState(() {
-          _sessions = (data['sessions'] as List).cast<Map<String, dynamic>>();
-        });
+        final sessions = (data['sessions'] as List).cast<Map<String, dynamic>>();
+        _cachedSessions = sessions;
+        setState(() => _sessions = sessions);
       } else {
         setState(() => _error = 'Could not load stories (${res.statusCode})');
       }

@@ -145,6 +145,8 @@ export function createApp(makeDeps: (env: Bindings) => AppDeps = defaultDeps) {
     try {
       c.executionCtx.waitUntil(
         (async () => {
+          // ElevenLabs needs a few seconds after disconnect to finalise the transcript.
+          await new Promise((r) => setTimeout(r, 5000));
           const transcript = await deps.fetchTranscript(conversationId);
           const storyText = transcript
             .filter((t) => t.role === "agent" && t.message)
