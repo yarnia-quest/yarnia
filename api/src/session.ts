@@ -1,5 +1,5 @@
 // Session write-back: after a story is told, archive it as a rich "episode" so the child's
-// memory grows night over night (see ideation/ELLA-FINN-EXAMPLE.md). Each session stores the
+// memory grows night over night (see ideation/ella-finn/README.md). Each session stores the
 // full message chain (archive) + title + summary + characters + continuityNotes (the recall
 // layer). Runs best-effort, after the response (route fires it via executionCtx.waitUntil).
 import type { StoryPrompt } from "./prompt";

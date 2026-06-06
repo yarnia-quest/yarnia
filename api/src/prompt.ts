@@ -3,7 +3,7 @@
 // Data model follows ideation/YARNIA.md.
 
 // The light recall layer loaded into prompts (NOT the full message archive — that stays
-// in InstantDB and is not injected, to keep prompts small). See ELLA-FINN-EXAMPLE.md.
+// in InstantDB and is not injected, to keep prompts small). See ideation/ella-finn/README.md.
 export type PastSession = {
   title?: string;
   summary: string;
