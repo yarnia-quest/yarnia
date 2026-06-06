@@ -1,0 +1,20 @@
+# Yarnia app worker: serves the Flutter web build (`flutter build web` -> build/web) as
+# static assets at app.yarnia.quest. Assets-only — there is NO worker script (no `main`):
+# Cloudflare serves the directory directly and falls back to index.html for client-side
+# routes via not_found_handling. No secrets here; the app talks to api.yarnia.quest, and
+# the API base URL is baked into the build at compile time (--dart-define=API_BASE=...).
+# Docs: https://developers.cloudflare.com/workers/static-assets/
+name = "yarnia-app"
+compatibility_date = "2026-06-06"
+
+[assets]
+directory = "./build/web"
+# Flutter web is a single-page app: unknown paths must serve index.html so the
+# in-app router (not Cloudflare) resolves them.
+not_found_handling = "single-page-application"
+
+# Served at app.yarnia.quest. Cloudflare provisions DNS + TLS on deploy
+# (yarnia.quest must be an active zone, which it is — see infra/README.md).
+[[routes]]
+pattern = "app.yarnia.quest"
+custom_domain = true

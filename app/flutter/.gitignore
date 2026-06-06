@@ -47,3 +47,7 @@ app.*.map.json
 # Desktop targets are not used — Yarnia is a mobile (iOS/Android) app. The Linux
 # runner + its generated ephemeral plugin symlinks must not be tracked.
 /linux/
+
+# Cloudflare Wrangler local state (the web build is deployed to app.yarnia.quest;
+# wrangler.toml is tracked, but its scratch dir is not).
+.wrangler/

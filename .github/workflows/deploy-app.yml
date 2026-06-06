@@ -1,0 +1,36 @@
+name: Deploy app
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ["app/flutter/**"]
+
+# Builds the Flutter web client and deploys it to app.yarnia.quest as static assets.
+#
+# The build is assets-only (no Worker script): `flutter build web` produces build/web/,
+# which wrangler ships via the [assets] binding in app/flutter/wrangler.toml. The backend
+# URL is baked in at compile time with --dart-define-from-file (dart_defines/device.json ->
+# API_BASE=https://api.yarnia.quest), so the worker holds no secret. Only Cloudflare deploy
+# credentials are needed; DNS + TLS for app.yarnia.quest are provisioned by wrangler
+# (custom_domain route) against the existing yarnia.quest zone.
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app/flutter
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.44.1
+      - run: flutter pub get
+      - run: flutter build web --release --dart-define-from-file=dart_defines/device.json
+      - uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: app/flutter
+          command: deploy
