@@ -45,6 +45,8 @@
 
 ## Official docs (read before using a tool; verified 2026-06-05)
 - **Cloudflare Workers:** https://developers.cloudflare.com/workers/
+- **Hono on Cloudflare Workers** (the `api/` backend uses Hono — follow this guide): https://developers.cloudflare.com/workers/framework-guides/web-apps/more-web-frameworks/hono/ · **Workers bindings:** https://developers.cloudflare.com/workers/runtime-apis/bindings/
+- **Hono framework:** https://hono.dev/docs/ · Cloudflare Workers guide: https://hono.dev/docs/getting-started/cloudflare-workers · routing: https://hono.dev/docs/api/routing · context (`c.req`/`c.json`/`c.env`): https://hono.dev/docs/api/context · middleware: https://hono.dev/docs/concepts/middleware · validation (zod): https://hono.dev/docs/guides/validation
 - **Wrangler config** (vars, secrets, routes, custom_domain, compatibility flags): https://developers.cloudflare.com/workers/wrangler/configuration/
 - **Workers routes:** https://developers.cloudflare.com/workers/configuration/routing/routes/
 - **Cloudflare Pages:** https://developers.cloudflare.com/pages/ · custom domains: https://developers.cloudflare.com/pages/configuration/custom-domains/ · direct upload: https://developers.cloudflare.com/pages/get-started/direct-upload/
@@ -55,7 +57,7 @@
 - **ElevenLabs (voice):** https://elevenlabs.io/docs · **OpenAI:** https://platform.openai.com/docs · **Qwen:** https://qwen.readthedocs.io/
 - **Mollie (payments, if used):** https://docs.mollie.com/
 
-Verified facts in use (2026-06-05). **Pattern (from prism):** one Worker with Static Assets per app — `[assets] directory binding=ASSETS` + the worker falls through to `env.ASSETS.fetch()`; deployed via `cloudflare/wrangler-action@v3`. Marketing: `[[routes]] pattern="yarnia.quest" custom_domain=true` (the worker serves the page; `api.yarnia.quest` is the app backend). **Client write (no token):** the page uses `@instantdb/core` `db.transact(db.tx.signups[id()].create({...}))` as a guest, gated by a `signups.create:true` permission (`view/update/delete:false`). **Admin token** (`@instantdb/admin`, bypasses perms) is used ONLY by schema CI: `instant-cli push schema/perms --app <id> --token <INSTANT_ADMIN_TOKEN> --yes` (the app admin token works as the CLI `--token`; no separate PAT). Schema: `i.entity({ email: i.string().unique().indexed(), ... })`. Tooling: use **Node 24 (LTS)**, not Bun, for wrangler.
+Verified facts in use (2026-06-05). **Pattern (from prism):** one Worker with Static Assets per app — `[assets] directory binding=ASSETS` + the worker falls through to `env.ASSETS.fetch()`; deployed via `cloudflare/wrangler-action@v3`. Marketing: `[[routes]] pattern="yarnia.quest" custom_domain=true` (the worker serves the page; `api.yarnia.quest` is the app backend). **Client write (no token):** the page uses `@instantdb/core` `db.transact(db.tx.signups[id()].create({...}))` as a guest, gated by a `signups.create:true` permission (`view/update/delete:false`). **Admin token** (`@instantdb/admin`, bypasses perms) is used ONLY by schema CI: `instant-cli push schema/perms --app <id> --token <INSTANT_ADMIN_TOKEN> --yes` (the app admin token works as the CLI `--token`; no separate PAT). Schema: `i.entity({ email: i.string().unique().indexed(), ... })`. Tooling: use **Node 24 (LTS)**, not Bun, for wrangler. **Backend framework: Hono** — the `api/` Worker is a Hono app (`import { Hono } from 'hono'`; `export default app`); routes/middleware/validation per the Hono docs above.
 
 ## Deploy & automation
 - **Marketing site:** `.github/workflows/deploy.yml` → `cloudflare/wrangler-action@v3` deploys the `yarnia-marketing` Worker (page + assets) to `yarnia.quest` on push to `marketing/**`. No app secrets (signup is client-side).
@@ -65,3 +67,7 @@ Verified facts in use (2026-06-05). **Pattern (from prism):** one Worker with St
 
 ## Tooling: gstack
 - Both machines need the base install (`~/.claude/skills/gstack`, needs Bun). Gives `/office-hours`, `/plan-ceo-review`, `/review`, `/qa`, `/ship`. Optional team-mode repo bootstrap (`gstack-team-init optional`) can be run once on this repo. Full notes: `ideation/STRATEGY.md` history / `infra/README.md`.
+
+## Tooling: agent skills (per-machine, NOT committed)
+- Skills live in `.agents/` + `skills-lock.json`, both **gitignored** — they don't travel via `git pull`. Each engineer installs them locally; reproduce with `npx skills add <owner/repo>`.
+- **Hono skill** (inline Hono API reference + `npx hono request` endpoint testing; by yusukebe, Hono's creator): `npx skills add yusukebe/hono-skill -y`. Burhan: run this once after pulling. (Source: https://skills.sh/yusukebe/hono-skill)
