@@ -1,9 +1,0 @@
-# Flutter-related
-**/Flutter/ephemeral/
-**/Pods/
-# Auto-generated from the plugin list on every build (iOS ignores its equivalent too).
-**/Flutter/GeneratedPluginRegistrant.swift
-
-# Xcode-related
-**/dgph
-**/xcuserdata/
