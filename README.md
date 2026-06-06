@@ -2,79 +2,159 @@
 
 > Open the app. Screen goes off. It talks to you.
 
-An audio-first companion for the moments that matter — bedtime, wind-down, presence. No feed. No scroll. Just a voice in the dark that knows what you need.
+A screen-off voice companion for bedtime. A parent opens Yarnia at 8pm, the screen
+dims, and a voice tells their child a personalized story that remembers them across
+nights. No feed. No scroll. Just a voice in the dark.
+
+**Live:**
+- Landing page: https://yarnia.quest
+- App (Flutter web): https://app.yarnia.quest
+- API: https://api.yarnia.quest
 
 ## What it does
 
-You open Yarnia. The screen turns off. A voice greets you based on the time, your history, and the moment. It offers:
+You open Yarnia. The screen turns off. A voice greets the child by name (or asks for
+it the first time), then co-creates a story with them and narrates it. It offers:
 
-- **Bedtime stories** — personalized for your child, with remembered characters and preferences
-- **Adult wind-down stories** — fantasy, calm, narrative
-- **Ambient soundscapes** — rain, ocean, forest, fire
-- **Guided relaxation** — short, conversational, not preachy
-- **Novel suggestions** — *"You usually like the forest. A lot of people loved this ocean meditation this week — want to try it?"*
+- **Personalized bedtime stories** with remembered characters, themes, and fears to avoid
+- **Conversational co-creation** ("an owl and a cat lost in Hamburg?") before it generates
+- **A content-safety guardrail** baked into every prompt (age-appropriate, avoids the
+  child's named fears)
+- **A memory layer** so night two knows what worked on night one
+- **A shareable result** ("Send to grandma") and replayable narration
 
 It remembers. It adapts. It knows when to shut up.
 
+## What works today (June 6, 2026 build)
+
+The end-to-end demo arc runs against the live backend:
+
+- [x] Voice greeting on open (time-aware, name-aware) via the ElevenLabs agent
+- [x] Conversational intent + co-creation loop (greeting, onboarding, co-creation screens)
+- [x] Story generation (Qwen) + ElevenLabs narration, returned to the app as audio
+- [x] Session + child profile saved to InstantDB (private, worker-only)
+- [x] Per-child memory injected into the next session's prompt
+- [x] Shareable link and in-app replay of past stories
+- [x] 85 backend tests (Vitest) and CI deploy for api, app, marketing, and schema
+
+Stretch (not in the core demo): ambient soundscapes, public publishing.
+
 ## The pitch
 
-Every consumer app in 2026 is optimizing for your attention. Yarnia optimizes for your presence. The phone becomes a voice in the dark instead of a screen stealing your night.
+Every consumer app in 2026 optimizes for your attention. Yarnia optimizes for your
+presence. The phone becomes a voice in the dark instead of a screen stealing the night.
 
-## Why this works
+- **The buyer:** a parent at 8pm, kid in bed, trying to get them to sleep. That person
+  exists every single night.
+- **The price:** EUR 8/month. Below the "do I really need this" threshold (Spotify EUR 10,
+  Calm EUR 8).
+- **The gap:** Calm makes you stare at it, Spotify Sleep is not personalized, ChatGPT is a
+  general assistant that needs typing. None combine screen-off + personalized + a ritual.
+- **The moat:** the memory layer. After three nights it knows Lisa likes dragons, gets
+  scared of thunder, and fell asleep faster with a cat in the story. Switching means
+  starting that over.
 
-**The buyer**: a parent at 8pm, kid in bed, trying to get them to sleep. Not "families broadly." That person exists every single night. You can picture them.
+## Architecture
 
-**The price**: €8/month. Below the "do I really need this" threshold — Spotify is €10, Calm is €8. A number you can say out loud without hesitation.
+Three domains, one repo:
 
-**The gap**: no competitor combines all three.
-- Calm: you stare at it
-- Spotify Sleep: not personalized
-- ChatGPT: general assistant, requires typing, not a bedtime ritual
+| Domain | Serves | Code | Secrets |
+| --- | --- | --- | --- |
+| `yarnia.quest` | Marketing landing + waitlist | `marketing/` (CF Worker, static assets) | none (signup is a client-side InstantDB create) |
+| `app.yarnia.quest` | The Flutter web client | `app/flutter/` (`flutter build web`) | none |
+| `api.yarnia.quest` | Product backend | `api/` (Hono on CF Workers) | all server-side only |
 
-**The moat**: the memory layer — it knows your kid. After 3 uses it knows Lisa likes dragons, gets scared of thunder, and fell asleep faster when the story had a cat in it. That data — preferences, what worked, what didn't — becomes harder to leave the longer you use it. Switching to ChatGPT means starting over.
+Request flow for a story: the Flutter client calls `POST /story` -> the Worker loads the
+child's profile and history from InstantDB -> builds a safety + memory prompt
+(`api/src/prompt.ts`) -> generates text with Qwen -> narrates with ElevenLabs -> returns
+the text and audio, and persists the session back to InstantDB.
+
+Backend endpoints (`api/src/index.ts`):
+
+- `POST /story` - generate + narrate a story for a child
+- `POST /child` - onboarding: create a child profile, return its id
+- `GET  /agent/session` - dynamic variables for the ElevenLabs conversational agent
+  (works anonymously before a child is known)
+- `POST /agent/webhook` - persist what the agent produced
+- `GET  /child/:childId/sessions` - a child's story history
+- `GET  /audio-url/:key` - signed URL for stored narration (replay)
 
 ## Stack
 
-- **Frontend**: Flutter (Dart)
-- **DB / Auth / Realtime / Storage**: InstantDB
-- **Voice / TTS**: ElevenLabs
-- **Story generation**: OpenAI or Qwen (hackathon sponsors)
-- **Backend**: Cloudflare Worker (thin layer — calls LLM + ElevenLabs, uploads audio to InstantDB, returns URL)
+- **Frontend:** Flutter (Dart) - one codebase for iOS, Android, and web (`app/flutter/`)
+- **Backend:** Hono on Cloudflare Workers (`api/`)
+- **DB / auth / realtime / storage:** InstantDB
+- **Voice / TTS:** ElevenLabs (conversational agent + single-shot narration)
+- **Story generation:** Qwen via DashScope (OpenAI-compatible, `qwen3.7-max`)
 
-## Hackathon scope (June 6, 2026)
+## Run it locally
 
-**The demo arc:**
+Prereqs: Node 24 (LTS) and the Flutter SDK.
 
-1. Open app → screen dims → voice greets you
-2. Agent asks what you need tonight — story, soundscape, or something else
-3. Conversational co-creation — agent asks back: "any ideas? a forest? a city? two characters?" — rough summary approval before generating: *"how about an owl and a cat lost in Hamburg?"*
-4. Story generated + narrated via ElevenLabs
-5. Session saved — replayable, shareable link
-6. Send to grandma — she opens the link, hears the story
+**Backend (`api/`):**
 
-**The pitch moment:**
+```bash
+cd api
+npm install
+cp .env.example .env   # fill in INSTANT_*, QWEN_API_KEY, ELEVENLABS_* (see api/.env.example)
+npm run dev            # local Worker on :8787
+npm test               # Vitest (in-process, mocks Qwen/ElevenLabs, costs nothing)
+npm run typecheck
+```
 
-At the end of the hackathon demo, say out loud:
-> *"Yarnia, we're about to pitch you to some judges. Give us a one-minute intro."*
+**Frontend (`app/flutter/`):** config is passed at build time with `--dart-define`
+(see `app/flutter/dart_defines/`), not a `.env` file.
 
-It introduces itself. Live. That's the demo.
+```bash
+cd app/flutter
+flutter pub get
+flutter run -d chrome                                                # prod backend (default)
+flutter run --dart-define-from-file=dart_defines/local.json -d chrome # local api on :8787
+flutter build web --release --dart-define-from-file=dart_defines/prod.json
+```
 
-**Must ship:**
-- [ ] Voice greeting on open
-- [ ] Conversational intent + co-creation loop
-- [ ] LLM story generation + ElevenLabs narration
-- [ ] Session saved to InstantDB
-- [ ] Shareable link
+**Marketing (`marketing/`):** `cd marketing && npm install && npx wrangler dev`.
 
-**Stretch:**
-- [ ] Ambient soundscapes via ElevenLabs
-- [ ] Memory layer (preferences per child)
-- [ ] Public publishing
+More detail and worktree/CI notes are in `CLAUDE.md` and each subproject's README.
+
+## Tests and CI
+
+- `api/` has 85 passing unit tests plus integration tests (Vitest). Run `npm test` in `api/`.
+- GitHub Actions deploy on push by path: `deploy-api.yml`, `deploy-app.yml`, `deploy.yml`
+  (marketing), and `push-schema.yml` (InstantDB schema + permissions as code).
+- The demo-critical logic (content-safety guardrail + per-child memory in
+  `api/src/prompt.ts`) is pure and fully unit-tested.
+
+## Security and data
+
+- **Trust-boundary split for config:** all secrets live in `api/.env` (server-side only:
+  InstantDB admin token, Qwen and ElevenLabs keys, Cloudflare creds). The client only ever
+  sees public values (`app/.env.example`). No secret is committed; `.env` and `.dev.vars`
+  are gitignored, only `.env.example` templates are tracked.
+- **Private child data:** InstantDB permissions (`instant/instant.perms.ts`) give the client
+  no read or write access to `children` or `sessions`; only the backend Worker (admin token)
+  touches them. The waitlist `signups` entity is create-only for guests.
+- **Content safety:** every story prompt carries an age-appropriate guardrail and avoids the
+  child's named fears (`api/src/prompt.ts`).
+
+## Repo layout
+
+- `app/flutter/` - the Flutter client (iOS, Android, web)
+- `api/` - Hono backend Worker (story gen, TTS, InstantDB, safety guardrail)
+- `marketing/` - landing page + waitlist (static assets Worker)
+- `instant/` - InstantDB schema + permissions as code
+- `infra/` - config, secrets, and CI notes
+- `ideation/` - strategy and pitch docs (not code)
+
+## License
+
+Proprietary. See [LICENSE](LICENSE). All rights reserved by the authors.
 
 ## Team
 
 - Burhan Yasar
 - Cansin Yildiz
+
 ---
 
 *Built at AI BEAVERS x Mollie Founder Hackathon, Hamburg, June 6 2026*

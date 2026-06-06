@@ -6,7 +6,7 @@
 **What we're building:** Yarnia — a screen-off voice app that tells a child a personalized bedtime story and remembers them across nights. One sentence: *"We help a parent at 8pm get their kid to sleep with a screen-off voice story that remembers their child."*
 
 ## Repo layout
-- `app/` — the Yarnia app. The product frontend is `app/flutter/` (Flutter / Dart); `app/astro/` is a web client variant.
+- `app/` — the Yarnia app. The product frontend is `app/flutter/` (Flutter / Dart), one codebase that also builds to web (`flutter build web`) for `app.yarnia.quest`.
 - `api/` — product backend (Cloudflare Worker): story gen + ElevenLabs TTS + InstantDB + content-safety guardrail.
 - `marketing/` — landing page (`public/`) served by an assets-only Cloudflare Worker (`src/worker.ts`) at yarnia.quest. The signup writes client-side to InstantDB (no secret). **Deployed.**
 - `infra/` — config / secrets / CI notes.
@@ -19,7 +19,7 @@
 - `app.yarnia.quest` → **Flutter web client** (`app/flutter/`, `flutter build web`). Assets-only Worker (`yarnia-app`), no secrets; deployed by `.github/workflows/deploy-app.yml`.
 
 ## Stack
-- **Frontend:** Flutter (Dart) — `app/flutter/`. (`app/astro/` is a secondary web client.)
+- **Frontend:** Flutter (Dart) — `app/flutter/` (one codebase: iOS, Android, and web).
 - **Backend:** Cloudflare Workers (thin layers; wrangler).
 - **Data/auth/storage:** InstantDB.
 - **Voice/TTS:** ElevenLabs. **Story gen:** Qwen (DashScope OpenAI-compatible API, `qwen3.7-max`, intl endpoint).
@@ -28,7 +28,7 @@
 ## Config & secrets (important)
 - **Two env files, split by trust boundary** (each `.env` gitignored, each `.env.example` committed):
   - **`api/.env`** (backend: `api/` Worker + `instant/`) — ALL secrets: `INSTANT_ADMIN_TOKEN`, `QWEN_API_KEY`, `ELEVENLABS_API_KEY`, Cloudflare deploy creds, plus the public `INSTANT_APP_ID`.
-  - **`app/.env`** (frontend: Expo) — PUBLIC ONLY, every var prefixed `EXPO_PUBLIC_` (`EXPO_PUBLIC_INSTANT_APP_ID`, `EXPO_PUBLIC_API_BASE_URL`). **No secret may ever appear here** — this file ships inside the client bundle on the user's device.
+  - **`app/.env.example`** (frontend: Flutter) — PUBLIC ONLY. The Flutter client takes config at build time via `--dart-define` / `--dart-define-from-file` (see `app/flutter/dart_defines/*.json`, e.g. `API_BASE`); `app/.env.example` documents the public, safe-to-expose values. **No secret may ever appear here** — anything the client reads ships inside the bundle on the user's device.
 - **Never hardcode** ids/tokens/keys in code, `wrangler.toml`, or the client. The public `INSTANT_APP_ID` is the only id safe client-side; the InstantDB **admin token** and any API keys are server-side only (so they live only in `api/.env`).
 - Workers read secrets from env bindings: set via `wrangler secret put` locally or GitHub repo secrets in CI. `wrangler dev` reads `api/.dev.vars` (gitignored); `api/.env` is the source of truth and the api dev script loads it.
 - GitHub repo secrets mirror the `api/.env` keys (see `infra/README.md`); CI in `.github/workflows/`.
@@ -64,7 +64,7 @@ Because all local worktrees share one `.git`, `origin/main` is what keeps teamma
 
 ## Conventions
 - **Package manager: npm + Node 24 (LTS)** everywhere (local and CI). Commit `package-lock.json`. Don't use bun for project deps (gstack's own CLI runs on bun, that's separate).
-- **Track every real lock file; never delete one that has a manifest.** A lock file paired with its manifest (`package-lock.json` next to a `package.json`, `pubspec.lock` next to `pubspec.yaml`, `skills-lock.json`) pins exact versions for reproducible builds and MUST be committed — never remove it, even if it looks sparse. The one exception: an *orphan* lock with no sibling manifest and no locked packages (e.g. an empty `package-lock.json` in a dir with no `package.json`) is cruft from a stray `npm` run — delete it. Real npm projects here: `api/`, `marketing/`, `instant/`, `app/astro/`. `app/flutter/` is Dart — it uses `pubspec.lock`, never `package-lock.json`.
+- **Track every real lock file; never delete one that has a manifest.** A lock file paired with its manifest (`package-lock.json` next to a `package.json`, `pubspec.lock` next to `pubspec.yaml`, `skills-lock.json`) pins exact versions for reproducible builds and MUST be committed — never remove it, even if it looks sparse. The one exception: an *orphan* lock with no sibling manifest and no locked packages (e.g. an empty `package-lock.json` in a dir with no `package.json`) is cruft from a stray `npm` run — delete it. Real npm projects here: `api/`, `marketing/`, `instant/`. `app/flutter/` is Dart — it uses `pubspec.lock`, never `package-lock.json`.
 - Match the style of surrounding code; keep diffs small and explicit.
 - Prose/writing (READMEs, copy, messages): **no em dashes.**
 - **Testing: TDD, red/green, atomic.** For each feature: write the failing test first (red), implement the minimum to pass (green), then refactor. Work in small increments; do NOT implement multiple features at once. `api/` tests run on **Vitest** via Hono's `app.request(path, init, env)` (in-process, no `wrangler dev`; inject fake bindings to mock OpenAI/ElevenLabs so tests cost nothing). `npm test` in `api/`.
@@ -84,7 +84,7 @@ Because all local worktrees share one `.git`, `origin/main` is what keeps teamma
 - **Cloudflare docs for LLMs:** https://developers.cloudflare.com/workers/llms.txt
 - **InstantDB:** https://www.instantdb.com/docs · backend/admin SDK: https://www.instantdb.com/docs/backend · schema/modeling: https://www.instantdb.com/docs/modeling-data · permissions: https://www.instantdb.com/docs/permissions · **Platform API (IaC):** https://www.instantdb.com/docs/platform-api · CLI: https://www.instantdb.com/docs/cli
 - **GitHub Actions:** https://docs.github.com/actions
-- **Expo (client):** https://docs.expo.dev/
+- **Flutter (client):** https://docs.flutter.dev/ · build for web: https://docs.flutter.dev/platform-integration/web/building · compile-time config (`--dart-define` / `--dart-define-from-file`): https://dart.dev/guides/environment-declarations
 - **ElevenLabs (voice):** https://elevenlabs.io/docs · single-shot TTS (used by `api/` `/story`): https://elevenlabs.io/docs/api-reference/text-to-speech/convert · **Agents (conversational):** quickstart https://elevenlabs.io/docs/eleven-agents/quickstart · prompting guide https://elevenlabs.io/docs/eleven-agents/best-practices/prompting-guide · guardrails https://elevenlabs.io/docs/eleven-agents/best-practices/guardrails · React/JS SDK `@elevenlabs/react` `@elevenlabs/client`. **Agent prompts live in the ElevenLabs dashboard, NOT the repo** — see the IMPORTANT note below.
 - **Qwen (story gen — DashScope Model Studio, OpenAI-compatible):** OpenAI-compat guide: https://www.alibabacloud.com/help/en/model-studio/compatibility-of-openai-with-dashscope · get API key: https://www.alibabacloud.com/help/en/model-studio/get-api-key · models list: https://www.alibabacloud.com/help/en/model-studio/getting-started/models · first call: https://www.alibabacloud.com/help/en/model-studio/first-api-call-to-qwen · open-model docs: https://qwen.readthedocs.io/ · in use: base URL `https://dashscope-intl.aliyuncs.com/compatible-mode/v1`, model `qwen3.7-max` with `enable_thinking:false` (reasoning pass off — ~4s vs ~49s/timeout, no quality loss for stories), Bearer `QWEN_API_KEY`. (No reputable first-party Qwen text-gen agent skill on skills.sh as of 2026-06-06; the API is OpenAI-compatible so the OpenAI SDK applies: https://platform.openai.com/docs.)
 - **Mollie (payments, if used):** https://docs.mollie.com/

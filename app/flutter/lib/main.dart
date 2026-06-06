@@ -175,11 +175,11 @@ class _YarniaRootState extends State<YarniaRoot> {
       );
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body) as Map<String, dynamic>;
-        final base64Audio = data['audio'] as String?;
         setState(() {
           _storyText = data['text'] as String?;
-          _audioUrl = data['audioUrl'] as String? ??
-              (base64Audio != null ? 'data:audio/mpeg;base64,$base64Audio' : null);
+          // POST /story returns `audio` already as a full data: URI
+          // (data:audio/mpeg;base64,...) or null. PlaybackScreen plays it as-is.
+          _audioUrl = data['audio'] as String?;
         });
       }
     } catch (e) {

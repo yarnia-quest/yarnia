@@ -42,7 +42,7 @@ Defensibility = the memory layer. After a few nights Yarnia knows the child; lea
 - **DEMO MOVE (critical):** **seed a child "Lisa" with 3 prior sessions** so the live run opens with *"Another dragon story like last time? I'll keep the thunder out."* That single line *is* the moat on screen. (Real-time write-back = nice-to-have; seeding is enough to prove it.)
 
 ## Architecture / stack
-- **Frontend:** Expo (React Native) — screen-dim + audio-first UI.
+- **Frontend:** Flutter (Dart) — screen-dim + audio-first UI (one codebase: iOS, Android, web). (Planning note: an earlier draft considered Expo/React Native; the build shipped on Flutter.)
 - **DB / Auth / Realtime / Storage:** InstantDB (users, children, sessions, audio URLs).
 - **Voice / TTS:** ElevenLabs (greeting + narration; expressive).
 - **Story generation:** OpenAI or Qwen (both sponsors).
