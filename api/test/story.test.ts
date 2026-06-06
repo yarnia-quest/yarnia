@@ -95,6 +95,9 @@ describe("GET /agent/session", () => {
         favorite_characters: "dragon",
         fears_to_avoid: "thunder",
         last_story: "a dragon who shared",
+        session_state: "returning",
+        active_story_series: "",
+        last_series_episode: "",
       },
       signedUrl: "wss://signed",
     });

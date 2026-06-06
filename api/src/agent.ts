@@ -3,22 +3,41 @@
 // child (admin-only) and hands these to the client, which starts the conversation with them.
 import type { Child } from "./prompt";
 
+// Every variable is derivable from the child's stored data (no parent model, no client
+// input). session_state + the series fields support the agent's returning-vs-first-time
+// and recurring-journey behavior. See infra/elevenlabs-agent.md.
 export type DynamicVariables = {
   child_name: string;
   child_age: string;
   favorite_characters: string;
   fears_to_avoid: string;
   last_story: string;
+  session_state: "first_time" | "returning";
+  active_story_series: string;
+  last_series_episode: string;
 };
 
 export function toDynamicVariables(child: Child): DynamicVariables {
-  const last = child.pastSessions[child.pastSessions.length - 1];
+  const sessions = child.pastSessions;
+  const last = sessions[sessions.length - 1];
+
+  // A "series" = characters that recur across 2+ past sessions (the Ella-and-Finn pattern).
+  const counts = new Map<string, number>();
+  for (const s of sessions) {
+    for (const c of s.charactersUsed ?? []) counts.set(c, (counts.get(c) ?? 0) + 1);
+  }
+  const recurring = [...counts.entries()].filter(([, n]) => n >= 2).map(([c]) => c);
+  const hasSeries = recurring.length > 0;
+
   return {
     child_name: child.name,
     child_age: String(child.age),
     favorite_characters: child.favoriteCharacters.join(" and ") || "all kinds of friends",
     fears_to_avoid: child.fearsToAvoid.join(", ") || "nothing in particular",
     last_story: last ? last.summary : "a brand new adventure",
+    session_state: sessions.length ? "returning" : "first_time",
+    active_story_series: hasSeries ? recurring.join(" and ") : "",
+    last_series_episode: hasSeries && last ? last.summary : "",
   };
 }
 

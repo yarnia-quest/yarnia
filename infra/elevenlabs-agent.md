@@ -8,26 +8,25 @@
 ## How the two pieces fit together
 - **Single-shot (`api/` `POST /story`)** — Worker loads child memory -> Qwen story -> ElevenLabs TTS -> returns text + audio. Deterministic, calm narration. Keep it.
 - **Conversational (this agent)** — real-time voice: greets the child by name, does the *bounded* co-creation ("an owl or a dragon?"), then narrates. Uses ElevenLabs' streaming STT+LLM+TTS loop.
-- **Bridge (future slice, not built yet):** a Worker endpoint `GET /agent/session?childId=...` calls the existing `loadChild` and returns (a) an ElevenLabs **signed URL** and (b) the **dynamic variables** below from the child's InstantDB profile. The app starts the conversation with `@elevenlabs/react`. Optionally, the agent calls `POST /story` as a **webhook tool** to hand off into the long calm narration once the child has chosen.
+- **Bridge (built — `GET /agent/session?childId=...`):** the Worker loads the child (admin-only) and returns (a) an ElevenLabs **signed URL** and (b) the **dynamic variables** below. The app starts the conversation with `@elevenlabs/react`. Optionally, the agent calls `POST /story` as a **webhook tool** to hand off into the long calm narration once the child has chosen.
 
-## Dynamic variables (passed at conversation start, from `loadChild`)
-Type `{{` in the builder to insert these. The Worker fills them per child:
-| Variable | From InstantDB | Example (Lisa) |
+## Dynamic variables (passed at conversation start)
+`GET /agent/session?childId=...` returns these (via `toDynamicVariables` in `api/src/agent.ts`). Type `{{` in the builder to insert them. **Every variable is derived from the child's stored data — no parent model or client input required.**
+| Variable | Source (all from stored data) | Example (Lisa) |
 |---|---|---|
 | `{{child_name}}` | `children.name` | Lisa |
 | `{{child_age}}` | `children.age` | 4 |
-| `{{favorite_characters}}` | `children.favoriteCharacters` joined | dragons and owls |
+| `{{favorite_characters}}` | `children.favoriteCharacters` joined | dragon and owl |
 | `{{fears_to_avoid}}` | `children.fearsToAvoid` joined | thunder, loud noises |
 | `{{last_story}}` | most recent `sessions.summary` | a gentle dragon who learned to share |
-| `{{session_state}}` | computed by Worker | first_time or returning |
-| `{{listener_context}}` | app onboarding / session choice | parent_and_child, child_only, parent_only, unknown |
-| `{{time_of_day}}` | local time bucket | morning, afternoon, bedtime, late_night |
-| `{{parent_name}}` | `users.name` or blank | Burhan |
-| `{{active_story_series}}` | current repeated journey, if any | Ella and Finn |
-| `{{last_series_episode}}` | most recent series summary, if any | Ella and Finn followed a glowing coin to the sea kingdom |
+| `{{session_state}}` | `first_time` if no sessions, else `returning` | returning |
+| `{{active_story_series}}` | characters recurring across 2+ sessions, joined (else empty) | the gentle dragon and Pip the owl |
+| `{{last_series_episode}}` | most recent summary when a series exists (else empty) | a gentle dragon who learned to share |
+
+> **Deferred** (need a parent/user model or client-supplied context — not emitted yet, so do not reference in the prompt): `{{parent_name}}`, `{{listener_context}}`, `{{time_of_day}}`.
 
 ## Greeting + story selection prompt section
-Use this when the agent should handle the opening conversation before handing off to story creation. This is the most important section for the conversational agent because it adapts to first-time vs returning users, parent/kid presence, time of day, and recurring story journeys like Ella and Finn.
+Use this when the agent should handle the opening conversation before handing off to story creation. This is the most important section for the conversational agent because it adapts to first-time vs returning users and recurring story journeys like Ella and Finn.
 
 Paste this section into the system prompt after `# Goal`, or replace the current `# Goal` section with it:
 
@@ -38,10 +37,7 @@ Your first job is to welcome the listener naturally and guide them into a calm s
 ## Context
 - Child name: {{child_name}}
 - Child age: {{child_age}}
-- Parent name: {{parent_name}}
 - Session state: {{session_state}}
-- Listener context: {{listener_context}}
-- Time of day: {{time_of_day}}
 - Favorite characters: {{favorite_characters}}
 - Things to avoid: {{fears_to_avoid}}
 - Last story: {{last_story}}
@@ -51,12 +47,7 @@ Your first job is to welcome the listener naturally and guide them into a calm s
 ## Greeting Rules
 - If `{{session_state}}` is `first_time`, welcome them to the Yarnia world. Keep it magical but simple.
 - If `{{session_state}}` is `returning`, greet them like you remember them. Mention one gentle memory from `{{last_story}}`, `{{favorite_characters}}`, or `{{active_story_series}}`.
-- If `{{listener_context}}` is `parent_and_child`, greet both parent and child briefly, then speak mostly to the child.
-- If `{{listener_context}}` is `parent_only`, speak to the parent softly and help them set up tonight's story for the child.
-- If `{{listener_context}}` is `child_only` or `unknown`, speak directly to the child and keep choices very simple.
-- Use the time of day lightly:
-  - `morning` or `afternoon`: make it a gentle adventure or quiet story, not necessarily sleep-focused.
-  - `bedtime` or `late_night`: slow everything down and make it feel cozy, dim, and sleepy.
+- Speak directly to the child and keep choices very simple. The story winds them DOWN toward sleep, so keep everything cozy, dim, and slow.
 
 ## Story Selection Flow
 Ask only ONE short question at a time. Offer 2 or 3 clear choices, never a long menu.
@@ -97,22 +88,17 @@ When they confirm, begin the story calmly. If they do not confirm, ask one more 
 ### Example first messages
 Pick one pattern depending on the session state. Do not paste all of these as the actual first message; they are templates.
 
-**Returning parent + child, bedtime, active Ella/Finn series**
+**Returning, active Ella/Finn series**
 ```
-Good evening, {{parent_name}}. Hello again, {{child_name}}. It's Yarnia. I remember our last journey with {{active_story_series}}, when {{last_series_episode}}. Should we create another gentle adventure for them tonight, or would you like a brand-new story?
+Hello again, {{child_name}}. It's Yarnia. I remember our last journey with {{active_story_series}}, when {{last_series_episode}}. Should we create another gentle adventure for them tonight, or would you like a brand-new story?
 ```
 
-**Returning child only, bedtime, no series**
+**Returning, no series**
 ```
 Hello again, {{child_name}}. It's Yarnia. I remember you liked {{favorite_characters}}, and I'll keep away from {{fears_to_avoid}}. Would you like another story with them tonight, or something new and cozy?
 ```
 
-**First-time parent + child**
-```
-Hello {{parent_name}}, and hello {{child_name}}. Welcome to the Yarnia world. It looks like this is your first time here. Which direction should we take tonight: a moonlit forest, a tiny sea kingdom, or a soft journey through the stars?
-```
-
-**First-time child or unknown listener**
+**First-time**
 ```
 Hello {{child_name}}. Welcome to Yarnia. We can make a gentle story together. Should we go toward a moonlit forest, a tiny sea kingdom, or the quiet stars?
 ```

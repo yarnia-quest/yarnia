@@ -15,17 +15,35 @@ const lisa: Child = {
 };
 
 describe("toDynamicVariables", () => {
-  it("maps a child into the agent's {{...}} variables", () => {
+  it("maps a returning child with no recurring cast (no active series)", () => {
     expect(toDynamicVariables(lisa)).toEqual({
       child_name: "Lisa",
       child_age: "4",
       favorite_characters: "dragon and owl",
       fears_to_avoid: "thunder, loud noises",
       last_story: "a gentle dragon who learned to share", // most recent session
+      session_state: "returning",
+      active_story_series: "", // owl + dragon each appear once -> no series
+      last_series_episode: "",
     });
   });
 
-  it("uses gentle fallbacks for a child with no history or fears", () => {
+  it("detects an active series when characters recur across sessions", () => {
+    const withSeries: Child = {
+      ...lisa,
+      pastSessions: [
+        { summary: "Pip the owl met a firefly", charactersUsed: ["Pip the owl"] },
+        { summary: "Pip and the dragon built a fort", charactersUsed: ["Pip the owl", "the dragon"] },
+        { summary: "the dragon shared his stones", charactersUsed: ["the dragon"] },
+      ],
+    };
+    const v = toDynamicVariables(withSeries);
+    expect(v.active_story_series).toContain("Pip the owl");
+    expect(v.active_story_series).toContain("the dragon");
+    expect(v.last_series_episode).toBe("the dragon shared his stones");
+  });
+
+  it("uses gentle fallbacks and first_time for a child with no history", () => {
     const blank: Child = {
       name: "Max",
       age: 6,
@@ -39,6 +57,9 @@ describe("toDynamicVariables", () => {
     expect(v.favorite_characters).not.toBe("");
     expect(v.fears_to_avoid).not.toBe("");
     expect(v.last_story).not.toBe("");
+    expect(v.session_state).toBe("first_time");
+    expect(v.active_story_series).toBe("");
+    expect(v.last_series_episode).toBe("");
   });
 });
 
