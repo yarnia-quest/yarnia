@@ -142,12 +142,22 @@ export function createApp(makeDeps: (env: Bindings) => AppDeps = defaultDeps) {
     }
 
     const deps = makeDeps(c.env);
+
+    // Fetch transcript synchronously so it's available before the Worker can exit.
+    // ElevenLabs needs a moment after disconnect — retry up to 3 times with a short wait.
+    let transcript = await deps.fetchTranscript(conversationId);
+    if (!transcript.length) {
+      await new Promise((r) => setTimeout(r, 3000));
+      transcript = await deps.fetchTranscript(conversationId);
+    }
+    if (!transcript.length) {
+      await new Promise((r) => setTimeout(r, 4000));
+      transcript = await deps.fetchTranscript(conversationId);
+    }
+
     try {
       c.executionCtx.waitUntil(
         (async () => {
-          // ElevenLabs needs a few seconds after disconnect to finalise the transcript.
-          await new Promise((r) => setTimeout(r, 5000));
-          const transcript = await deps.fetchTranscript(conversationId);
           const storyText = transcript
             .filter((t) => t.role === "agent" && t.message)
             .map((t) => t.message!)
@@ -170,7 +180,8 @@ export function createApp(makeDeps: (env: Bindings) => AppDeps = defaultDeps) {
         })(),
       );
     } catch {
-      // no execution context in tests
+      // no execution context in tests — run synchronously
+      await persistAgentSession(childId, transcript, deps);
     }
     return c.json({ ok: true });
   });
