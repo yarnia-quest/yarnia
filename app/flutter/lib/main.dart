@@ -32,7 +32,52 @@ class YarniaApp extends StatelessWidget {
       // Lora (the deck's body serif) is the app-wide default so any unstyled or
       // Material-default text inherits it; screens opt into Fraunces for headlines.
       theme: ThemeData(scaffoldBackgroundColor: navy, fontFamily: 'Lora'),
+      builder: (context, child) => _PhoneFrame(child: child!),
       home: const YarniaRoot(),
+    );
+  }
+}
+
+// Yarnia is a phone-first product, but it also ships to the web (app.yarnia.quest).
+// On a wide browser window a full-bleed mobile layout looks stretched and wrong, so
+// every screen is centered inside a phone-width column with a darker backdrop on
+// either side — it reads like a mobile app running on desktop. On a real phone (or
+// any window narrower than the frame) the constraint is a no-op and the app fills
+// the screen as usual.
+class _PhoneFrame extends StatelessWidget {
+  const _PhoneFrame({required this.child});
+
+  final Widget child;
+
+  // A typical large-phone logical width. Wide enough to feel roomy, narrow enough
+  // to keep the mobile layout honest.
+  static const double _maxWidth = 430;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Narrower than the frame (real phones): pass through untouched.
+        if (constraints.maxWidth <= _maxWidth) return child;
+
+        final media = MediaQuery.of(context);
+        // Report the constrained width to descendants so anything sized to
+        // MediaQuery.size (e.g. the starfield) lays out against the column,
+        // not the full window.
+        final framedMedia = media.copyWith(
+          size: Size(_maxWidth, media.size.height),
+        );
+        return ColoredBox(
+          // A shade darker than the app navy so the phone column stands out.
+          color: const Color(0xFF090A18),
+          child: Center(
+            child: SizedBox(
+              width: _maxWidth,
+              child: MediaQuery(data: framedMedia, child: child),
+            ),
+          ),
+        );
+      },
     );
   }
 }
