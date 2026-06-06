@@ -48,6 +48,12 @@ export function sanitizeChoice(raw: string): string {
     .slice(0, 120);
 }
 
+// Same guard applied to onboarding string lists (favoriteCharacters/themes/fearsToAvoid),
+// which are stored verbatim and later interpolated into the story prompt. Drops blank entries.
+export function sanitizeList(xs?: string[]): string[] {
+  return (xs ?? []).map(sanitizeChoice).filter((s) => s.length > 0);
+}
+
 // Everything the routes need, built from the Worker env. Injectable so tests pass fakes.
 type AppDeps = StoryDeps & {
   agentId: string;
@@ -204,7 +210,9 @@ export function createApp(makeDeps: (env: Bindings) => AppDeps = defaultDeps) {
       fearsToAvoid?: string[];
     };
     const body = await c.req.json<ChildBody>().catch(() => ({}) as ChildBody);
-    const name = body.name?.trim();
+    // Sanitize every field that later flows into the LLM prompt, not just the per-request
+    // `choice` — these are stored once and reused on every story, so injection here persists.
+    const name = sanitizeChoice(body.name ?? "");
     if (!name) return c.json({ error: "name required" }, 400);
     if (typeof body.age !== "number" || !Number.isFinite(body.age)) {
       return c.json({ error: "age required" }, 400);
@@ -214,9 +222,9 @@ export function createApp(makeDeps: (env: Bindings) => AppDeps = defaultDeps) {
     const childId = await deps.createChild({
       name,
       age: body.age,
-      favoriteCharacters: body.favoriteCharacters ?? [],
-      themes: body.themes ?? [],
-      fearsToAvoid: body.fearsToAvoid ?? [],
+      favoriteCharacters: sanitizeList(body.favoriteCharacters),
+      themes: sanitizeList(body.themes),
+      fearsToAvoid: sanitizeList(body.fearsToAvoid),
     });
     return c.json({ childId, name });
   });

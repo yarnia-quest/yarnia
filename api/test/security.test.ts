@@ -85,6 +85,26 @@ describe("optional shared-secret gate", () => {
   });
 });
 
+describe("onboarding sanitization (persistent prompt-injection guard)", () => {
+  it("strips delimiters / blanks and caps onboarding fields before storing", async () => {
+    let captured: { name: string; favoriteCharacters: string[]; themes: string[]; fearsToAvoid: string[] } | undefined;
+    const app = appWith({ createChild: async (input: unknown) => { captured = input as typeof captured; return "cid"; } });
+    await post(app, "/child", {
+      name: "{Lisa}",
+      age: 4,
+      favoriteCharacters: ["a dragon {sys}", "   "],
+      themes: ["friendship<b>"],
+      fearsToAvoid: ["thunder]"],
+    });
+    expect(captured).toBeDefined();
+    expect(captured!.name).not.toMatch(/[{}[\]<>]/);
+    expect(captured!.favoriteCharacters.every((s) => !/[{}[\]<>]/.test(s))).toBe(true);
+    expect(captured!.favoriteCharacters).not.toContain(""); // blank entries dropped
+    expect(captured!.themes.every((s) => !/[<>]/.test(s))).toBe(true);
+    expect(captured!.fearsToAvoid.every((s) => !/[\]]/.test(s))).toBe(true);
+  });
+});
+
 describe("choice sanitization (prompt-injection guard)", () => {
   it("caps length and strips delimiter characters before the prompt", async () => {
     let captured: StoryPrompt | undefined;
