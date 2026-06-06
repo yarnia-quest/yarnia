@@ -22,3 +22,7 @@ bun.lockb
 # ignored). skills-lock.json is the committed manifest — restore with
 # `npx skills experimental_install`.
 .agents/
+
+# Local /story test artifacts (npm run story)
+api/story.mp3
+*.mp3
