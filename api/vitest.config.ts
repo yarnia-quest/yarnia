@@ -6,5 +6,7 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["test/**/*.test.ts"],
+    // Integration tests (real APIs) run separately via vitest.integration.config.ts.
+    exclude: ["test/**/*.integration.test.ts", "node_modules/**"],
   },
 });
