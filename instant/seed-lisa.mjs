@@ -81,9 +81,24 @@ const SESSIONS = [
 ];
 
 if (reset) {
+  // DESTRUCTIVE. This is the ONLY code in the repo that deletes data from production
+  // InstantDB, so it is gated behind an explicit confirmation env var. A bare
+  // `--reset` (or any automation/other session that runs this) refuses to delete and
+  // aborts, so demo sessions written by real gameplay can never be wiped by accident.
+  // To actually reset Lisa's demo state, run:
+  //   YARNIA_CONFIRM_RESET=lisa node instant/seed-lisa.mjs --reset
+  if (env.YARNIA_CONFIRM_RESET !== "lisa" && process.env.YARNIA_CONFIRM_RESET !== "lisa") {
+    console.error(
+      "REFUSING to --reset: this deletes Lisa's sessions from PRODUCTION.\n" +
+        "If you really mean it, re-run with: YARNIA_CONFIRM_RESET=lisa node instant/seed-lisa.mjs --reset",
+    );
+    process.exit(1);
+  }
   const res = await db.query({ children: { $: { where: { id: LISA } }, sessions: {} } });
   const existing = res.children[0]?.sessions ?? [];
   if (existing.length) {
+    // Scoped strictly to the demo child Lisa: only sessions reached via her link are
+    // deleted. Real children (onboarded via POST /child) are never touched here.
     await db.transact(existing.map((s) => db.tx.sessions[s.id].delete()));
     console.log(`--reset: deleted ${existing.length} existing session(s) for Lisa`);
   }
