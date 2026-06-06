@@ -47,6 +47,21 @@
 			</array>
 		</dict>
 	</dict>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<!-- Allow plain-HTTP calls to the local dev Worker (http://localhost:8787) on the
+		     simulator. Scoped to localhost only; production uses https://api.yarnia.quest. -->
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+		<key>NSExceptionDomains</key>
+		<dict>
+			<key>localhost</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+			</dict>
+		</dict>
+	</dict>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Yarnia needs your microphone so your child can choose tonight's story character by speaking.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
