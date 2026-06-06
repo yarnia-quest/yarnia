@@ -98,7 +98,14 @@ class _AgentScreenState extends State<AgentScreen> with TickerProviderStateMixin
       final dynamicVariables = data['dynamicVariables'] as Map<String, dynamic>?;
 
       if (signedUrl != null) {
-        await _client.startSession(conversationToken: signedUrl);
+        // Pass dynamicVariables here too: the signed URL only authenticates the
+        // connection — child_name, greeting, fears, etc. still travel with the
+        // session. Omitting them strips all personalization (the common path,
+        // since the Worker returns a signedUrl whenever the EL key is set).
+        await _client.startSession(
+          conversationToken: signedUrl,
+          dynamicVariables: dynamicVariables,
+        );
       } else if (agentId != null) {
         await _client.startSession(
           agentId: agentId,
