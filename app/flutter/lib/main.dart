@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'screens/greeting_screen.dart';
+import 'screens/agent_screen.dart';
 import 'screens/cocreation_screen.dart';
 import 'screens/playback_screen.dart';
 import 'theme.dart';
@@ -36,6 +37,9 @@ class YarniaRoot extends StatefulWidget {
 }
 
 class _YarniaRootState extends State<YarniaRoot> {
+  // greeting → agent (primary) → done
+  //                ↓ fallback
+  //           cocreation → playback
   String _screen = 'greeting';
   String? _storyText;
   String? _audioUrl;
@@ -73,7 +77,14 @@ class _YarniaRootState extends State<YarniaRoot> {
     return switch (_screen) {
       'greeting' => GreetingScreen(
           childName: _demoChildName,
-          onBegin: () => setState(() => _screen = 'cocreation'),
+          onBegin: () => setState(() => _screen = 'agent'),
+        ),
+      'agent' => AgentScreen(
+          childName: _demoChildName,
+          childId: _demoChildId,
+          apiBase: _apiBase,
+          onDone: _handleRestart,
+          onFallback: () => setState(() => _screen = 'cocreation'),
         ),
       'cocreation' => CoCreationScreen(
           childName: _demoChildName,
