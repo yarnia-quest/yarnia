@@ -4,7 +4,9 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths: ["marketing/**"]
+    # ideation/results/deck.html is symlinked into marketing/public/deck/, so a deck-only
+    # edit must also trigger this deploy (the symlink target lives outside marketing/).
+    paths: ["marketing/**", "ideation/results/deck.html"]
 
 # The marketing worker is assets-only and holds NO secret (the signup is written client-side to
 # InstantDB with a create-only permission). So this only needs the Cloudflare deploy credentials.
