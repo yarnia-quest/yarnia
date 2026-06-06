@@ -173,10 +173,12 @@
   .err:empty{display:none}
   .fineprint{margin-top:18px; font-size:14px; color:var(--muted); max-width:46ch}
   .fineprint b{color:var(--ink-soft); font-weight:500}
+  .counter{font-size:13.5px; color:var(--dim); font-style:italic; margin-top:var(--gap); margin-bottom:12px; min-height:1.4em; transition:opacity .4s; text-align:center}
+  .counter.loading{opacity:0}
   .thanks{margin-top:18px; font-size:19px; font-family:var(--display); font-style:italic; color:var(--moon-soft); display:none; max-width:42ch; line-height:1.45}
 
   /* a few content beats below the signup */
-  footer{margin-top:var(--gap); padding-top:24px; border-top:1px solid var(--line); text-align:center; font-size:14px; color:var(--dim)}
+  footer{margin-top:0; padding-top:24px; border-top:1px solid var(--line); text-align:center; font-size:14px; color:var(--dim)}
   footer a{color:var(--moon); text-decoration:none}
   footer a:hover{text-decoration:underline}
 
@@ -228,13 +230,24 @@
 
     </main>
 
+    <p class="counter loading reveal" id="counter" style="--d:.40s" aria-live="polite"></p>
     <footer class="reveal" style="--d:.44s"><a href="mailto:hi@yarnia.quest">hi@yarnia.quest</a></footer>
   </div>
+
 
   <script type="module">
     import { init, id } from "https://esm.sh/@instantdb/core@1.0.43";
     // Public InstantDB app id (safe to expose). Writes are gated by the create-only `signups` permission.
     const db = init({ appId: "889939e5-f81f-41d9-9307-90c8af24b4b8" });
+
+    // Live read-only signup counter (reads signup_ticks — no PII, publicly viewable)
+    const counter = document.getElementById("counter");
+    db.subscribeQuery({ signup_ticks: {} }, ({ data, error }) => {
+      if (error || !data?.signup_ticks) return;
+      const n = data.signup_ticks.length;
+      counter.textContent = n > 0 ? `${n} ${n === 1 ? "parent is" : "parents are"} already waiting.` : "";
+      counter.classList.remove("loading");
+    });
 
     const f = document.getElementById("signup");
     const fineprint = document.getElementById("fineprint");
@@ -258,7 +271,10 @@
       clearFail();
       btn.disabled = true; btn.textContent = "Saving your spot...";
       try {
-        await db.transact(db.tx.signups[id()].create({ email, createdAt: Date.now(), source: "landing" }));
+        await db.transact([
+          db.tx.signups[id()].create({ email, createdAt: Date.now(), source: "landing" }),
+          db.tx.signup_ticks[id()].create({ at: Date.now() }),
+        ]);
         showThanks();
       } catch (err) {
         const msg = String(err?.message ?? err);

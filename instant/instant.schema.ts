@@ -17,6 +17,12 @@ const _schema = i.schema({
       createdAt: i.number(),
       source: i.string().optional(),
     }),
+    // Public counter — no PII. One record per signup, viewable by anyone.
+    // The marketing page creates one tick per signup (same transaction), and reads
+    // the length to show the live waitlist count without exposing email addresses.
+    signup_ticks: i.entity({
+      at: i.number().indexed(),
+    }),
     // A child profile — the per-child memory that powers personalized, safe stories.
     children: i.entity({
       name: i.string(),

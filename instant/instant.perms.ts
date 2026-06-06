@@ -13,6 +13,14 @@ const rules = {
       delete: "false",
     },
   },
+  signup_ticks: {
+    allow: {
+      view: "true",
+      create: "true",
+      update: "false",
+      delete: "false",
+    },
+  },
   // Child profiles + sessions are private: NO client access. Only the product Worker
   // (api/, @instantdb/admin token) reads/writes them, and the admin token bypasses perms.
   // If the app ever needs client reads, replace with an owner-scoped rule, not `true`.
