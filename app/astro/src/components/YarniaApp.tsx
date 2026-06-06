@@ -1,6 +1,9 @@
+import type { VoiceConversation } from "@elevenlabs/client";
 import { useEffect, useRef, useState } from "preact/hooks";
+import db from "../db";
 
 const API_BASE = import.meta.env.PUBLIC_API_BASE_URL ?? "http://localhost:8787";
+const DEMO_CHILD = { id: "lisa-seed", name: "Lisa" };
 
 const CHOICES = [
   { id: "dragon", emoji: "🐉", label: "a dragon" },
@@ -9,9 +12,7 @@ const CHOICES = [
   { id: "bear", emoji: "🐻", label: "a bear" },
 ];
 
-const DEMO_CHILD = { id: "lisa-seed", name: "Lisa" };
-
-type Screen = "greeting" | "cocreation" | "playback" | "loading";
+type Screen = "greeting" | "agent" | "done" | "cocreation" | "loading" | "playback";
 
 interface StoryResult {
   text: string;
@@ -19,9 +20,9 @@ interface StoryResult {
   audioUrl?: string;
 }
 
-// Web Speech API has no standard TS types
+// Web Speech API types (no standard TS types)
 interface SpeechRecognitionEvent {
-  results: { [index: number]: { [index: number]: { transcript: string } } };
+  results: { length: number; [i: number]: { [j: number]: { transcript: string } } };
 }
 interface SpeechRecognitionInstance {
   lang: string;
@@ -37,7 +38,7 @@ interface SpeechRecognitionWindow {
   webkitSpeechRecognition?: new () => SpeechRecognitionInstance;
 }
 
-// ─── Stars ────────────────────────────────────────────────────────────────────
+// ─── Starfield ────────────────────────────────────────────────────────────────
 
 function Starfield() {
   const stars = Array.from({ length: 80 }, (_, i) => {
@@ -49,16 +50,9 @@ function Starfield() {
       o: ((((seed * 123456) >>> 0) % 60) + 30) / 100,
     };
   });
-
   return (
     <svg
-      style={{
-        position: "fixed",
-        inset: 0,
-        width: "100%",
-        height: "100%",
-        pointerEvents: "none",
-      }}
+      style={{ position: "fixed", inset: 0, width: "100%", height: "100%", pointerEvents: "none" }}
       aria-hidden="true"
       role="presentation"
     >
@@ -69,14 +63,214 @@ function Starfield() {
   );
 }
 
-// ─── Greeting ─────────────────────────────────────────────────────────────────
+// ─── Orb ──────────────────────────────────────────────────────────────────────
 
-function GreetingScreen({ onBegin }: { onBegin: () => void }) {
+function Orb({ isSpeaking, isConnecting }: { isSpeaking: boolean; isConnecting: boolean }) {
+  const color = isConnecting ? "#2d3070" : isSpeaking ? "#c9a84c" : "#f5f0e8";
+  const animClass = isConnecting
+    ? "orb orb--connecting"
+    : isSpeaking
+      ? "orb orb--speaking"
+      : "orb orb--listening";
+  return <div class={animClass} style={{ "--orb-color": color } as Record<string, string>} />;
+}
+
+// ─── Status label ─────────────────────────────────────────────────────────────
+
+function StatusLabel({
+  isConnecting,
+  isSpeaking,
+  error,
+}: {
+  isConnecting: boolean;
+  isSpeaking: boolean;
+  error: string | null;
+}) {
+  const text = error
+    ? "Something went wrong"
+    : isConnecting
+      ? "Preparing your story…"
+      : isSpeaking
+        ? "Yarnia is speaking…"
+        : "Your turn…";
+  return (
+    <p
+      class="font-body"
+      style={{
+        color: "var(--color-cream)",
+        opacity: 0.65,
+        fontSize: "0.95rem",
+        letterSpacing: "0.03em",
+      }}
+    >
+      {text}
+    </p>
+  );
+}
+
+// ─── Agent screen ─────────────────────────────────────────────────────────────
+
+function AgentScreen({
+  childId,
+  onDone,
+  onFallback,
+}: {
+  childId: string;
+  onDone: () => void;
+  onFallback: () => void;
+}) {
+  const [isConnecting, setIsConnecting] = useState(true);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+  const convRef = useRef<VoiceConversation | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function bootstrap() {
+      try {
+        const res = await fetch(`${API_BASE}/agent/session?childId=${childId}`);
+        if (!res.ok) throw new Error(`Session ${res.status}: ${await res.text()}`);
+        const data = (await res.json()) as {
+          signedUrl?: string;
+          agentId?: string;
+          dynamicVariables?: Record<string, string>;
+        };
+
+        if (cancelled) return;
+
+        const { Conversation } = await import("@elevenlabs/client");
+        const sessionOpts = data.signedUrl
+          ? { signedUrl: data.signedUrl }
+          : { agentId: data.agentId as string };
+
+        const conv = (await Conversation.startSession({
+          ...sessionOpts,
+          dynamicVariables: data.dynamicVariables ?? {},
+          onConnect: () => {
+            if (!cancelled) setIsConnecting(false);
+          },
+          onDisconnect: () => {
+            if (!cancelled) setDone(true);
+          },
+          onModeChange: ({ mode }) => {
+            if (!cancelled) setIsSpeaking(mode === "speaking");
+          },
+          onError: (msg) => {
+            console.warn("ElevenLabs error:", msg);
+            if (!cancelled) setError(msg);
+          },
+        })) as VoiceConversation;
+
+        if (cancelled) {
+          conv.endSession();
+          return;
+        }
+        convRef.current = conv;
+      } catch (e) {
+        console.warn("Agent bootstrap failed:", e);
+        if (!cancelled) onFallback();
+      }
+    }
+
+    bootstrap();
+    return () => {
+      cancelled = true;
+      convRef.current?.endSession();
+      convRef.current = null;
+    };
+  }, [childId]);
+
+  if (done) return <DoneScreen onRestart={onDone} />;
+
+  return (
+    <div
+      class="screen flex flex-col items-center justify-center"
+      style={{ position: "relative", gap: 40 }}
+    >
+      <Orb isSpeaking={isSpeaking} isConnecting={isConnecting} />
+      <StatusLabel isConnecting={isConnecting} isSpeaking={isSpeaking} error={error} />
+
+      {!isConnecting && (
+        <button
+          type="button"
+          style={{
+            position: "absolute",
+            bottom: 48,
+            background: "none",
+            border: "none",
+            color: "var(--color-cream)",
+            opacity: 0.25,
+            fontSize: 13,
+            letterSpacing: "1.5px",
+            cursor: "pointer",
+            fontFamily: "serif",
+          }}
+          onClick={async () => {
+            await convRef.current?.endSession();
+            setDone(true);
+          }}
+        >
+          end story
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ─── Done screen ──────────────────────────────────────────────────────────────
+
+function DoneScreen({ onRestart }: { onRestart: () => void }) {
+  return (
+    <div class="screen flex flex-col items-center justify-center text-center gap-6">
+      <div style={{ fontSize: 56 }}>✨</div>
+      <h2
+        class="font-display"
+        style={{
+          fontSize: "clamp(1.8rem, 6vw, 3rem)",
+          color: "var(--color-cream)",
+          fontWeight: 700,
+        }}
+      >
+        The end.
+      </h2>
+      <button
+        type="button"
+        style={{
+          marginTop: 24,
+          background: "none",
+          border: "none",
+          color: "var(--color-cream)",
+          opacity: 0.4,
+          fontSize: "0.9rem",
+          letterSpacing: "0.05em",
+          cursor: "pointer",
+          fontFamily: "serif",
+        }}
+        onClick={onRestart}
+      >
+        Another night →
+      </button>
+    </div>
+  );
+}
+
+// ─── Greeting screen ──────────────────────────────────────────────────────────
+
+function GreetingScreen({
+  childName,
+  lastStoryTitle,
+  onBegin,
+}: {
+  childName: string;
+  lastStoryTitle?: string;
+  onBegin: () => void;
+}) {
   return (
     <div class="screen flex flex-col items-center justify-center text-center px-8 gap-8">
       <div style={{ fontSize: 72, lineHeight: 1 }}>🌙</div>
-
-      <div>
+      <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
         <h1
           class="font-display"
           style={{
@@ -85,21 +279,29 @@ function GreetingScreen({ onBegin }: { onBegin: () => void }) {
             fontWeight: 700,
           }}
         >
-          Hello, {DEMO_CHILD.name}
+          Good night, {childName}.
         </h1>
-        <p
-          class="font-body"
-          style={{
-            color: "var(--color-cream)",
-            opacity: 0.6,
-            marginTop: "0.75rem",
-            fontSize: "1.1rem",
-          }}
-        >
-          Ready for tonight's story?
-        </p>
+        {lastStoryTitle ? (
+          <p
+            class="font-body"
+            style={{
+              color: "var(--color-gold)",
+              opacity: 0.8,
+              fontSize: "0.9rem",
+              letterSpacing: "0.04em",
+            }}
+          >
+            Last night: {lastStoryTitle}
+          </p>
+        ) : (
+          <p
+            class="font-body"
+            style={{ color: "var(--color-cream)", opacity: 0.5, fontSize: "1rem" }}
+          >
+            Ready for tonight's story?
+          </p>
+        )}
       </div>
-
       <button type="button" class="btn-primary" onClick={onBegin}>
         Begin
       </button>
@@ -107,7 +309,7 @@ function GreetingScreen({ onBegin }: { onBegin: () => void }) {
   );
 }
 
-// ─── Co-creation ──────────────────────────────────────────────────────────────
+// ─── Co-creation (fallback) ───────────────────────────────────────────────────
 
 function CoCreationScreen({ onChoice }: { onChoice: (choice: string) => void }) {
   const [listening, setListening] = useState(false);
@@ -171,7 +373,6 @@ function CoCreationScreen({ onChoice }: { onChoice: (choice: string) => void }) 
         </h2>
       </div>
 
-      {/* Chips */}
       <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", justifyContent: "center" }}>
         {CHOICES.map((c) => (
           <button type="button" key={c.id} class="chip" onClick={() => onChoice(c.id)}>
@@ -180,7 +381,6 @@ function CoCreationScreen({ onChoice }: { onChoice: (choice: string) => void }) 
         ))}
       </div>
 
-      {/* Mic */}
       <div
         style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "0.5rem" }}
       >
@@ -222,7 +422,7 @@ function CoCreationScreen({ onChoice }: { onChoice: (choice: string) => void }) 
   );
 }
 
-// ─── Loading ──────────────────────────────────────────────────────────────────
+// ─── Loading screen ───────────────────────────────────────────────────────────
 
 function LoadingScreen() {
   const [dots, setDots] = useState(0);
@@ -230,7 +430,6 @@ function LoadingScreen() {
     const id = setInterval(() => setDots((d) => (d + 1) % 4), 500);
     return () => clearInterval(id);
   }, []);
-
   return (
     <div class="screen flex flex-col items-center justify-center gap-6 text-center px-8">
       <div style={{ fontSize: 56 }}>✨</div>
@@ -247,7 +446,7 @@ function LoadingScreen() {
   );
 }
 
-// ─── Playback ─────────────────────────────────────────────────────────────────
+// ─── Playback screen ──────────────────────────────────────────────────────────
 
 function PlaybackScreen({ story, onRestart }: { story: StoryResult; onRestart: () => void }) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -280,7 +479,6 @@ function PlaybackScreen({ story, onRestart }: { story: StoryResult; onRestart: (
   return (
     <div class="screen flex flex-col items-center px-8 pt-16 pb-20 gap-8">
       <div style={{ fontSize: 36, opacity: 0.7 }}>🌙</div>
-
       <div
         style={{
           flex: 1,
@@ -304,7 +502,6 @@ function PlaybackScreen({ story, onRestart }: { story: StoryResult; onRestart: (
           {story.text ?? "Once upon a time, in a land between the last yawn and the first dream…"}
         </p>
       </div>
-
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "1rem" }}>
         <button type="button" class="btn-outline" onClick={share}>
           {shared ? "Sent ✓" : "Send to grandma"}
@@ -329,11 +526,24 @@ function PlaybackScreen({ story, onRestart }: { story: StoryResult; onRestart: (
   );
 }
 
-// ─── Root ──────────────────────────────────────────────────────────────────────
+// ─── Root ─────────────────────────────────────────────────────────────────────
 
 export default function YarniaApp() {
   const [screen, setScreen] = useState<Screen>("greeting");
   const [story, setStory] = useState<StoryResult | null>(null);
+
+  // Live InstantDB subscription -- zero polling; updates the moment the API writes a session
+  const { data } = db.useQuery({
+    children: {
+      sessions: {},
+      $: { where: { id: DEMO_CHILD.id } },
+    },
+  });
+
+  const child = data?.children?.[0];
+  // biome-ignore lint/suspicious/noExplicitAny: InstantDB returns untyped entity data
+  const sessions: Array<{ title?: string; createdAt: number }> = (child?.sessions as any[]) ?? [];
+  const lastSession = [...sessions].sort((a, b) => b.createdAt - a.createdAt)[0];
 
   async function handleChoice(choice: string) {
     setScreen("loading");
@@ -344,8 +554,8 @@ export default function YarniaApp() {
         body: JSON.stringify({ childId: DEMO_CHILD.id, choice }),
       });
       if (!res.ok) throw new Error(`API ${res.status}`);
-      const data = await res.json();
-      setStory(data);
+      const d = (await res.json()) as StoryResult;
+      setStory(d);
       setScreen("playback");
     } catch (err) {
       console.warn("Story fetch failed:", err);
@@ -363,7 +573,21 @@ export default function YarniaApp() {
     <div style={{ position: "relative", minHeight: "100dvh" }}>
       <Starfield />
       <div style={{ position: "relative", zIndex: 1, minHeight: "100dvh" }}>
-        {screen === "greeting" && <GreetingScreen onBegin={() => setScreen("cocreation")} />}
+        {screen === "greeting" && (
+          <GreetingScreen
+            childName={child?.name ?? DEMO_CHILD.name}
+            lastStoryTitle={lastSession?.title}
+            onBegin={() => setScreen("agent")}
+          />
+        )}
+        {screen === "agent" && (
+          <AgentScreen
+            childId={DEMO_CHILD.id}
+            onDone={restart}
+            onFallback={() => setScreen("cocreation")}
+          />
+        )}
+        {screen === "done" && <DoneScreen onRestart={restart} />}
         {screen === "cocreation" && <CoCreationScreen onChoice={handleChoice} />}
         {screen === "loading" && <LoadingScreen />}
         {screen === "playback" && story && <PlaybackScreen story={story} onRestart={restart} />}

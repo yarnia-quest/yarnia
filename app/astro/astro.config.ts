@@ -25,6 +25,13 @@ export default defineConfig({
   ],
   vite: {
     plugins: [tailwindcss()],
-    resolve: { dedupe: ["preact", "preact/hooks"] },
+    resolve: {
+      alias: {
+        react: "preact/compat",
+        "react-dom": "preact/compat",
+        "react/jsx-runtime": "preact/jsx-runtime",
+      },
+      dedupe: ["preact", "preact/hooks"],
+    },
   },
 });

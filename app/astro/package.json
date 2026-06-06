@@ -11,13 +11,14 @@
   "dependencies": {
     "@astrojs/check": "^0.9.8",
     "@astrojs/preact": "^5.1.1",
+    "@elevenlabs/client": "^1.9.0",
     "@instantdb/react": "^1.0.43",
     "astro": "^6.1.8",
     "preact": "^10.29.1"
   },
   "devDependencies": {
-    "@tailwindcss/vite": "4.2.4",
     "@biomejs/biome": "^2.4.12",
+    "@tailwindcss/vite": "4.2.4",
     "tailwindcss": "^4.2.4",
     "typescript": "^6.0.3"
   },
