@@ -8,10 +8,8 @@ export type PastSession = {
   title?: string;
   summary: string;
   charactersUsed: string[];
-  // Compact carry-forward facts captured at write-back (session.ts), e.g. "the dragon
-  // shared his sparkly stones". Let callbacks be specific instead of just the summary.
-  // Optional so older callers/fixtures stay valid; loadChild always normalizes it to [].
   continuityNotes?: string[];
+  createdAt?: number;
 };
 
 export type Child = {

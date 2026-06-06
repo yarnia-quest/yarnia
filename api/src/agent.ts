@@ -83,6 +83,37 @@ export function toDynamicVariables(child: Child | null): DynamicVariables {
   };
 }
 
+// ─── Conversation transcript ────────────────────────────────────────────────
+
+export type ConversationTurn = { role: "agent" | "user"; message: string | null };
+
+export type TranscriptOpts = {
+  apiKey: string;
+  baseUrl?: string;
+  fetch?: typeof fetch;
+};
+
+// Fetches the full transcript for a completed conversation from the ElevenLabs API.
+// Used by POST /session/save to persist agent-told stories into the child's memory.
+export async function fetchConversationTranscript(
+  conversationId: string,
+  opts: TranscriptOpts,
+): Promise<ConversationTurn[]> {
+  const doFetch = opts.fetch ?? fetch;
+  const baseUrl = opts.baseUrl ?? DEFAULT_BASE_URL;
+  const res = await doFetch(
+    `${baseUrl}/v1/convai/conversations/${encodeURIComponent(conversationId)}`,
+    { headers: { "xi-api-key": opts.apiKey } },
+  );
+  if (!res.ok) {
+    throw new Error(`ElevenLabs conversation fetch failed: ${res.status}`);
+  }
+  const data = (await res.json()) as { transcript?: ConversationTurn[] };
+  return data.transcript ?? [];
+}
+
+// ─── Token / signed-URL ─────────────────────────────────────────────────────
+
 // Fetches a LiveKit JWT token so the Flutter SDK can start a conversation with a
 // private agent. Uses the /token endpoint (not the old get-signed-url WebSocket endpoint)
 // because the elevenlabs_agents Flutter SDK (0.6.1+) uses LiveKit as transport and needs

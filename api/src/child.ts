@@ -31,6 +31,7 @@ export async function loadChild(childId: string, query: InstantQuery): Promise<C
       summary: s.summary ?? "",
       charactersUsed: s.charactersUsed ?? [],
       continuityNotes: s.continuityNotes ?? [],
+      createdAt: s.createdAt,
     }));
 
   return {

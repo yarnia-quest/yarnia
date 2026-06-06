@@ -1,6 +1,7 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import app, { createApp } from "../src/index";
 import type { Child } from "../src/prompt";
+import type { ConversationTurn } from "../src/agent";
 
 // The app's deps: story deps plus the agent-session deps.
 type AppDeps = {
@@ -10,6 +11,7 @@ type AppDeps = {
   agentId: string;
   getSignedUrl: (agentId: string) => Promise<string>;
   saveSession: (childId: string, input: unknown) => Promise<void>;
+  fetchTranscript: (conversationId: string) => Promise<ConversationTurn[]>;
 };
 
 const lisa: Child = {
@@ -31,11 +33,12 @@ function appWith(deps: Partial<AppDeps>) {
     agentId: deps.agentId ?? "agent_test",
     getSignedUrl: deps.getSignedUrl ?? (async () => "wss://signed"),
     saveSession: deps.saveSession ?? (async () => {}),
+    fetchTranscript: deps.fetchTranscript ?? (async () => []),
   }));
 }
 
-function post(target: ReturnType<typeof createApp>, body: unknown) {
-  return target.request("/story", {
+function post(target: ReturnType<typeof createApp>, path: string, body: unknown) {
+  return target.request(path, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
@@ -53,13 +56,13 @@ describe("GET /", () => {
 describe("POST /story", () => {
   it("400s when childId is missing (without building any deps)", async () => {
     // Uses the default app: deps factory must NOT run for a bad request.
-    const res = await post(createApp(), {});
+    const res = await post(createApp(), "/story", {});
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual({ error: "childId required" });
   });
 
   it("returns the generated story for a known child", async () => {
-    const res = await post(appWith({}), { childId: "lisa-1", choice: "dragon" });
+    const res = await post(appWith({}), "/story", { childId: "lisa-1", choice: "dragon" });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
       childId: "lisa-1",
@@ -71,7 +74,7 @@ describe("POST /story", () => {
   });
 
   it("404s when the child is not found", async () => {
-    const res = await post(appWith({ loadChild: async () => null }), { childId: "ghost" });
+    const res = await post(appWith({ loadChild: async () => null }), "/story", { childId: "ghost" });
     expect(res.status).toBe(404);
     expect(await res.json()).toEqual({ error: "child_not_found" });
   });
@@ -119,5 +122,52 @@ describe("GET /agent/session", () => {
     const json = (await res.json()) as { dynamicVariables: { greeting: string } };
     expect(json.dynamicVariables.greeting).toContain("Welcome back to Yarnia, Lisa");
     expect(json.dynamicVariables.greeting).toContain("a dragon who shared");
+  });
+});
+
+describe("POST /session/save", () => {
+  it("400s when childId or conversationId is missing", async () => {
+    const r1 = await post(appWith({}), "/session/save", { childId: "lisa-1" });
+    expect(r1.status).toBe(400);
+    const r2 = await post(appWith({}), "/session/save", { conversationId: "conv_abc" });
+    expect(r2.status).toBe(400);
+  });
+
+  it("returns ok:true and calls fetchTranscript + saveSession in background", async () => {
+    const fetchTranscript = vi.fn(async (): Promise<ConversationTurn[]> => [
+      { role: "agent", message: "Welcome to Yarnia, Lisa." },
+      { role: "user", message: "Hi!" },
+      { role: "agent", message: "Once upon a time there was a gentle dragon..." },
+    ]);
+    const generate = vi.fn(async () =>
+      JSON.stringify({ title: "The Gentle Dragon", summary: "dragon helped friends", characters: ["dragon"], continuityNotes: [] }),
+    );
+    const saveSession = vi.fn(async () => {});
+
+    const res = await post(appWith({ fetchTranscript, generate, saveSession }), "/session/save", {
+      childId: "lisa-1",
+      conversationId: "conv_abc",
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true });
+  });
+});
+
+describe("GET /child/:childId/sessions", () => {
+  it("returns sessions newest-first for a known child", async () => {
+    const res = await appWith({}).request("/child/lisa-1/sessions");
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as { sessions: unknown[] };
+    expect(json.sessions).toHaveLength(1);
+    expect(json.sessions[0]).toMatchObject({
+      summary: "a dragon who shared",
+      charactersUsed: ["dragon"],
+    });
+  });
+
+  it("404s for an unknown child", async () => {
+    const res = await appWith({ loadChild: async () => null }).request("/child/ghost/sessions");
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: "child_not_found" });
   });
 });

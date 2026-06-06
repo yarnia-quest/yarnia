@@ -3,6 +3,7 @@
 // full message chain (archive) + title + summary + characters + continuityNotes (the recall
 // layer). Runs best-effort, after the response (route fires it via executionCtx.waitUntil).
 import type { StoryPrompt } from "./prompt";
+import type { ConversationTurn } from "./agent";
 
 export type Message = { role: "system" | "user" | "assistant"; content: string };
 
@@ -104,5 +105,40 @@ export async function persistSession(
     });
   } catch (err) {
     console.error("session write-back failed:", err);
+  }
+}
+
+// Persists an agent (ElevenLabs voice) conversation as a session. The transcript
+// is already available from the ElevenLabs API; we extract the agent's story turns,
+// run the same recap pass as the /story flow, and save to InstantDB.
+export async function persistAgentSession(
+  childId: string,
+  transcript: ConversationTurn[],
+  deps: PersistDeps,
+): Promise<void> {
+  try {
+    const agentText = transcript
+      .filter((t) => t.role === "agent" && t.message)
+      .map((t) => t.message!)
+      .join("\n\n");
+    if (!agentText) {
+      console.error("agent session write-back skipped: empty transcript");
+      return;
+    }
+
+    const recap = parseRecap(await deps.generate(buildRecapPrompt(agentText)));
+    const messages: Message[] = transcript
+      .filter((t) => t.message)
+      .map((t) => ({ role: t.role === "agent" ? "assistant" : "user", content: t.message! }));
+
+    await deps.saveSession(childId, {
+      title: recap.title,
+      summary: recap.summary,
+      messages,
+      charactersUsed: recap.characters,
+      continuityNotes: recap.continuityNotes,
+    });
+  } catch (err) {
+    console.error("agent session write-back failed:", err);
   }
 }

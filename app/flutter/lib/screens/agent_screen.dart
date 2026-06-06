@@ -37,6 +37,7 @@ class _AgentScreenState extends State<AgentScreen> with TickerProviderStateMixin
   bool _isSpeaking = false;
   bool _done = false;
   String? _error;
+  String? _conversationId;
 
   @override
   void initState() {
@@ -56,12 +57,14 @@ class _AgentScreenState extends State<AgentScreen> with TickerProviderStateMixin
     _client = ConversationClient(
       callbacks: ConversationCallbacks(
         onConnect: ({required conversationId}) {
+          _conversationId = conversationId;
           if (mounted) {
             setState(() => _status = ConversationStatus.connected);
             _dimController.forward();
           }
         },
         onDisconnect: (details) {
+          _saveSession();
           if (mounted) setState(() => _done = true);
         },
         onModeChange: ({required mode}) {
@@ -77,6 +80,20 @@ class _AgentScreenState extends State<AgentScreen> with TickerProviderStateMixin
     );
 
     _bootstrap();
+  }
+
+  Future<void> _saveSession() async {
+    final cid = _conversationId;
+    if (cid == null) return;
+    try {
+      await http.post(
+        Uri.parse('${widget.apiBase}/session/save'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'childId': widget.childId, 'conversationId': cid}),
+      );
+    } catch (e) {
+      debugPrint('session/save failed: $e');
+    }
   }
 
   Future<void> _bootstrap() async {

@@ -5,8 +5,8 @@ import { loadChild } from "./child";
 import { generateStory } from "./generate";
 import { synthesizeStory } from "./synthesize";
 import { createStory, type StoryDeps } from "./story";
-import { createAgentSession, getSignedUrl } from "./agent";
-import { persistSession, type SaveSessionInput } from "./session";
+import { createAgentSession, getSignedUrl, fetchConversationTranscript, type ConversationTurn } from "./agent";
+import { persistSession, persistAgentSession, type SaveSessionInput } from "./session";
 
 // Bindings come from api/.dev.vars locally (generated from api/.env) and from
 // `wrangler secret put` / GitHub Actions in production. Never hardcoded. See api/.env.example.
@@ -23,6 +23,7 @@ type AppDeps = StoryDeps & {
   agentId: string;
   getSignedUrl: (agentId: string) => Promise<string>;
   saveSession: (childId: string, input: SaveSessionInput) => Promise<void>;
+  fetchTranscript: (conversationId: string) => Promise<ConversationTurn[]>;
 };
 
 function defaultDeps(env: Bindings): AppDeps {
@@ -46,6 +47,8 @@ function defaultDeps(env: Bindings): AppDeps {
           })
           .link({ child: childId }),
       ),
+    fetchTranscript: (conversationId) =>
+      fetchConversationTranscript(conversationId, { apiKey: env.ELEVENLABS_API_KEY }),
   };
 }
 
@@ -112,6 +115,54 @@ export function createApp(makeDeps: (env: Bindings) => AppDeps = defaultDeps) {
       dynamicVariables: result.dynamicVariables,
       signedUrl: result.signedUrl,
     });
+  });
+
+  // POST /session/save — { childId, conversationId } — fetches the ElevenLabs transcript for
+  // the completed agent conversation and persists it as a session (title, summary, characters,
+  // continuityNotes) so the child's memory grows. Called by the Flutter app after onDisconnect.
+  // Best-effort: returns 200 immediately and processes in the background.
+  app.post("/session/save", async (c) => {
+    const body = await c.req
+      .json<{ childId?: string; conversationId?: string }>()
+      .catch(() => ({}) as { childId?: string; conversationId?: string });
+    const { childId, conversationId } = body;
+    if (!childId || !conversationId) {
+      return c.json({ error: "childId and conversationId required" }, 400);
+    }
+
+    const deps = makeDeps(c.env);
+    try {
+      c.executionCtx.waitUntil(
+        (async () => {
+          const transcript = await deps.fetchTranscript(conversationId);
+          await persistAgentSession(childId, transcript, deps);
+        })(),
+      );
+    } catch {
+      // no execution context in tests
+    }
+    return c.json({ ok: true });
+  });
+
+  // GET /child/:childId/sessions — returns the child's past sessions newest-first.
+  // Used by the Flutter history panel to show story history.
+  app.get("/child/:childId/sessions", async (c) => {
+    const childId = c.req.param("childId");
+    const deps = makeDeps(c.env);
+    const child = await deps.loadChild(childId);
+    if (!child) return c.json({ error: "child_not_found" }, 404);
+
+    const sessions = [...child.pastSessions]
+      .reverse()
+      .map((s) => ({
+        title: s.title ?? "A bedtime story",
+        summary: s.summary,
+        charactersUsed: s.charactersUsed,
+        continuityNotes: s.continuityNotes ?? [],
+        createdAt: s.createdAt ?? null,
+      }));
+
+    return c.json({ sessions });
   });
 
   return app;

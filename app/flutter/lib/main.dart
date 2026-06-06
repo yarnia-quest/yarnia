@@ -79,6 +79,8 @@ class _YarniaRootState extends State<YarniaRoot> {
     return switch (_screen) {
       'greeting' => GreetingScreen(
           childName: _demoChildName,
+          childId: _demoChildId,
+          apiBase: _apiBase,
           onBegin: () => setState(() => _screen = 'agent'),
         ),
       'agent' => AgentScreen(

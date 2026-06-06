@@ -1,13 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import '../widgets/starfield.dart';
+import '../widgets/history_panel.dart';
 import '../theme.dart';
 
 class GreetingScreen extends StatefulWidget {
   final String childName;
+  final String childId;
+  final String apiBase;
   final VoidCallback onBegin;
 
-  const GreetingScreen({super.key, required this.childName, required this.onBegin});
+  const GreetingScreen({
+    super.key,
+    required this.childName,
+    required this.childId,
+    required this.apiBase,
+    required this.onBegin,
+  });
 
   @override
   State<GreetingScreen> createState() => _GreetingScreenState();
@@ -49,6 +58,18 @@ class _GreetingScreenState extends State<GreetingScreen> with SingleTickerProvid
       body: Stack(
         children: [
           const Positioned.fill(child: Starfield()),
+          Positioned(
+            top: 48,
+            right: 20,
+            child: IconButton(
+              icon: Icon(Icons.history, color: cream.withAlpha(120), size: 22),
+              onPressed: () => showHistoryPanel(
+                context,
+                childId: widget.childId,
+                apiBase: widget.apiBase,
+              ),
+            ),
+          ),
           AnimatedBuilder(
             animation: _controller,
             builder: (_, __) => Center(
