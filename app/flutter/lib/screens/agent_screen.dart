@@ -115,10 +115,18 @@ class _AgentScreenState extends State<AgentScreen> with TickerProviderStateMixin
     }
   }
 
+  bool _micDenied = false;
+
   Future<void> _bootstrap() async {
     final micStatus = await Permission.microphone.request();
     if (!micStatus.isGranted) {
-      if (mounted) setState(() => _error = 'Microphone permission denied — please allow mic access and restart.');
+      // iOS won't re-prompt once denied — the only recovery is Settings. Surface a button.
+      if (mounted) {
+        setState(() {
+          _micDenied = true;
+          _error = 'Microphone access is off. Turn it on in Settings, then tap Begin again.';
+        });
+      }
       return;
     }
 
@@ -208,6 +216,16 @@ class _AgentScreenState extends State<AgentScreen> with TickerProviderStateMixin
                     isSpeaking: _isSpeaking,
                     error: _error,
                   ),
+                  if (_micDenied) ...[
+                    const SizedBox(height: 20),
+                    TextButton(
+                      onPressed: () => openAppSettings(),
+                      child: Text(
+                        'Open Settings',
+                        style: TextStyle(color: gold, fontFamily: 'serif', fontSize: 16),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -321,13 +339,24 @@ class _StatusLabel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final text = error != null
-        ? 'Something went wrong'
-        : status == ConversationStatus.disconnected
-            ? 'Travelling to Yarnia…'
-            : isSpeaking
-                ? 'Yarnia is speaking…'
-                : 'Your turn…';
+    // Show the real error text (not an opaque "Something went wrong") so failures are
+    // actionable on-device — e.g. the mic-permission message routes to Open Settings.
+    if (error != null) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 24),
+        child: Text(
+          error!,
+          style: TextStyle(fontFamily: 'serif', color: cream.withAlpha(200), fontSize: 15),
+          textAlign: TextAlign.center,
+        ),
+      );
+    }
+
+    final text = status == ConversationStatus.disconnected
+        ? 'Travelling to Yarnia…'
+        : isSpeaking
+            ? 'Yarnia is speaking…'
+            : 'Your turn…';
 
     return Text(
       text,
