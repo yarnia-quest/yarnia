@@ -47,6 +47,15 @@ if [ -d "$MAIN/api/node_modules" ]; then
   echo "  linked api/node_modules -> main"
 fi
 
+# Assign a unique dev-server port so this worktree's `npm run dev` never clashes with
+# another. Base 8787 (main's default), +1 per existing worktree, then skip any port
+# already listening. Written to api/.dev.port (gitignored); npm run dev/story read it.
+WT_COUNT="$(git -C "$MAIN" worktree list | wc -l | tr -d ' ')"
+PORT=$((8787 + WT_COUNT - 1))
+while lsof -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1; do PORT=$((PORT + 1)); done
+echo "$PORT" > "$DEST/api/.dev.port"
+echo "  dev port: $PORT (api/.dev.port)"
+
 echo
 echo "ready. start a Claude Code session there with:"
 echo "  cd \"$DEST\" && claude"

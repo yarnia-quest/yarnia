@@ -26,3 +26,6 @@ bun.lockb
 # Local /story test artifacts (npm run story)
 api/story.mp3
 *.mp3
+
+# Per-worktree dev-server port (set by scripts/worktree-add.sh); never shared
+.dev.port

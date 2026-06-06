@@ -6,7 +6,7 @@
   "description": "Yarnia product backend: Hono Worker for story gen + ElevenLabs TTS + InstantDB.",
   "scripts": {
     "predev": "cp -f .env .dev.vars 2>/dev/null || true",
-    "dev": "wrangler dev",
+    "dev": "wrangler dev --port $(cat .dev.port 2>/dev/null || echo 8787)",
     "story": "./scripts/story.sh",
     "deploy": "wrangler deploy",
     "typecheck": "tsc --noEmit",

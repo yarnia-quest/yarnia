@@ -5,7 +5,11 @@
 #   ./scripts/story.sh 11111111-1111-4111-8111-111111111111 dragon story.mp3
 set -euo pipefail
 
-BASE="${API_BASE_URL:-http://localhost:8787}"
+# Default to this worktree's dev port (api/.dev.port, written by worktree-add.sh),
+# so `npm run story` hits the right server. Override with API_BASE_URL.
+API_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+PORT="$(cat "$API_DIR/.dev.port" 2>/dev/null || echo 8787)"
+BASE="${API_BASE_URL:-http://localhost:$PORT}"
 CHILD="${1:-11111111-1111-4111-8111-111111111111}"
 CHOICE="${2:-dragon}"
 OUT="${3:-story.mp3}"

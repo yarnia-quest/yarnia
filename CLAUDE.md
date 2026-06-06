@@ -41,7 +41,7 @@ We work fast on `main` with multiple Claude Code sessions at once. To avoid clob
 - **Make one:** `scripts/worktree-add.sh <branch-name> [base]` (runs from any checkout). It creates a sibling folder `yarnia-<branch>`, branches off `origin/<base>` (default `main`), and seeds the gitignored bits the api needs (`api/.env`, `api/.dev.vars`, and a `node_modules` symlink) so the api boots with no extra setup. Example: `scripts/worktree-add.sh fix/tts-retry`.
 - **Use one:** open a session there with `cd ../yarnia-<branch> && claude`. Edit `api/` freely; every commit lands on that worktree's branch, never on a teammate's.
 - **Keep the main checkout (`/…/yarnia` on `main`) clean** as the neutral integration spot. Do feature work in worktrees, not there.
-- **Dev-server port:** every worktree's `npm run dev` wants port 8787, so only the first can bind it. Second session: `cd api && npm run dev -- --port 8788`, and test against it with `API_BASE_URL=http://localhost:8788 npm run story`.
+- **Dev-server port (automatic):** `worktree-add.sh` assigns each worktree a unique port and writes it to `api/.dev.port` (gitignored). `npm run dev` and `npm run story` both read it, so two `npm run dev` sessions never clash and `npm run story` auto-targets the local server. The main checkout has no file and defaults to 8787. Override per-run with `API_BASE_URL=...` if needed.
 - **node_modules is a symlink to main's** (one shared install). If a branch changes deps (edits `package.json`), break the link in that worktree and do a real install: `rm api/node_modules && cd api && npm install`.
 
 ### Landing your work (the remote is the source of truth)
