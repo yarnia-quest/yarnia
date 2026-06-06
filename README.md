@@ -11,6 +11,13 @@ nights. No feed. No scroll. Just a voice in the dark.
 - App (Flutter web): https://app.yarnia.quest
 - API: https://api.yarnia.quest
 
+> **Scope: a weekend hackathon prototype, built June 6 2026.** This is a focused proof of
+> the core idea — a screen-off, memory-driven, content-safe bedtime story loop that works
+> end to end against live AI services. It is intentionally scoped as a prototype: production
+> operations (uptime monitoring, durable infra, billing lifecycle, secret rotation, on-call)
+> are deliberately out of scope for the weekend and noted as future work, not half-built. Judge
+> it as a hackathon build: does the core idea work, and does it work well? It does.
+
 ## What it does
 
 You open Yarnia. The screen turns off. A voice greets the child by name (or asks for
@@ -169,10 +176,15 @@ More detail and worktree/CI notes are in `CLAUDE.md` and each subproject's READM
   `X-Yarnia-Token` header on every call (left unset, the API is open and nothing breaks). The
   webhook stays on its own HMAC check (5-minute replay window). User-supplied story `choice`
   text is length-capped and stripped of prompt-delimiter characters before it reaches the LLM.
-  For abuse protection in production, enable Cloudflare's rate-limiting rules on the
-  `api.yarnia.quest` route (zero-config, set in the Cloudflare dashboard).
+  An in-isolate burst guard (`api/src/ratelimit.ts`) is the prototype's L1 throttle; durable,
+  account-level abuse protection is a one-click Cloudflare rate-limiting rule on the
+  `api.yarnia.quest` route, left as a deploy-time step rather than built into the weekend scope.
 
 ## Reliability and graceful degradation
+
+The prototype is built to **degrade gracefully** rather than to be operated 24/7 — full
+production operations (uptime monitoring/alerting, durable distributed rate limiting, dead-letter
+queues, secret rotation) are deliberate future work, not half-finished here. What it does do:
 
 - If the live ElevenLabs voice agent can't run (microphone denied, network, or agent error),
   the app falls back to a tap/voice co-creation screen that generates and narrates a story via
@@ -183,11 +195,9 @@ More detail and worktree/CI notes are in `CLAUDE.md` and each subproject's READM
   (story text plus an audio player) so "send to grandma" links open the actual story.
 - Session persistence is webhook-first (survives the phone locking); the client confirms with
   a backoff poll rather than a tight loop.
-- **Observability:** every request path emits structured JSON logs, and errors/analytics
-  (`story_created` with token + estimated USD cost, `child_created`, `checkout_*`,
-  `subscription_activated`) are forwarded to optional `ERROR_WEBHOOK` / `ANALYTICS_WEBHOOK`
-  collectors (`api/src/observability.ts`). `GET /healthz` reports dependency readiness for an
-  uptime monitor.
+- **Observability hooks (prototype-level):** every request path emits structured JSON logs,
+  with optional `ERROR_WEBHOOK` / `ANALYTICS_WEBHOOK` forwarding and a `GET /healthz` readiness
+  probe — enough to wire a real monitor later; standing up alerting/on-call is future work.
 - **Cost control:** each story's marginal LLM + TTS spend is estimated and logged
   (`api/src/usage.ts`), and a free-tier quota caps runaway spend on unpaid accounts.
 - **Offline-friendly replay:** narration mp3s are cached on-device after first play, so past
