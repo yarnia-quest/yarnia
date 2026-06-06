@@ -1,7 +1,9 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:just_audio/just_audio.dart';
+import 'package:path_provider/path_provider.dart';
 import '../theme.dart';
 
 class HistoryPanel extends StatefulWidget {
@@ -225,8 +227,13 @@ class _StoryDetailSheetState extends State<_StoryDetailSheet> {
 
     setState(() { _loading = true; _audioError = null; });
     try {
-      final audioUrl = '${widget.apiBase}/audio/$audioKey';
-      await _player.setUrl(audioUrl);
+      // Download via http (cleartext allowed) then play from file (ExoPlayer blocks http streams).
+      final res = await http.get(Uri.parse('${widget.apiBase}/audio/$audioKey'));
+      if (res.statusCode != 200) throw Exception('Audio fetch failed: ${res.statusCode}');
+      final dir = await getTemporaryDirectory();
+      final file = File('${dir.path}/yarnia_replay.mp3');
+      await file.writeAsBytes(res.bodyBytes);
+      await _player.setFilePath(file.path);
       await _player.play();
       setState(() => _playing = true);
 
