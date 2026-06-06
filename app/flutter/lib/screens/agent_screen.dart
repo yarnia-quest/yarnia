@@ -92,10 +92,26 @@ class _AgentScreenState extends State<AgentScreen> with TickerProviderStateMixin
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({'childId': widget.childId, 'conversationId': cid}),
       );
-      // Invalidate cache so history panel reloads fresh data next open.
+      // Worker needs ~15s to fetch transcript + synthesize audio + write to InstantDB.
+      // Invalidate now so any manual open fetches fresh, then warm the cache after the delay.
       invalidateHistoryCache();
+      Future.delayed(const Duration(seconds: 18), () => _prefetchHistory());
     } catch (e) {
       debugPrint('session/save failed: $e');
+    }
+  }
+
+  Future<void> _prefetchHistory() async {
+    try {
+      final res = await http.get(
+        Uri.parse('${widget.apiBase}/child/${widget.childId}/sessions'),
+      );
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body) as Map<String, dynamic>;
+        warmHistoryCache((data['sessions'] as List).cast<Map<String, dynamic>>());
+      }
+    } catch (e) {
+      debugPrint('History prefetch after save failed: $e');
     }
   }
 
