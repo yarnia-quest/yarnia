@@ -3,6 +3,16 @@
 > Ideation example for a recurring Yarnia story session.  
 > Ella and Finn are familiar bedtime friends who can return night after night in gentle, connected adventures.
 
+## English Overview
+
+This example contains **2 connected Ella and Finn stories**.
+
+1. **The Shooting Star**  
+   Ella and Finn see a shooting star and wish to stay friends forever. Soon after, they find a mysterious crown coin that leads them toward the sea. Their journey becomes a gentle adventure about helping trapped fish, discovering an underwater kingdom, and reminding an old sea guardian that he is still needed.
+
+2. **The Space Journey**  
+   A few nights later, Ella and Finn find a silver capsule under the bed. Their room turns into a spaceship, and they travel to a colorful planet that is slowly losing its light. They help small glowing beings recover the planet's light, then return safely home to bed.
+
 ## Use in Yarnia
 
 Ella and Finn should feel like an ongoing bedtime adventure book:
