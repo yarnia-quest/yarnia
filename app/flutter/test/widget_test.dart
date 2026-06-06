@@ -26,7 +26,10 @@ void main() {
     expect(find.text('Who are we telling a story to tonight?'), findsOneWidget);
     expect(find.byType(TextField), findsOneWidget); // the name field
     expect(find.text('4'), findsOneWidget); // an age chip
-    expect(find.text('Begin'), findsOneWidget);
+    // Onboarding's CTA is "Continue" (not "Begin") so it doesn't read as a second
+    // Begin button back-to-back with the greeting screen's "Begin".
+    expect(find.text('Continue'), findsOneWidget);
+    expect(find.text('Begin'), findsNothing);
   });
 
   test('child_store remembers, reloads, and forgets the child', () async {

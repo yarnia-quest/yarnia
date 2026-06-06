@@ -220,7 +220,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                                 ),
                               )
                             : const Text(
-                                'Begin',
+                                'Continue',
                                 style: TextStyle(
                                   fontFamily: 'serif',
                                   color: gold,
