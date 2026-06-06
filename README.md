@@ -30,7 +30,7 @@ it the first time), then co-creates a story with them and narrates it. It offers
 - **A memory layer** so night two knows what worked on night one
 - **Multiple children per device** with a profile picker (a household with siblings)
 - **A shareable result** ("Send to grandma") via an unguessable link, and replayable narration
-- **An EUR 8/month subscription** with Mollie hosted checkout
+- **A demonstrated EUR 8/month subscription flow** (free-tier quota + Mollie hosted checkout)
 
 It remembers. It adapts. It knows when to shut up.
 
@@ -46,7 +46,7 @@ The end-to-end demo arc runs against the live backend:
 - [x] Multiple child profiles per device, with a profile switcher
 - [x] Per-child auth tokens (X-Child-Token) so a profile is bound to its device
 - [x] Shareable link (unguessable token) and in-app replay of past stories
-- [x] EUR 8/month subscription via Mollie hosted checkout (POST /checkout)
+- [x] Full subscription flow demonstrated: free-tier quota + Mollie checkout + webhook
 - [x] Rate limiting, structured logging, and optional error/analytics webhooks
 - [x] 129 backend tests (Vitest) and CI deploy for api, app, marketing, and schema
 
@@ -186,6 +186,11 @@ The prototype is built to **degrade gracefully** rather than to be operated 24/7
 production operations (uptime monitoring/alerting, durable distributed rate limiting, dead-letter
 queues, secret rotation) are deliberate future work, not half-finished here. What it does do:
 
+- **Calm, parent-facing error states (never raw errors):** failures surface as gentle copy —
+  "Yarnia's voice had a hiccup. Let's try again," "Could not reach Yarnia. Check your
+  connection." — with an actionable retry, never a stack trace or status code. Raw SDK/API
+  errors are logged for debugging but never shown to the parent (`agent_screen.dart`,
+  `onboarding_screen.dart`, `subscribe.dart`).
 - If the live ElevenLabs voice agent can't run (microphone denied, network, or agent error),
   the app falls back to a tap/voice co-creation screen that generates and narrates a story via
   `POST /story`, so the bedtime ritual still completes.
@@ -206,11 +211,12 @@ queues, secret rotation) are deliberate future work, not half-finished here. Wha
 ## Pricing and monetization
 
 EUR 8/month, positioned below the "do I really need this" threshold (Spotify EUR 10, Calm
-EUR 8). Payments are live via Mollie and **enforced**: every child gets a small free tier, then
-`POST /story` returns `402 subscription_required` until they subscribe. `POST /checkout` returns
-a hosted-checkout URL (set `MOLLIE_API_KEY`, or a static `MOLLIE_PAYMENT_LINK` fallback) with the
-childId in metadata; `POST /payments/webhook` confirms the payment with Mollie and flips the
-child to subscribed. The app surfaces a "Unlock unlimited nights · EUR 8/mo" subscribe flow.
+EUR 8). The weekend build **demonstrates the full monetization flow end to end** rather than
+running a billing operation: a free-tier quota (`402 subscription_required`), a Mollie
+hosted-checkout handoff (`POST /checkout`), and a payment-confirmation webhook
+(`POST /payments/webhook`) that flips the child to subscribed. This proves the loop works; the
+**recurring billing lifecycle (renewals, dunning, customer portal) is intentionally future
+work**, not a production billing system — Yarnia is not taking real money in this prototype.
 
 ## Known limitations / roadmap
 
