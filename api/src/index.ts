@@ -43,6 +43,7 @@ function defaultDeps(env: Bindings): AppDeps {
             messages: input.messages,
             charactersUsed: input.charactersUsed,
             continuityNotes: input.continuityNotes,
+            storyText: input.storyText ?? null,
             createdAt: Date.now(),
           })
           .link({ child: childId }),
@@ -61,8 +62,6 @@ export function createApp(makeDeps: (env: Bindings) => AppDeps = defaultDeps) {
   app.get("/", (c) => c.json({ service: "yarnia-api", ok: true }));
 
   // POST /story — { childId, choice? } -> { childId, choice, text, audio, status }.
-  // Loads the child's memory, builds a safety-constrained prompt, generates the story, and
-  // narrates it via ElevenLabs (audio is a data: URI, or null if TTS fails — story still returns).
   app.post("/story", async (c) => {
     const body = await c.req
       .json<{ childId?: string; choice?: string }>()
@@ -74,15 +73,12 @@ export function createApp(makeDeps: (env: Bindings) => AppDeps = defaultDeps) {
     const result = await createStory(childId, choice ?? "a gentle surprise", deps);
     if (!result.ok) return c.json({ error: result.reason }, 404);
 
-    // Grow the child's memory in the background: summarize tonight's story + save a session.
-    // Best-effort, after the response — adds no latency and never blocks /story. (No
-    // ExecutionContext in unit tests, so guard.)
     try {
       c.executionCtx.waitUntil(
         persistSession(childId, choice ?? "a gentle surprise", result.prompt, result.text, deps),
       );
     } catch {
-      // no execution context (e.g. app.request in tests) — skip write-back
+      // no execution context in tests
     }
 
     return c.json({
@@ -95,11 +91,7 @@ export function createApp(makeDeps: (env: Bindings) => AppDeps = defaultDeps) {
   });
 
   // GET /agent/session?childId=... — start a conversational ElevenLabs Agent session.
-  // Loads the child's memory (admin-only) and hands the client its dynamic variables +
-  // a signed URL. The client (Expo) starts the conversation with these. See
-  // infra/elevenlabs-agent.md. signedUrl may be null (public agent / signing unavailable).
   app.get("/agent/session", async (c) => {
-    // childId is optional: streaming voice can start anonymously and ask the name.
     const childId = c.req.query("childId");
 
     const deps = makeDeps(c.env);
@@ -117,10 +109,8 @@ export function createApp(makeDeps: (env: Bindings) => AppDeps = defaultDeps) {
     });
   });
 
-  // POST /session/save — { childId, conversationId } — fetches the ElevenLabs transcript for
-  // the completed agent conversation and persists it as a session (title, summary, characters,
-  // continuityNotes) so the child's memory grows. Called by the Flutter app after onDisconnect.
-  // Best-effort: returns 200 immediately and processes in the background.
+  // POST /session/save — { childId, conversationId } — fetches the ElevenLabs transcript,
+  // runs a Qwen recap, and saves to InstantDB. Called by Flutter after agent onDisconnect.
   app.post("/session/save", async (c) => {
     const body = await c.req
       .json<{ childId?: string; conversationId?: string }>()
@@ -144,8 +134,7 @@ export function createApp(makeDeps: (env: Bindings) => AppDeps = defaultDeps) {
     return c.json({ ok: true });
   });
 
-  // GET /child/:childId/sessions — returns the child's past sessions newest-first.
-  // Used by the Flutter history panel to show story history.
+  // GET /child/:childId/sessions — past sessions newest-first, including storyText for replay.
   app.get("/child/:childId/sessions", async (c) => {
     const childId = c.req.param("childId");
     const deps = makeDeps(c.env);
@@ -160,9 +149,24 @@ export function createApp(makeDeps: (env: Bindings) => AppDeps = defaultDeps) {
         charactersUsed: s.charactersUsed,
         continuityNotes: s.continuityNotes ?? [],
         createdAt: s.createdAt ?? null,
+        storyText: s.storyText ?? null,
       }));
 
     return c.json({ sessions });
+  });
+
+  // POST /tts — { text } -> { audio } — re-narrates any text via ElevenLabs TTS.
+  // Used by the history panel "listen again" feature.
+  app.post("/tts", async (c) => {
+    const body = await c.req
+      .json<{ text?: string }>()
+      .catch(() => ({}) as { text?: string });
+    const { text } = body;
+    if (!text) return c.json({ error: "text required" }, 400);
+
+    const deps = makeDeps(c.env);
+    const audio = await deps.synthesize(text);
+    return c.json({ audio: audio ? `data:audio/mpeg;base64,${audio}` : null });
   });
 
   return app;

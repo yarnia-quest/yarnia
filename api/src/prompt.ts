@@ -10,6 +10,7 @@ export type PastSession = {
   charactersUsed: string[];
   continuityNotes?: string[];
   createdAt?: number;
+  storyText?: string;
 };
 
 export type Child = {

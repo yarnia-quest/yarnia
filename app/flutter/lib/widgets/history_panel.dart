@@ -1,6 +1,9 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:just_audio/just_audio.dart';
+import 'package:path_provider/path_provider.dart';
 import '../theme.dart';
 
 class HistoryPanel extends StatefulWidget {
@@ -101,44 +104,35 @@ class _HistoryPanelState extends State<HistoryPanel> {
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
       itemCount: _sessions!.length,
       separatorBuilder: (_, __) => Divider(color: cream.withAlpha(20), height: 1),
-      itemBuilder: (_, i) => _SessionCard(session: _sessions![i]),
+      itemBuilder: (_, i) => _SessionCard(session: _sessions![i], apiBase: widget.apiBase),
     );
   }
 }
 
-class _SessionCard extends StatefulWidget {
+class _SessionCard extends StatelessWidget {
   final Map<String, dynamic> session;
-  const _SessionCard({required this.session});
+  final String apiBase;
 
-  @override
-  State<_SessionCard> createState() => _SessionCardState();
-}
-
-class _SessionCardState extends State<_SessionCard> {
-  bool _expanded = false;
+  const _SessionCard({required this.session, required this.apiBase});
 
   @override
   Widget build(BuildContext context) {
-    final title = widget.session['title'] as String? ?? 'A bedtime story';
-    final summary = widget.session['summary'] as String? ?? '';
-    final characters = (widget.session['charactersUsed'] as List?)?.cast<String>() ?? [];
-    final notes = (widget.session['continuityNotes'] as List?)?.cast<String>() ?? [];
-    final ts = widget.session['createdAt'] as int?;
-    final date = ts != null
-        ? _formatDate(DateTime.fromMillisecondsSinceEpoch(ts))
-        : null;
+    final title = session['title'] as String? ?? 'A bedtime story';
+    final characters = (session['charactersUsed'] as List?)?.cast<String>() ?? [];
+    final ts = session['createdAt'] as int?;
+    final date = ts != null ? _formatDate(DateTime.fromMillisecondsSinceEpoch(ts)) : null;
 
-    return GestureDetector(
-      onTap: () => setState(() => _expanded = !_expanded),
+    return InkWell(
+      onTap: () => _openDetail(context),
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        child: Row(
           children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
                     title,
                     style: const TextStyle(
                       fontFamily: 'serif',
@@ -147,56 +141,36 @@ class _SessionCardState extends State<_SessionCard> {
                       fontWeight: FontWeight.w600,
                     ),
                   ),
-                ),
-                if (date != null)
-                  Text(
-                    date,
-                    style: TextStyle(fontFamily: 'serif', color: cream.withAlpha(100), fontSize: 12),
-                  ),
-                const SizedBox(width: 8),
-                Icon(
-                  _expanded ? Icons.expand_less : Icons.expand_more,
-                  color: cream.withAlpha(100),
-                  size: 18,
-                ),
-              ],
-            ),
-            if (characters.isNotEmpty) ...[
-              const SizedBox(height: 4),
-              Text(
-                characters.join(', '),
-                style: TextStyle(fontFamily: 'serif', color: gold.withAlpha(200), fontSize: 12),
-              ),
-            ],
-            if (_expanded) ...[
-              const SizedBox(height: 10),
-              Text(
-                summary,
-                style: TextStyle(fontFamily: 'serif', color: cream.withAlpha(160), fontSize: 13, height: 1.5),
-              ),
-              if (notes.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                ...notes.map(
-                  (n) => Padding(
-                    padding: const EdgeInsets.only(top: 4),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('· ', style: TextStyle(color: gold.withAlpha(160), fontSize: 12)),
-                        Expanded(
-                          child: Text(
-                            n,
-                            style: TextStyle(color: cream.withAlpha(120), fontFamily: 'serif', fontSize: 12, height: 1.4),
-                          ),
-                        ),
-                      ],
+                  if (characters.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      characters.join(', '),
+                      style: TextStyle(fontFamily: 'serif', color: gold.withAlpha(200), fontSize: 12),
                     ),
-                  ),
-                ),
-              ],
-            ],
+                  ],
+                ],
+              ),
+            ),
+            if (date != null)
+              Text(date, style: TextStyle(fontFamily: 'serif', color: cream.withAlpha(100), fontSize: 12)),
+            const SizedBox(width: 8),
+            Icon(Icons.chevron_right, color: cream.withAlpha(80), size: 18),
           ],
         ),
+      ),
+    );
+  }
+
+  void _openDetail(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => DraggableScrollableSheet(
+        initialChildSize: 0.85,
+        minChildSize: 0.5,
+        maxChildSize: 0.95,
+        builder: (_, __) => _StoryDetailSheet(session: session, apiBase: apiBase),
       ),
     );
   }
@@ -204,6 +178,195 @@ class _SessionCardState extends State<_SessionCard> {
   String _formatDate(DateTime dt) {
     final months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
     return '${months[dt.month - 1]} ${dt.day}';
+  }
+}
+
+class _StoryDetailSheet extends StatefulWidget {
+  final Map<String, dynamic> session;
+  final String apiBase;
+
+  const _StoryDetailSheet({required this.session, required this.apiBase});
+
+  @override
+  State<_StoryDetailSheet> createState() => _StoryDetailSheetState();
+}
+
+class _StoryDetailSheetState extends State<_StoryDetailSheet> {
+  final AudioPlayer _player = AudioPlayer();
+  bool _loading = false;
+  bool _playing = false;
+  String? _audioError;
+
+  @override
+  void dispose() {
+    _player.dispose();
+    super.dispose();
+  }
+
+  Future<void> _togglePlay() async {
+    if (_playing) {
+      await _player.stop();
+      setState(() => _playing = false);
+      return;
+    }
+
+    final storyText = widget.session['storyText'] as String?;
+    if (storyText == null || storyText.isEmpty) {
+      setState(() => _audioError = 'No story text available for this entry.');
+      return;
+    }
+
+    setState(() { _loading = true; _audioError = null; });
+    try {
+      final res = await http.post(
+        Uri.parse('${widget.apiBase}/tts'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'text': storyText}),
+      );
+      if (res.statusCode != 200) throw Exception('TTS failed: ${res.statusCode}');
+      final data = jsonDecode(res.body) as Map<String, dynamic>;
+      final audioDataUri = data['audio'] as String?;
+      if (audioDataUri == null) throw Exception('No audio returned');
+
+      final base64Data = audioDataUri.substring(audioDataUri.indexOf(',') + 1);
+      final bytes = base64Decode(base64Data);
+      final dir = await getTemporaryDirectory();
+      final file = File('${dir.path}/yarnia_replay.mp3');
+      await file.writeAsBytes(bytes);
+      await _player.setFilePath(file.path);
+      await _player.play();
+      setState(() => _playing = true);
+
+      _player.playerStateStream.listen((state) {
+        if (state.processingState == ProcessingState.completed) {
+          if (mounted) setState(() => _playing = false);
+        }
+      });
+    } catch (e) {
+      debugPrint('TTS replay failed: $e');
+      setState(() => _audioError = 'Could not load audio. Try again.');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final title = widget.session['title'] as String? ?? 'A bedtime story';
+    final storyText = widget.session['storyText'] as String?;
+    final summary = widget.session['summary'] as String? ?? '';
+    final notes = (widget.session['continuityNotes'] as List?)?.cast<String>() ?? [];
+    final hasStory = storyText != null && storyText.isNotEmpty;
+
+    return Container(
+      decoration: const BoxDecoration(
+        color: navyLight,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      child: SafeArea(
+        child: Column(
+          children: [
+            const SizedBox(height: 12),
+            Container(
+              width: 40, height: 4,
+              decoration: BoxDecoration(color: cream.withAlpha(60), borderRadius: BorderRadius.circular(2)),
+            ),
+            const SizedBox(height: 20),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Text(
+                title,
+                style: const TextStyle(fontFamily: 'serif', color: cream, fontSize: 20, fontWeight: FontWeight.w700),
+                textAlign: TextAlign.center,
+              ),
+            ),
+            const SizedBox(height: 20),
+            // Listen button
+            GestureDetector(
+              onTap: _loading ? null : _togglePlay,
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 28),
+                decoration: BoxDecoration(
+                  border: Border.all(color: gold, width: 1.5),
+                  borderRadius: BorderRadius.circular(40),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (_loading)
+                      const SizedBox(
+                        width: 16, height: 16,
+                        child: CircularProgressIndicator(color: gold, strokeWidth: 2),
+                      )
+                    else
+                      Icon(_playing ? Icons.stop : Icons.play_arrow, color: gold, size: 18),
+                    const SizedBox(width: 8),
+                    Text(
+                      _loading ? 'Loading…' : _playing ? 'Stop' : 'Listen again',
+                      style: const TextStyle(fontFamily: 'serif', color: gold, fontSize: 14, letterSpacing: 1),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            if (_audioError != null) ...[
+              const SizedBox(height: 8),
+              Text(_audioError!, style: TextStyle(color: cream.withAlpha(120), fontFamily: 'serif', fontSize: 12)),
+            ],
+            if (!hasStory && _audioError == null) ...[
+              const SizedBox(height: 8),
+              Text(
+                'Audio replay available for new stories.',
+                style: TextStyle(color: cream.withAlpha(80), fontFamily: 'serif', fontSize: 12),
+              ),
+            ],
+            const SizedBox(height: 20),
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (hasStory)
+                      Text(
+                        storyText!,
+                        style: TextStyle(
+                          fontFamily: 'serif',
+                          fontSize: 15,
+                          color: cream.withAlpha(220),
+                          height: 1.7,
+                          fontStyle: FontStyle.italic,
+                        ),
+                      )
+                    else
+                      Text(
+                        summary,
+                        style: TextStyle(fontFamily: 'serif', fontSize: 15, color: cream.withAlpha(180), height: 1.6),
+                      ),
+                    if (notes.isNotEmpty) ...[
+                      const SizedBox(height: 20),
+                      Text('Remember', style: TextStyle(fontFamily: 'serif', color: gold.withAlpha(180), fontSize: 12, letterSpacing: 1)),
+                      const SizedBox(height: 8),
+                      ...notes.map((n) => Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('· ', style: TextStyle(color: gold.withAlpha(160), fontSize: 13)),
+                            Expanded(child: Text(n, style: TextStyle(fontFamily: 'serif', color: cream.withAlpha(140), fontSize: 13, height: 1.4))),
+                          ],
+                        ),
+                      )),
+                    ],
+                    const SizedBox(height: 32),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -216,7 +379,7 @@ void showHistoryPanel(BuildContext context, {required String childId, required S
       initialChildSize: 0.6,
       minChildSize: 0.3,
       maxChildSize: 0.9,
-      builder: (_, scrollController) => HistoryPanel(childId: childId, apiBase: apiBase),
+      builder: (_, __) => HistoryPanel(childId: childId, apiBase: apiBase),
     ),
   );
 }

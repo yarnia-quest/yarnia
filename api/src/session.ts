@@ -12,9 +12,8 @@ export type SaveSessionInput = {
   summary: string;
   messages: Message[];
   charactersUsed: string[];
-  // Compact carry-forward facts (like the example's "Continuity Notes"), so future
-  // episodes can reference what happened ("the dragon shared his sparkly stones").
   continuityNotes: string[];
+  storyText?: string;
 };
 
 // The full prompt/message chain for this session: the system + user prompt that produced
@@ -102,6 +101,7 @@ export async function persistSession(
       messages: toMessages(prompt, storyText),
       charactersUsed: recap.characters.length ? recap.characters : [choice],
       continuityNotes: recap.continuityNotes,
+      storyText,
     });
   } catch (err) {
     console.error("session write-back failed:", err);
@@ -137,6 +137,7 @@ export async function persistAgentSession(
       messages,
       charactersUsed: recap.characters,
       continuityNotes: recap.continuityNotes,
+      storyText: agentText,
     });
   } catch (err) {
     console.error("agent session write-back failed:", err);

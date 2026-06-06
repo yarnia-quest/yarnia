@@ -88,6 +88,7 @@ describe("persistSession (write-back, best-effort)", () => {
       ],
       charactersUsed: ["dragon"],
       continuityNotes: ["the dragon shared his sparkly stones with friends"],
+      storyText: "the full story text",
     });
   });
 
