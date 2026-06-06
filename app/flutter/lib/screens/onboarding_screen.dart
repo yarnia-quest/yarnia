@@ -104,7 +104,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                   const Text(
                     'Welcome to Yarnia',
                     style: TextStyle(
-                      fontFamily: 'serif',
+                      fontFamily: 'Fraunces',
                       fontSize: 26,
                       fontWeight: FontWeight.w700,
                       color: cream,
@@ -115,7 +115,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                   Text(
                     'Who are we telling a story to tonight?',
                     style: TextStyle(
-                      fontFamily: 'serif',
+                      fontFamily: 'Lora',
                       fontSize: 16,
                       color: gold.withAlpha(220),
                     ),
@@ -133,7 +133,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     enabled: !_submitting,
                     onSubmitted: (_) => _submit(),
                     style: const TextStyle(
-                      fontFamily: 'serif',
+                      fontFamily: 'Lora',
                       color: cream,
                       fontSize: 20,
                     ),
@@ -141,7 +141,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     decoration: InputDecoration(
                       hintText: 'e.g. Mira',
                       hintStyle: TextStyle(
-                        fontFamily: 'serif',
+                        fontFamily: 'Lora',
                         color: cream.withAlpha(80),
                         fontSize: 18,
                       ),
@@ -186,7 +186,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                           child: Text(
                             '$age',
                             style: TextStyle(
-                              fontFamily: 'serif',
+                              fontFamily: 'Lora',
                               fontSize: 18,
                               fontWeight: FontWeight.w600,
                               color: selected ? navy : cream,
@@ -222,7 +222,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                             : const Text(
                                 'Continue',
                                 style: TextStyle(
-                                  fontFamily: 'serif',
+                                  fontFamily: 'Lora',
                                   color: gold,
                                   fontSize: 16,
                                   letterSpacing: 1.5,
@@ -237,7 +237,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     Text(
                       _error!,
                       style: TextStyle(
-                        fontFamily: 'serif',
+                        fontFamily: 'Lora',
                         color: cream.withAlpha(200),
                         fontSize: 14,
                       ),
@@ -263,7 +263,7 @@ class _Label extends StatelessWidget {
     return Text(
       text.toUpperCase(),
       style: TextStyle(
-        fontFamily: 'serif',
+        fontFamily: 'Lora',
         color: cream.withAlpha(140),
         fontSize: 12,
         letterSpacing: 2,

@@ -26,3 +26,17 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  # Deck typography (ideation/results/deck.html): Fraunces for display headlines,
+  # Lora for body. Variable TTFs (single file per family spans all weights via the
+  # wght axis; Flutter maps fontWeight onto it). Italic ships as its own file.
+  fonts:
+    - family: Fraunces
+      fonts:
+        - asset: assets/fonts/Fraunces.ttf
+        - asset: assets/fonts/Fraunces-Italic.ttf
+          style: italic
+    - family: Lora
+      fonts:
+        - asset: assets/fonts/Lora.ttf
+        - asset: assets/fonts/Lora-Italic.ttf
+          style: italic

@@ -77,7 +77,7 @@ class _HistoryPanelState extends State<HistoryPanel> {
           const Text(
             'Story History',
             style: TextStyle(
-              fontFamily: 'serif',
+              fontFamily: 'Lora',
               color: gold,
               fontSize: 18,
               letterSpacing: 1,
@@ -95,7 +95,7 @@ class _HistoryPanelState extends State<HistoryPanel> {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
-          child: Text(_error!, style: TextStyle(color: cream.withAlpha(140), fontFamily: 'serif')),
+          child: Text(_error!, style: TextStyle(color: cream.withAlpha(140), fontFamily: 'Lora')),
         ),
       );
     }
@@ -107,7 +107,7 @@ class _HistoryPanelState extends State<HistoryPanel> {
         child: Text(
           'No stories yet.\nTell the first one tonight.',
           textAlign: TextAlign.center,
-          style: TextStyle(color: cream.withAlpha(140), fontFamily: 'serif', height: 1.8),
+          style: TextStyle(color: cream.withAlpha(140), fontFamily: 'Lora', height: 1.8),
         ),
       );
     }
@@ -146,7 +146,7 @@ class _SessionCard extends StatelessWidget {
                   Text(
                     title,
                     style: const TextStyle(
-                      fontFamily: 'serif',
+                      fontFamily: 'Lora',
                       color: cream,
                       fontSize: 15,
                       fontWeight: FontWeight.w600,
@@ -156,14 +156,14 @@ class _SessionCard extends StatelessWidget {
                     const SizedBox(height: 4),
                     Text(
                       characters.join(', '),
-                      style: TextStyle(fontFamily: 'serif', color: gold.withAlpha(200), fontSize: 12),
+                      style: TextStyle(fontFamily: 'Lora', color: gold.withAlpha(200), fontSize: 12),
                     ),
                   ],
                 ],
               ),
             ),
             if (date != null)
-              Text(date, style: TextStyle(fontFamily: 'serif', color: cream.withAlpha(100), fontSize: 12)),
+              Text(date, style: TextStyle(fontFamily: 'Lora', color: cream.withAlpha(100), fontSize: 12)),
             const SizedBox(width: 8),
             Icon(Icons.chevron_right, color: cream.withAlpha(80), size: 18),
           ],
@@ -299,7 +299,7 @@ class _StoryDetailSheetState extends State<_StoryDetailSheet> {
               padding: const EdgeInsets.symmetric(horizontal: 24),
               child: Text(
                 title,
-                style: const TextStyle(fontFamily: 'serif', color: cream, fontSize: 20, fontWeight: FontWeight.w700),
+                style: const TextStyle(fontFamily: 'Fraunces', color: cream, fontSize: 20, fontWeight: FontWeight.w700),
                 textAlign: TextAlign.center,
               ),
             ),
@@ -326,7 +326,7 @@ class _StoryDetailSheetState extends State<_StoryDetailSheet> {
                     const SizedBox(width: 8),
                     Text(
                       _loading ? 'Loading…' : _playing ? 'Stop' : 'Listen again',
-                      style: const TextStyle(fontFamily: 'serif', color: gold, fontSize: 14, letterSpacing: 1),
+                      style: const TextStyle(fontFamily: 'Lora', color: gold, fontSize: 14, letterSpacing: 1),
                     ),
                   ],
                 ),
@@ -334,13 +334,13 @@ class _StoryDetailSheetState extends State<_StoryDetailSheet> {
             ),
             if (_audioError != null) ...[
               const SizedBox(height: 8),
-              Text(_audioError!, style: TextStyle(color: cream.withAlpha(120), fontFamily: 'serif', fontSize: 12)),
+              Text(_audioError!, style: TextStyle(color: cream.withAlpha(120), fontFamily: 'Lora', fontSize: 12)),
             ],
             if (!hasStory && _audioError == null) ...[
               const SizedBox(height: 8),
               Text(
                 'Audio replay available for new stories.',
-                style: TextStyle(color: cream.withAlpha(80), fontFamily: 'serif', fontSize: 12),
+                style: TextStyle(color: cream.withAlpha(80), fontFamily: 'Lora', fontSize: 12),
               ),
             ],
             const SizedBox(height: 20),
@@ -354,7 +354,7 @@ class _StoryDetailSheetState extends State<_StoryDetailSheet> {
                       Text(
                         storyText!,
                         style: TextStyle(
-                          fontFamily: 'serif',
+                          fontFamily: 'Lora',
                           fontSize: 15,
                           color: cream.withAlpha(220),
                           height: 1.7,
@@ -364,11 +364,11 @@ class _StoryDetailSheetState extends State<_StoryDetailSheet> {
                     else
                       Text(
                         summary,
-                        style: TextStyle(fontFamily: 'serif', fontSize: 15, color: cream.withAlpha(180), height: 1.6),
+                        style: TextStyle(fontFamily: 'Lora', fontSize: 15, color: cream.withAlpha(180), height: 1.6),
                       ),
                     if (notes.isNotEmpty) ...[
                       const SizedBox(height: 20),
-                      Text('Remember', style: TextStyle(fontFamily: 'serif', color: gold.withAlpha(180), fontSize: 12, letterSpacing: 1)),
+                      Text('Remember', style: TextStyle(fontFamily: 'Lora', color: gold.withAlpha(180), fontSize: 12, letterSpacing: 1)),
                       const SizedBox(height: 8),
                       ...notes.map((n) => Padding(
                         padding: const EdgeInsets.only(bottom: 6),
@@ -376,7 +376,7 @@ class _StoryDetailSheetState extends State<_StoryDetailSheet> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text('· ', style: TextStyle(color: gold.withAlpha(160), fontSize: 13)),
-                            Expanded(child: Text(n, style: TextStyle(fontFamily: 'serif', color: cream.withAlpha(140), fontSize: 13, height: 1.4))),
+                            Expanded(child: Text(n, style: TextStyle(fontFamily: 'Lora', color: cream.withAlpha(140), fontSize: 13, height: 1.4))),
                           ],
                         ),
                       )),

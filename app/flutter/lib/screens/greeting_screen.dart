@@ -74,7 +74,7 @@ class _GreetingScreenState extends State<GreetingScreen> with SingleTickerProvid
               child: Text(
                 'Not ${widget.childName}?',
                 style: TextStyle(
-                  fontFamily: 'serif',
+                  fontFamily: 'Lora',
                   color: cream.withAlpha(120),
                   fontSize: 13,
                 ),
@@ -115,13 +115,13 @@ class _GreetingScreenState extends State<GreetingScreen> with SingleTickerProvid
                         children: [
                           Text(
                             'Good night, ${widget.childName}.',
-                            style: const TextStyle(fontFamily: 'serif', fontSize: 28, fontWeight: FontWeight.w700, color: cream),
+                            style: const TextStyle(fontFamily: 'Fraunces', fontSize: 28, fontWeight: FontWeight.w700, color: cream),
                             textAlign: TextAlign.center,
                           ),
                           const SizedBox(height: 10),
                           Text(
                             'Your story is waiting in Yarnia.',
-                            style: const TextStyle(fontFamily: 'serif', fontSize: 16, color: gold),
+                            style: const TextStyle(fontFamily: 'Lora', fontSize: 16, color: gold),
                             textAlign: TextAlign.center,
                           ),
                           const SizedBox(height: 48),
@@ -135,7 +135,7 @@ class _GreetingScreenState extends State<GreetingScreen> with SingleTickerProvid
                               ),
                               child: const Text(
                                 'Begin',
-                                style: TextStyle(fontFamily: 'serif', color: gold, fontSize: 16, letterSpacing: 1.5),
+                                style: TextStyle(fontFamily: 'Lora', color: gold, fontSize: 16, letterSpacing: 1.5),
                               ),
                             ),
                           ),

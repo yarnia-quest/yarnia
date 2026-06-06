@@ -243,7 +243,7 @@ class _AgentScreenState extends State<AgentScreen> with TickerProviderStateMixin
                       onPressed: () => openAppSettings(),
                       child: Text(
                         'Open Settings',
-                        style: TextStyle(color: gold, fontFamily: 'serif', fontSize: 16),
+                        style: TextStyle(color: gold, fontFamily: 'Lora', fontSize: 16),
                       ),
                     ),
                   ],
@@ -268,7 +268,7 @@ class _AgentScreenState extends State<AgentScreen> with TickerProviderStateMixin
                     child: Text(
                       'end story',
                       style: TextStyle(
-                        fontFamily: 'serif',
+                        fontFamily: 'Lora',
                         color: cream,
                         fontSize: 13,
                         letterSpacing: 1.5,
@@ -367,7 +367,7 @@ class _StatusLabel extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 24),
         child: Text(
           error!,
-          style: TextStyle(fontFamily: 'serif', color: cream.withAlpha(200), fontSize: 15),
+          style: TextStyle(fontFamily: 'Lora', color: cream.withAlpha(200), fontSize: 15),
           textAlign: TextAlign.center,
         ),
       );
@@ -382,7 +382,7 @@ class _StatusLabel extends StatelessWidget {
     return Text(
       text,
       style: TextStyle(
-        fontFamily: 'serif',
+        fontFamily: 'Lora',
         color: cream.withAlpha(180),
         fontSize: 15,
         letterSpacing: 0.5,
@@ -433,7 +433,7 @@ class _DoneScreen extends StatelessWidget {
                     const SizedBox(width: 8),
                     Text(
                       'Saving story…',
-                      style: TextStyle(fontFamily: 'serif', color: cream.withAlpha(100), fontSize: 12, letterSpacing: 0.5),
+                      style: TextStyle(fontFamily: 'Lora', color: cream.withAlpha(100), fontSize: 12, letterSpacing: 0.5),
                     ),
                   ],
                 ),
@@ -448,7 +448,7 @@ class _DoneScreen extends StatelessWidget {
                 Text(
                   'The end.',
                   style: TextStyle(
-                    fontFamily: 'serif',
+                    fontFamily: 'Lora',
                     fontSize: 28,
                     color: cream,
                     fontWeight: FontWeight.w700,
@@ -462,7 +462,7 @@ class _DoneScreen extends StatelessWidget {
                     child: Text(
                       'Another night →',
                       style: TextStyle(
-                        fontFamily: 'serif',
+                        fontFamily: 'Lora',
                         color: cream,
                         fontSize: 14,
                         letterSpacing: 1,

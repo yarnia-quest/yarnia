@@ -116,7 +116,7 @@ class _PlaybackScreenState extends State<PlaybackScreen> with SingleTickerProvid
                             child: Text(
                               widget.storyText ?? 'Once upon a time, in a land between the last yawn and the first dream…',
                               style: TextStyle(
-                                fontFamily: 'serif',
+                                fontFamily: 'Lora',
                                 fontSize: 17,
                                 color: cream.withOpacity(0.9),
                                 height: 1.65,
@@ -142,7 +142,7 @@ class _PlaybackScreenState extends State<PlaybackScreen> with SingleTickerProvid
                                 ),
                                 child: Text(
                                   _shared ? 'Sent ✓' : 'Send to grandma',
-                                  style: const TextStyle(fontFamily: 'serif', color: gold, fontSize: 15, letterSpacing: 1),
+                                  style: const TextStyle(fontFamily: 'Lora', color: gold, fontSize: 15, letterSpacing: 1),
                                 ),
                               ),
                             ),
@@ -151,7 +151,7 @@ class _PlaybackScreenState extends State<PlaybackScreen> with SingleTickerProvid
                               onTap: widget.onRestart,
                               child: Text(
                                 'Another night →',
-                                style: TextStyle(fontFamily: 'serif', color: cream.withOpacity(0.4), fontSize: 13),
+                                style: TextStyle(fontFamily: 'Lora', color: cream.withOpacity(0.4), fontSize: 13),
                               ),
                             ),
                             const SizedBox(height: 32),

@@ -83,7 +83,7 @@ class _CoCreationScreenState extends State<CoCreationScreen> with SingleTickerPr
                 children: [
                   Text(
                     "Who's in tonight's story,\n${widget.childName}?",
-                    style: const TextStyle(fontFamily: 'serif', fontSize: 26, fontWeight: FontWeight.w700, color: cream, height: 1.4),
+                    style: const TextStyle(fontFamily: 'Fraunces', fontSize: 26, fontWeight: FontWeight.w700, color: cream, height: 1.4),
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 40),
@@ -129,13 +129,13 @@ class _CoCreationScreenState extends State<CoCreationScreen> with SingleTickerPr
                   if (_transcript.isNotEmpty)
                     Text(
                       '"$_transcript"',
-                      style: const TextStyle(fontFamily: 'serif', color: gold, fontSize: 15, fontStyle: FontStyle.italic),
+                      style: const TextStyle(fontFamily: 'Lora', color: gold, fontSize: 15, fontStyle: FontStyle.italic),
                       textAlign: TextAlign.center,
                     )
                   else
                     Text(
                       '— or pick one —',
-                      style: TextStyle(fontFamily: 'serif', color: cream.withOpacity(0.4), fontSize: 13, letterSpacing: 1),
+                      style: TextStyle(fontFamily: 'Lora', color: cream.withOpacity(0.4), fontSize: 13, letterSpacing: 1),
                     ),
                   const SizedBox(height: 20),
                   Wrap(
@@ -150,7 +150,7 @@ class _CoCreationScreenState extends State<CoCreationScreen> with SingleTickerPr
                           border: Border.all(color: gold),
                           borderRadius: BorderRadius.circular(24),
                         ),
-                        child: Text(chip, style: const TextStyle(fontFamily: 'serif', color: gold, fontSize: 14)),
+                        child: Text(chip, style: const TextStyle(fontFamily: 'Lora', color: gold, fontSize: 14)),
                       ),
                     )).toList(),
                   ),

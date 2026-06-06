@@ -29,7 +29,9 @@ class YarniaApp extends StatelessWidget {
     return MaterialApp(
       title: 'Yarnia',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(scaffoldBackgroundColor: navy),
+      // Lora (the deck's body serif) is the app-wide default so any unstyled or
+      // Material-default text inherits it; screens opt into Fraunces for headlines.
+      theme: ThemeData(scaffoldBackgroundColor: navy, fontFamily: 'Lora'),
       home: const YarniaRoot(),
     );
   }
