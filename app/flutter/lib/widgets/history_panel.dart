@@ -213,6 +213,12 @@ class _StoryDetailSheetState extends State<_StoryDetailSheet> {
     super.dispose();
   }
 
+  Future<File> _cacheFile(String audioKey) async {
+    final dir = await getApplicationDocumentsDirectory();
+    final safe = audioKey.replaceAll('/', '_');
+    return File('${dir.path}/yarnia_audio/$safe');
+  }
+
   Future<void> _togglePlay() async {
     if (_playing) {
       await _player.stop();
@@ -222,21 +228,27 @@ class _StoryDetailSheetState extends State<_StoryDetailSheet> {
 
     final audioKey = widget.session['audioKey'] as String?;
     if (audioKey == null || audioKey.isEmpty) {
-      setState(() => _audioError = 'No audio stored for this story yet.');
+      setState(() => _audioError = 'No audio for this story yet.');
       return;
     }
 
     setState(() { _loading = true; _audioError = null; });
     try {
-      // Download via http (cleartext allowed) then play from file (ExoPlayer blocks http streams).
-      final res = await http.get(Uri.parse('${widget.apiBase}/audio/$audioKey'));
-      if (res.statusCode != 200) throw Exception('Audio fetch failed: ${res.statusCode}');
-      final dir = await getTemporaryDirectory();
-      final file = File('${dir.path}/yarnia_replay.mp3');
-      await file.writeAsBytes(res.bodyBytes);
-      await _player.setFilePath(file.path);
+      final cached = await _cacheFile(audioKey);
+
+      if (!await cached.exists()) {
+        // Ask server for the signed URL, then download and cache.
+        final urlRes = await http.get(Uri.parse('${widget.apiBase}/audio-url/$audioKey'));
+        if (urlRes.statusCode != 200) throw Exception('URL fetch failed: ${urlRes.statusCode}');
+        final url = (jsonDecode(urlRes.body) as Map<String, dynamic>)['url'] as String;
+        final bytes = (await http.get(Uri.parse(url))).bodyBytes;
+        await cached.parent.create(recursive: true);
+        await cached.writeAsBytes(bytes);
+      }
+
+      await _player.setFilePath(cached.path);
+      if (mounted) setState(() { _loading = false; _playing = true; });
       await _player.play();
-      setState(() => _playing = true);
 
       _player.playerStateStream.listen((state) {
         if (state.processingState == ProcessingState.completed) {
@@ -245,9 +257,7 @@ class _StoryDetailSheetState extends State<_StoryDetailSheet> {
       });
     } catch (e) {
       debugPrint('Audio replay failed: $e');
-      setState(() => _audioError = 'Could not load audio. Try again.');
-    } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) setState(() { _loading = false; _audioError = 'Could not load audio. Try again.'; });
     }
   }
 

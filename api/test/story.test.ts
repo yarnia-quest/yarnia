@@ -12,8 +12,8 @@ type AppDeps = {
   getSignedUrl: (agentId: string) => Promise<string>;
   saveSession: (childId: string, input: unknown) => Promise<void>;
   fetchTranscript: (conversationId: string) => Promise<ConversationTurn[]>;
-  storeAudio: (key: string, base64: string) => Promise<void>;
-  getAudio: (key: string) => Promise<ArrayBuffer | null>;
+  storeAudio: (key: string, base64: string) => Promise<string>;
+  getAudioUrl: (key: string) => Promise<string | null>;
   createChild: (input: unknown) => Promise<string>;
 };
 
@@ -37,8 +37,8 @@ function appWith(deps: Partial<AppDeps>) {
     getSignedUrl: deps.getSignedUrl ?? (async () => "wss://signed"),
     saveSession: deps.saveSession ?? (async () => {}),
     fetchTranscript: deps.fetchTranscript ?? (async () => []),
-    storeAudio: deps.storeAudio ?? (async () => {}),
-    getAudio: deps.getAudio ?? (async () => null),
+    storeAudio: deps.storeAudio ?? (async (key) => key),
+    getAudioUrl: deps.getAudioUrl ?? (async () => "https://fake-url"),
     createChild: deps.createChild ?? (async () => "new-child-id"),
   }));
 }

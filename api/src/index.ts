@@ -28,8 +28,8 @@ type AppDeps = StoryDeps & {
   getSignedUrl: (agentId: string) => Promise<string>;
   saveSession: (childId: string, input: SaveSessionInput) => Promise<void>;
   fetchTranscript: (conversationId: string) => Promise<ConversationTurn[]>;
-  storeAudio: (key: string, base64: string) => Promise<void>;
-  getAudio: (key: string) => Promise<ArrayBuffer | null>;
+  storeAudio: (key: string, base64: string) => Promise<string>;
+  getAudioUrl: (key: string) => Promise<string | null>;
   createChild: (input: NewChild) => Promise<string>;
 };
 
@@ -68,11 +68,14 @@ function defaultDeps(env: Bindings): AppDeps {
       ),
     fetchTranscript: (conversationId) =>
       fetchConversationTranscript(conversationId, { apiKey: env.ELEVENLABS_API_KEY }),
-    // Audio lives in Instant Storage (not R2). uploadFile auto-creates a $files entity
-    // keyed by `key` (its path); the path doubles as our audioKey for later replay.
     storeAudio: async (key, base64) => {
       const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
       await db.storage.uploadFile(key, bytes, { contentType: "audio/mpeg" });
+      return key;
+    },
+    getAudioUrl: async (key) => {
+      const res = await db.query({ $files: { $: { where: { path: key } } } });
+      return res.$files?.[0]?.url ?? null;
     },
     // Mints a child row with the admin token (clients can't write `children` — perms are
     // all-false). The generated id is the stable handle the app keeps so the same child is
@@ -90,15 +93,6 @@ function defaultDeps(env: Bindings): AppDeps {
         }),
       );
       return childId;
-    },
-    getAudio: async (key) => {
-      // Admin query bypasses $files permissions; resolve the CDN url, then proxy the bytes.
-      const res = await db.query({ $files: { $: { where: { path: key } } } });
-      const url = res.$files?.[0]?.url;
-      if (!url) return null;
-      const r = await fetch(url);
-      if (!r.ok) return null;
-      return r.arrayBuffer();
     },
   };
 }
@@ -236,8 +230,8 @@ export function createApp(makeDeps: (env: Bindings) => AppDeps = defaultDeps) {
         try {
           const audioBase64 = await deps.synthesize(storyText.slice(0, 4500));
           if (audioBase64) {
-            audioKey = `stories/${crypto.randomUUID()}.mp3`;
-            await deps.storeAudio(audioKey, audioBase64);
+            const path = `stories/${crypto.randomUUID()}.mp3`;
+            audioKey = await deps.storeAudio(path, audioBase64);
           }
         } catch (err) {
           console.error("audio synthesis/storage failed, continuing without audio:", err);
@@ -350,13 +344,14 @@ export function createApp(makeDeps: (env: Bindings) => AppDeps = defaultDeps) {
     return c.json({ sessions });
   });
 
-  // GET /audio/:key — serve a stored audio file from Instant Storage.
-  app.get("/audio/:key{.+}", async (c) => {
+  // GET /audio-url/:key — return the signed CloudFront URL for a stored audio file.
+  // Flutter fetches this once, downloads the file, caches it locally, plays from cache.
+  app.get("/audio-url/:key{.+}", async (c) => {
     const key = c.req.param("key");
     const deps = makeDeps(c.env);
-    const buf = await deps.getAudio(key);
-    if (!buf) return c.json({ error: "not_found" }, 404);
-    return new Response(buf, { headers: { "content-type": "audio/mpeg", "cache-control": "public, max-age=31536000" } });
+    const url = await deps.getAudioUrl(key);
+    if (!url) return c.json({ error: "not_found" }, 404);
+    return c.json({ url });
   });
 
   return app;
