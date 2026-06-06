@@ -48,9 +48,16 @@ flutter-web-local:
 flutter-web-prod:
     cd app/flutter && flutter run -d chrome --dart-define-from-file=dart_defines/prod.json
 
-# Build web client (prod API) + deploy to app.yarnia.quest (requires CLOUDFLARE_API_TOKEN + CLOUDFLARE_ACCOUNT_ID)
+# Build web client (prod API) + deploy to app.yarnia.quest (creds auto-loaded from api/.env)
 deploy-app:
-    cd app/flutter && flutter build web --release --dart-define-from-file=dart_defines/prod.json && npx wrangler deploy
+    #!/usr/bin/env bash
+    set -euo pipefail
+    # Cloudflare deploy creds live in api/.env (app/.env is public-only). Load just the
+    # two CLOUDFLARE_* vars so wrangler, run from app/flutter (which has no creds), can auth.
+    while IFS= read -r line; do export "$line"; done < <(grep -E '^CLOUDFLARE_(API_TOKEN|ACCOUNT_ID)=' api/.env)
+    cd app/flutter
+    flutter build web --release --dart-define-from-file=dart_defines/prod.json
+    npx wrangler deploy
 
 # ── Combined ─────────────────────────────────────────────────────────────────
 
