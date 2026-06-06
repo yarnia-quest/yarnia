@@ -160,6 +160,7 @@ describe("GET /agent/session", () => {
         session_state: "returning",
         active_story_series: "",
         last_series_episode: "",
+        last_story_details: "",
         greeting:
           "Welcome back to Yarnia, Lisa, where your stories untangle. I remember our story about a dragon who shared. Are you all cozy and ready for a new one tonight?",
       },

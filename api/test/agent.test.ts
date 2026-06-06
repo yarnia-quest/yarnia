@@ -26,6 +26,7 @@ describe("toDynamicVariables", () => {
       session_state: "returning",
       active_story_series: "", // owl + dragon each appear once -> no series
       last_series_episode: "",
+      last_story_details: "",
       greeting:
         "Welcome back to Yarnia, Lisa, where your stories untangle. I remember our story about a gentle dragon who learned to share. Are you all cozy and ready for a new one tonight?",
     });
@@ -44,6 +45,27 @@ describe("toDynamicVariables", () => {
     expect(v.active_story_series).toContain("Pip the owl");
     expect(v.active_story_series).toContain("the dragon");
     expect(v.last_series_episode).toBe("the dragon shared his stones");
+  });
+
+  it("exposes the last story's continuity notes so the agent can recall + continue", () => {
+    const withNotes: Child = {
+      ...lisa,
+      pastSessions: [
+        { summary: "an owl in the dark", charactersUsed: ["owl"], continuityNotes: ["Pip was shy of the dark"] },
+        {
+          summary: "a gentle dragon who shared",
+          charactersUsed: ["dragon"],
+          continuityNotes: ["the dragon shared his sparkly stones", "sharing made him calm"],
+        },
+      ],
+    };
+    const v = toDynamicVariables(withNotes);
+    // Details come from the MOST RECENT session, joined into one speakable string.
+    expect(v.last_story_details).toBe("the dragon shared his sparkly stones; sharing made him calm");
+  });
+
+  it("leaves last_story_details empty when the last session has no notes", () => {
+    expect(toDynamicVariables(lisa).last_story_details).toBe("");
   });
 
   it("handles an unknown child (no record yet): empty name, greeting asks for it", () => {

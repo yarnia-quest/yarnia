@@ -34,6 +34,10 @@ export type DynamicVariables = {
   favorite_characters: string;
   fears_to_avoid: string;
   last_story: string;
+  // Carry-forward facts from the most recent story (the stored continuityNotes), so the
+  // agent can recall specifics and genuinely CONTINUE a past story when asked — not just
+  // reference a one-line summary. Empty when there are no notes / no past story.
+  last_story_details: string;
   session_state: "first_time" | "returning";
   active_story_series: string;
   last_series_episode: string;
@@ -53,6 +57,7 @@ export function toDynamicVariables(child: Child | null, childId = ""): DynamicVa
       favorite_characters: "",
       fears_to_avoid: "nothing in particular",
       last_story: "",
+      last_story_details: "",
       session_state: "first_time",
       active_story_series: "",
       last_series_episode: "",
@@ -82,6 +87,7 @@ export function toDynamicVariables(child: Child | null, childId = ""): DynamicVa
     favorite_characters: child.favoriteCharacters.join(" and ") || "all kinds of friends",
     fears_to_avoid: child.fearsToAvoid.join(", ") || "nothing in particular",
     last_story: last ? last.summary : "a brand new adventure",
+    last_story_details: last?.continuityNotes?.length ? last.continuityNotes.join("; ") : "",
     session_state: sessions.length ? "returning" : "first_time",
     active_story_series: hasSeries ? recurring.join(" and ") : "",
     last_series_episode: hasSeries && last ? last.summary : "",
