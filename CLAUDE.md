@@ -42,7 +42,8 @@
 
 ## Commands
 - **Marketing (page + worker):** `cd marketing && npm install && npx wrangler deploy`. Local dev: `npx wrangler dev`. (CI: `deploy.yml` via wrangler-action.)
-- **app / api:** _(to be added once scaffolded June 6 — e.g. `cd app && npm install && npx expo start`)._
+- **app (Flutter client, `app/flutter/`):** `flutter pub get` once. Run locally: `flutter run -d chrome` (prod backend, the default) or `flutter run --dart-define-from-file=dart_defines/local.json -d <chrome|simulator|device>` (local `api/`). Web build: `flutter build web --release --dart-define-from-file=dart_defines/prod.json` -> `build/web/`. Deploy to `app.yarnia.quest`: `npx wrangler deploy` (assets-only; CI: `deploy-app.yml` builds + deploys on push to `app/flutter/**`). Targets/launch configs: `app/flutter/README.md`.
+- **api (Hono Worker, `api/`):** `npm install` once. `npm run dev` (local Worker on `:8787`, or the worktree's `.dev.port`), `npm test` / `npm run test:watch` (Vitest), `npm run typecheck` (tsc), `npm run story` (hit the local `/story` endpoint), `npm run deploy` (wrangler; CI: `deploy-api.yml` typechecks + tests + deploys to `api.yarnia.quest` on push to `api/**`). Secrets are set once via `wrangler secret put` and persist.
 
 ## Parallel work & collaboration (git worktrees)
 > **HACKATHON OVERRIDE (active):** commit and push **directly to `main`**. Do NOT create feature branches or worktrees during the event; speed over isolation. The worktree workflow below is the post-hackathon default.
