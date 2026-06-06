@@ -10,6 +10,7 @@ class GreetingScreen extends StatefulWidget {
   final String childId;
   final String apiBase;
   final VoidCallback onBegin;
+  final VoidCallback onLogout;
 
   const GreetingScreen({
     super.key,
@@ -17,6 +18,7 @@ class GreetingScreen extends StatefulWidget {
     required this.childId,
     required this.apiBase,
     required this.onBegin,
+    required this.onLogout,
   });
 
   @override
@@ -62,6 +64,23 @@ class _GreetingScreenState extends State<GreetingScreen> with SingleTickerProvid
       body: Stack(
         children: [
           const Positioned.fill(child: Starfield()),
+          // Logout: forgets the remembered child and returns to onboarding, so the
+          // logged-in and first-run flows can be exercised on a single device.
+          Positioned(
+            top: 48,
+            left: 20,
+            child: TextButton(
+              onPressed: widget.onLogout,
+              child: Text(
+                'Not ${widget.childName}?',
+                style: TextStyle(
+                  fontFamily: 'serif',
+                  color: cream.withAlpha(120),
+                  fontSize: 13,
+                ),
+              ),
+            ),
+          ),
           Positioned(
             top: 48,
             right: 20,

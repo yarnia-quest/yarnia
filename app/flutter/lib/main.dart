@@ -6,7 +6,9 @@ import 'screens/greeting_screen.dart';
 import 'screens/agent_screen.dart';
 import 'screens/cocreation_screen.dart';
 import 'screens/playback_screen.dart';
+import 'services/child_store.dart';
 import 'widgets/history_panel.dart';
+import 'widgets/starfield.dart';
 import 'theme.dart';
 
 // Base URL of the api/ Worker — chosen at BUILD time via a --dart-define (no runtime
@@ -41,24 +43,61 @@ class YarniaRoot extends StatefulWidget {
 }
 
 class _YarniaRootState extends State<YarniaRoot> {
-  // Starts at onboarding: every session begins by asking who we're telling a story
-  // to. Onboarding mints a child (POST /child) and fills _childId / _childName, the
-  // stable handle the rest of the flow uses to personalize and remember the child.
-  String _screen = 'onboarding';
+  // Boots in 'loading' while we read the remembered child off-device. A stored child
+  // (onboarded on a previous night) is our notion of "logged in": we skip onboarding
+  // and go straight to the greeting. No stored child -> onboarding mints one. This is
+  // what lets Yarnia remember the child across nights instead of re-onboarding each launch.
+  String _screen = 'loading';
   String? _childId;
   String? _childName;
   String? _storyText;
   String? _audioUrl;
 
-  // Called when onboarding succeeds: store the freshly minted child, warm the history
-  // cache, and move on to the greeting -> voice conversation.
+  @override
+  void initState() {
+    super.initState();
+    _restoreChild();
+  }
+
+  Future<void> _restoreChild() async {
+    final stored = await loadStoredChild();
+    if (!mounted) return;
+    if (stored != null) {
+      setState(() {
+        _childId = stored.childId;
+        _childName = stored.name;
+        _screen = 'greeting';
+      });
+      _prefetchHistory();
+    } else {
+      setState(() => _screen = 'onboarding');
+    }
+  }
+
+  // Called when onboarding succeeds: persist the freshly minted child (so future
+  // launches skip onboarding), warm the history cache, and move on to the greeting.
   void _handleOnboarded(String childId, String name) {
+    saveStoredChild(childId, name);
     setState(() {
       _childId = childId;
       _childName = name;
       _screen = 'greeting';
     });
     _prefetchHistory();
+  }
+
+  // "Logout": forget the remembered child and return to onboarding, so the two flows
+  // can be exercised on one device.
+  Future<void> _handleLogout() async {
+    await clearStoredChild();
+    if (!mounted) return;
+    setState(() {
+      _childId = null;
+      _childName = null;
+      _storyText = null;
+      _audioUrl = null;
+      _screen = 'onboarding';
+    });
   }
 
   Future<void> _prefetchHistory() async {
@@ -111,6 +150,15 @@ class _YarniaRootState extends State<YarniaRoot> {
 
   @override
   Widget build(BuildContext context) {
+    // While restoring the remembered child, show the starfield (no flash of onboarding
+    // before we know whether a child is stored). The read is near-instant.
+    if (_screen == 'loading') {
+      return const Scaffold(
+        backgroundColor: navy,
+        body: Starfield(),
+      );
+    }
+
     // Onboarding is the only screen reachable before a child exists; every other
     // screen runs after _childId / _childName are set, so the non-null reads are safe.
     if (_screen == 'onboarding' || _childId == null) {
@@ -128,6 +176,7 @@ class _YarniaRootState extends State<YarniaRoot> {
           childId: childId,
           apiBase: _apiBase,
           onBegin: () => setState(() => _screen = 'agent'),
+          onLogout: _handleLogout,
         ),
       'agent' => AgentScreen(
           childName: childName,

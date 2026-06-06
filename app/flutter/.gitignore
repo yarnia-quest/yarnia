@@ -43,3 +43,7 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Desktop targets are not used — Yarnia is a mobile (iOS/Android) app. The Linux
+# runner + its generated ephemeral plugin symlinks must not be tracked.
+/linux/
