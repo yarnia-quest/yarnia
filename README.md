@@ -119,7 +119,7 @@ More detail and worktree/CI notes are in `CLAUDE.md` and each subproject's READM
 
 ## Tests and CI
 
-- `api/` has 85 passing unit tests plus integration tests (Vitest). Run `npm test` in `api/`.
+- `api/` has 93 passing unit tests plus integration tests (Vitest). Run `npm test` in `api/`.
 - GitHub Actions deploy on push by path: `deploy-api.yml`, `deploy-app.yml`, `deploy.yml`
   (marketing), and `push-schema.yml` (InstantDB schema + permissions as code).
 - The demo-critical logic (content-safety guardrail + per-child memory in
@@ -136,6 +136,35 @@ More detail and worktree/CI notes are in `CLAUDE.md` and each subproject's READM
   touches them. The waitlist `signups` entity is create-only for guests.
 - **Content safety:** every story prompt carries an age-appropriate guardrail and avoids the
   child's named fears (`api/src/prompt.ts`).
+- **API access:** CORS is restricted to the app and marketing origins plus localhost (no
+  wildcard). An optional shared secret (`YARNIA_API_TOKEN`) gates every product route behind an
+  `X-Yarnia-Token` header when set; the webhook stays on its own HMAC check. User-supplied
+  story `choice` text is length-capped and stripped of prompt-delimiter characters before it
+  reaches the LLM. For abuse protection in production, enable Cloudflare's rate-limiting rules
+  on the `api.yarnia.quest` route (zero-config, set in the Cloudflare dashboard).
+
+## Reliability and graceful degradation
+
+- If the live ElevenLabs voice agent can't run (microphone denied, network, or agent error),
+  the app falls back to a tap/voice co-creation screen that generates and narrates a story via
+  `POST /story`, so the bedtime ritual still completes.
+- Narration is an enhancement: if TTS fails, the story still returns as text (`audio: null`).
+- Session persistence is webhook-first (survives the phone locking); the client confirms with
+  a backoff poll rather than a tight loop.
+
+## Pricing and monetization
+
+EUR 8/month, positioned below the "do I really need this" threshold (Spotify EUR 10, Calm
+EUR 8). Payments are planned via Mollie (a hackathon sponsor); the subscription/paywall is on
+the roadmap and not wired into the demo build.
+
+## Known limitations / roadmap
+
+- One child profile per device today (`SharedPreferences` stores a single child). Multi-child
+  households need a profile picker - on the roadmap.
+- Ambient soundscapes, adult wind-down stories, and public story publishing are designed but
+  not in the core demo build.
+- Mollie payments / subscription gating: planned, not yet implemented.
 
 ## Repo layout
 

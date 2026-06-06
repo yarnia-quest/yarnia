@@ -34,6 +34,9 @@ class _GreetingScreenState extends State<GreetingScreen> with SingleTickerProvid
   @override
   void initState() {
     super.initState();
+    // Keep the device awake across the ritual so it does not lock between greeting and the
+    // voice session (which would interrupt audio). "Screen-off" is delivered by the dark UI,
+    // not by letting the device sleep mid-story. Released when the flow ends.
     WakelockPlus.enable();
     // Warm the agent session (and mic permission) while the parent reads "Good night, X"
     // so tapping Begin connects to ElevenLabs with no /agent/session round-trip in the way.

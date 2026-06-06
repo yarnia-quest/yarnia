@@ -20,7 +20,33 @@ type Bindings = {
   ELEVENLABS_WEBHOOK_SECRET: string;
   INSTANT_APP_ID: string;
   INSTANT_ADMIN_TOKEN: string;
+  // Optional shared secret. When set (via `wrangler secret put YARNIA_API_TOKEN`), product
+  // routes require a matching `X-Yarnia-Token` header. Left unset it is a no-op, so local dev
+  // and tests need no token. The webhook (HMAC-verified) and health route are never gated.
+  YARNIA_API_TOKEN?: string;
 };
+
+// Browser origins allowed to call the API. Non-browser clients (the Flutter mobile build)
+// send no Origin header, so CORS never applies to them. Localhost (any port) is allowed for
+// local web dev. Everything else is rejected — no more wildcard `*`.
+const ALLOWED_ORIGINS = ["https://app.yarnia.quest", "https://yarnia.quest"];
+function corsOrigin(origin: string): string | null {
+  if (!origin) return null;
+  if (ALLOWED_ORIGINS.includes(origin)) return origin;
+  if (/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) return origin;
+  return null;
+}
+
+// Strip prompt-injection delimiters and cap length on the user-supplied `choice` before it
+// reaches the LLM prompt. A bedtime "choice" is a short phrase ("a dragon and an owl"); this
+// removes braces/brackets/angle brackets, collapses whitespace, and bounds the length.
+export function sanitizeChoice(raw: string): string {
+  return raw
+    .replace(/[{}[\]<>]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 120);
+}
 
 // Everything the routes need, built from the Worker env. Injectable so tests pass fakes.
 type AppDeps = StoryDeps & {
@@ -106,7 +132,21 @@ function defaultDeps(env: Bindings): AppDeps {
 export function createApp(makeDeps: (env: Bindings) => AppDeps = defaultDeps) {
   const app = new Hono<{ Bindings: Bindings }>();
 
-  app.use("/*", cors());
+  app.use("/*", cors({ origin: corsOrigin }));
+
+  // Optional shared-secret gate. No-op until YARNIA_API_TOKEN is set, so nothing breaks
+  // before the secret is provisioned. Skips CORS preflight, the health route, and the
+  // webhook (which authenticates with its own HMAC signature).
+  app.use("/*", async (c, next) => {
+    const required = c.env?.YARNIA_API_TOKEN;
+    if (!required || c.req.method === "OPTIONS") return next();
+    const path = c.req.path;
+    if (path === "/" || path === "/agent/webhook") return next();
+    if (c.req.header("x-yarnia-token") !== required) {
+      return c.json({ error: "missing or invalid API token" }, 401);
+    }
+    return next();
+  });
 
   app.get("/", (c) => c.json({ service: "yarnia-api", ok: true }));
 
@@ -117,11 +157,13 @@ export function createApp(makeDeps: (env: Bindings) => AppDeps = defaultDeps) {
     const body = await c.req
       .json<{ childId?: string; choice?: string }>()
       .catch(() => ({}) as { childId?: string; choice?: string });
-    const { childId, choice } = body;
+    const { childId } = body;
     if (!childId) return c.json({ error: "childId required" }, 400);
+    // Sanitize the caller-supplied choice before it ever reaches the LLM prompt.
+    const choice = sanitizeChoice(body.choice ?? "") || "a gentle surprise";
 
     const deps = makeDeps(c.env);
-    const result = await createStory(childId, choice ?? "a gentle surprise", deps);
+    const result = await createStory(childId, choice, deps);
     if (!result.ok) return c.json({ error: result.reason }, 404);
 
     const audioBase64 = result.audio ?? null;

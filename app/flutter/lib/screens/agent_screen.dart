@@ -45,6 +45,9 @@ class _AgentScreenState extends State<AgentScreen> with TickerProviderStateMixin
   @override
   void initState() {
     super.initState();
+    // Hold the wakelock during the live conversation so the device does not lock and cut the
+    // ElevenLabs audio. The screen dims to a dark orb (see _dimController) for the screen-off
+    // feel; the wakelock is released in dispose().
     WakelockPlus.enable();
 
     _orbController = AnimationController(
@@ -104,9 +107,17 @@ class _AgentScreenState extends State<AgentScreen> with TickerProviderStateMixin
     final previousCount = getCachedSessions()?.length ?? 0;
     invalidateHistoryCache();
     // The webhook fires after ElevenLabs assembles the transcript, which can take a little
-    // while — poll for up to ~45s before giving up (the data is safe regardless).
-    for (int i = 0; i < 15; i++) {
-      await Future.delayed(const Duration(seconds: 3));
+    // while. Poll with exponential backoff (2s, 3s, 5s, 8s, 12s, 12s...) up to a ~45s budget
+    // instead of a flat 3s every tick — far fewer API calls when the webhook is quick, same
+    // worst-case wait. The data is safe regardless; it just appears in history next open.
+    var elapsedMs = 0;
+    var delayMs = 2000;
+    const budgetMs = 45000;
+    const maxDelayMs = 12000;
+    while (elapsedMs < budgetMs) {
+      await Future.delayed(Duration(milliseconds: delayMs));
+      elapsedMs += delayMs;
+      delayMs = math.min(maxDelayMs, (delayMs * 1.6).round());
       try {
         final res = await http.get(
           Uri.parse('${widget.apiBase}/child/${widget.childId}/sessions'),
@@ -256,6 +267,18 @@ class _AgentScreenState extends State<AgentScreen> with TickerProviderStateMixin
                       child: Text(
                         'Try again',
                         style: TextStyle(color: gold, fontFamily: 'serif', fontSize: 16),
+                      ),
+                    ),
+                  ],
+                  // Whenever the live voice agent can't run, offer the tap-to-choose
+                  // co-creation fallback (works without the microphone).
+                  if (_micDenied || _error != null) ...[
+                    const SizedBox(height: 8),
+                    TextButton(
+                      onPressed: widget.onFallback,
+                      child: Text(
+                        'Tell me a story another way',
+                        style: TextStyle(color: cream.withOpacity(0.6), fontFamily: 'Lora', fontSize: 14),
                       ),
                     ),
                   ],

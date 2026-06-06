@@ -230,7 +230,10 @@ class _YarniaRootState extends State<YarniaRoot> {
           childId: childId,
           apiBase: _apiBase,
           onDone: _handleRestart,
-          onFallback: _handleRestart,
+          // If the live voice agent can't run (mic denied, network, ElevenLabs error), fall
+          // back to the tap/voice co-creation flow, which generates + narrates a story via
+          // POST /story. Graceful degradation instead of a dead end.
+          onFallback: () => setState(() => _screen = 'cocreation'),
         ),
       'cocreation' => CoCreationScreen(
           childName: childName,

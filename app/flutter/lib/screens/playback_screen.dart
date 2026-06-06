@@ -36,6 +36,10 @@ class _PlaybackScreenState extends State<PlaybackScreen> with SingleTickerProvid
   @override
   void initState() {
     super.initState();
+    // "Screen-off" is the *experience*: the UI fades to a near-black starfield so the room
+    // stays dark. We keep the wakelock on so the device does not lock mid-story and pause
+    // narration (especially on web, where a backgrounded tab is throttled). The display
+    // shows almost nothing; the point is uninterrupted audio in a dark room.
     WakelockPlus.enable();
     _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 2300));
     _dimAnim = Tween(begin: 0.0, end: 1.0).animate(
@@ -76,11 +80,14 @@ class _PlaybackScreenState extends State<PlaybackScreen> with SingleTickerProvid
   }
 
   Future<void> _share() async {
+    // Share the actual story text (not just a marketing link) so grandma receives
+    // tonight's story, with a link to make one for her own.
+    final story = widget.storyText?.trim();
+    final message = (story != null && story.isNotEmpty)
+        ? 'A bedtime story for ${widget.childName}, made with Yarnia 🌙\n\n$story\n\nMake one for your little one at https://yarnia.quest'
+        : 'Yarnia told ${widget.childName} a bedtime story tonight. 🌙\nhttps://yarnia.quest';
     try {
-      await Share.share(
-        'Yarnia told ${widget.childName} a bedtime story tonight. 🌙\nhttps://yarnia.quest',
-        subject: 'Yarnia',
-      );
+      await Share.share(message, subject: 'A bedtime story for ${widget.childName}');
       setState(() => _shared = true);
     } catch (e) {
       debugPrint('Share failed: $e');
