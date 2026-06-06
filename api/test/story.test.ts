@@ -18,6 +18,7 @@ function appWith(deps: Partial<StoryDeps>) {
   return createApp(() => ({
     loadChild: deps.loadChild ?? (async () => lisa),
     generate: deps.generate ?? (async () => "Once upon a time, Lisa..."),
+    synthesize: deps.synthesize ?? (async () => "BASE64AUDIO"),
   }));
 }
 
@@ -52,7 +53,7 @@ describe("POST /story", () => {
       childId: "lisa-1",
       choice: "dragon",
       text: "Once upon a time, Lisa...",
-      audio: null,
+      audio: "data:audio/mpeg;base64,BASE64AUDIO",
       status: "ok",
     });
   });

@@ -24,10 +24,19 @@ describe.skipIf(!ready)("POST /story — LIVE (InstantDB + Qwen)", () => {
   it("returns a memory-aware story for seeded Lisa", async () => {
     const res = await post({ childId: LISA, choice: "dragon" });
     expect(res.status).toBe(200);
-    const json = (await res.json()) as { status: string; text: string };
+    const json = (await res.json()) as { status: string; text: string; audio: string };
     expect(json.status).toBe("ok");
     expect(json.text.length).toBeGreaterThan(50);
-    console.log("\n----- POST /story live (first 400) -----\n" + json.text.slice(0, 400) + "\n");
+    // Story text always returns. Audio is best-effort: a data URI when ElevenLabs serves
+    // us, or null when it does not (e.g. free-tier disabled). Both are valid; warn on null.
+    if (json.audio === null) {
+      console.warn("\n[!] audio is null — ElevenLabs did not return narration (check the key/tier).\n");
+    } else {
+      expect(json.audio).toMatch(/^data:audio\/mpeg;base64,/);
+      expect(json.audio.length).toBeGreaterThan(1000);
+    }
+    console.log("\n----- POST /story live -----\ntext:", json.text.slice(0, 160));
+    console.log("audio:", json.audio ? `${json.audio.length} base64 chars` : "null", "\n");
   });
 
   it("404s for an unknown child", async () => {

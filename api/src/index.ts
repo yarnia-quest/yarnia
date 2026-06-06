@@ -3,6 +3,7 @@ import { cors } from "hono/cors";
 import { init } from "@instantdb/admin";
 import { loadChild } from "./child";
 import { generateStory } from "./generate";
+import { synthesizeStory } from "./synthesize";
 import { createStory, type StoryDeps } from "./story";
 
 // Bindings come from api/.dev.vars locally (generated from api/.env) and from
@@ -21,6 +22,7 @@ function defaultDeps(env: Bindings): StoryDeps {
   return {
     loadChild: (childId) => loadChild(childId, db.query.bind(db)),
     generate: (prompt) => generateStory(prompt, { apiKey: env.QWEN_API_KEY }),
+    synthesize: (text) => synthesizeStory(text, { apiKey: env.ELEVENLABS_API_KEY }),
   };
 }
 
@@ -49,7 +51,7 @@ export function createApp(makeDeps: (env: Bindings) => StoryDeps = defaultDeps) 
       childId,
       choice: choice ?? null,
       text: result.text,
-      audio: null,
+      audio: result.audio ? `data:audio/mpeg;base64,${result.audio}` : null,
       status: "ok",
     });
   });
