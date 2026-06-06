@@ -1,0 +1,90 @@
+import 'dart:convert';
+import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'screens/greeting_screen.dart';
+import 'screens/cocreation_screen.dart';
+import 'screens/playback_screen.dart';
+import 'theme.dart';
+
+const _apiBase = 'https://yellowpine.taileb7778.ts.net';
+const _demoChildId = 'lisa-seed';
+const _demoChildName = 'Lisa';
+
+void main() {
+  runApp(const YarniaApp());
+}
+
+class YarniaApp extends StatelessWidget {
+  const YarniaApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'Yarnia',
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(scaffoldBackgroundColor: navy),
+      home: const YarniaRoot(),
+    );
+  }
+}
+
+class YarniaRoot extends StatefulWidget {
+  const YarniaRoot({super.key});
+
+  @override
+  State<YarniaRoot> createState() => _YarniaRootState();
+}
+
+class _YarniaRootState extends State<YarniaRoot> {
+  String _screen = 'greeting';
+  String? _storyText;
+  String? _audioUrl;
+
+  Future<void> _handleChoice(String choice) async {
+    setState(() => _screen = 'playback');
+    try {
+      final res = await http.post(
+        Uri.parse('$_apiBase/story'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'childId': _demoChildId, 'choice': choice}),
+      );
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body) as Map<String, dynamic>;
+        setState(() {
+          _storyText = data['text'] as String?;
+          _audioUrl = data['audioUrl'] as String?;
+        });
+      }
+    } catch (e) {
+      debugPrint('Story fetch failed: $e');
+    }
+  }
+
+  void _handleRestart() {
+    setState(() {
+      _screen = 'greeting';
+      _storyText = null;
+      _audioUrl = null;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return switch (_screen) {
+      'greeting' => GreetingScreen(
+          childName: _demoChildName,
+          onBegin: () => setState(() => _screen = 'cocreation'),
+        ),
+      'cocreation' => CoCreationScreen(
+          childName: _demoChildName,
+          onChoice: _handleChoice,
+        ),
+      _ => PlaybackScreen(
+          childName: _demoChildName,
+          storyText: _storyText,
+          audioUrl: _audioUrl,
+          onRestart: _handleRestart,
+        ),
+    };
+  }
+}
