@@ -11,6 +11,7 @@ export type PastSession = {
   continuityNotes?: string[];
   createdAt?: number;
   storyText?: string;
+  audioKey?: string;
 };
 
 export type Child = {

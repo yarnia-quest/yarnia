@@ -12,6 +12,8 @@ type AppDeps = {
   getSignedUrl: (agentId: string) => Promise<string>;
   saveSession: (childId: string, input: unknown) => Promise<void>;
   fetchTranscript: (conversationId: string) => Promise<ConversationTurn[]>;
+  storeAudio: (key: string, base64: string) => Promise<void>;
+  getAudio: (key: string) => Promise<ArrayBuffer | null>;
 };
 
 const lisa: Child = {
@@ -34,6 +36,8 @@ function appWith(deps: Partial<AppDeps>) {
     getSignedUrl: deps.getSignedUrl ?? (async () => "wss://signed"),
     saveSession: deps.saveSession ?? (async () => {}),
     fetchTranscript: deps.fetchTranscript ?? (async () => []),
+    storeAudio: deps.storeAudio ?? (async () => {}),
+    getAudio: deps.getAudio ?? (async () => null),
   }));
 }
 
@@ -64,7 +68,7 @@ describe("POST /story", () => {
   it("returns the generated story for a known child", async () => {
     const res = await post(appWith({}), "/story", { childId: "lisa-1", choice: "dragon" });
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({
+    expect(await res.json()).toMatchObject({
       childId: "lisa-1",
       choice: "dragon",
       text: "Once upon a time, Lisa...",

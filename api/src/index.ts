@@ -16,6 +16,7 @@ type Bindings = {
   ELEVENLABS_AGENT_ID: string;
   INSTANT_APP_ID: string;
   INSTANT_ADMIN_TOKEN: string;
+  AUDIO: R2Bucket;
 };
 
 // Everything the routes need, built from the Worker env. Injectable so tests pass fakes.
@@ -24,6 +25,8 @@ type AppDeps = StoryDeps & {
   getSignedUrl: (agentId: string) => Promise<string>;
   saveSession: (childId: string, input: SaveSessionInput) => Promise<void>;
   fetchTranscript: (conversationId: string) => Promise<ConversationTurn[]>;
+  storeAudio: (key: string, base64: string) => Promise<void>;
+  getAudio: (key: string) => Promise<ArrayBuffer | null>;
 };
 
 function defaultDeps(env: Bindings): AppDeps {
@@ -44,24 +47,35 @@ function defaultDeps(env: Bindings): AppDeps {
             charactersUsed: input.charactersUsed,
             continuityNotes: input.continuityNotes,
             storyText: input.storyText ?? null,
+            audioKey: input.audioKey ?? null,
             createdAt: Date.now(),
           })
           .link({ child: childId }),
       ),
     fetchTranscript: (conversationId) =>
       fetchConversationTranscript(conversationId, { apiKey: env.ELEVENLABS_API_KEY }),
+    storeAudio: async (key, base64) => {
+      const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+      await env.AUDIO.put(key, bytes, { httpMetadata: { contentType: "audio/mpeg" } });
+    },
+    getAudio: async (key) => {
+      const obj = await env.AUDIO.get(key);
+      if (!obj) return null;
+      return obj.arrayBuffer();
+    },
   };
 }
 
 export function createApp(makeDeps: (env: Bindings) => AppDeps = defaultDeps) {
   const app = new Hono<{ Bindings: Bindings }>();
 
-  // The Expo app (app/) calls this Worker cross-origin.
   app.use("/*", cors());
 
   app.get("/", (c) => c.json({ service: "yarnia-api", ok: true }));
 
-  // POST /story — { childId, choice? } -> { childId, choice, text, audio, status }.
+  // POST /story — { childId, choice? } -> { childId, choice, text, audio, audioKey, status }.
+  // Stores audio in R2; returns both the base64 URI (for immediate playback) and the key
+  // (for later replay via GET /audio/:key without re-synthesizing).
   app.post("/story", async (c) => {
     const body = await c.req
       .json<{ childId?: string; choice?: string }>()
@@ -73,9 +87,17 @@ export function createApp(makeDeps: (env: Bindings) => AppDeps = defaultDeps) {
     const result = await createStory(childId, choice ?? "a gentle surprise", deps);
     if (!result.ok) return c.json({ error: result.reason }, 404);
 
+    const audioBase64 = result.audio ?? null;
+    const audioKey = audioBase64 ? `stories/${crypto.randomUUID()}.mp3` : null;
+
     try {
       c.executionCtx.waitUntil(
-        persistSession(childId, choice ?? "a gentle surprise", result.prompt, result.text, deps),
+        (async () => {
+          if (audioBase64 && audioKey) {
+            await deps.storeAudio(audioKey, audioBase64);
+          }
+          await persistSession(childId, choice ?? "a gentle surprise", result.prompt, result.text, deps, audioKey ?? undefined);
+        })(),
       );
     } catch {
       // no execution context in tests
@@ -85,15 +107,15 @@ export function createApp(makeDeps: (env: Bindings) => AppDeps = defaultDeps) {
       childId,
       choice: choice ?? null,
       text: result.text,
-      audio: result.audio ? `data:audio/mpeg;base64,${result.audio}` : null,
+      audio: audioBase64 ? `data:audio/mpeg;base64,${audioBase64}` : null,
+      audioKey,
       status: "ok",
     });
   });
 
-  // GET /agent/session?childId=... — start a conversational ElevenLabs Agent session.
+  // GET /agent/session?childId=...
   app.get("/agent/session", async (c) => {
     const childId = c.req.query("childId");
-
     const deps = makeDeps(c.env);
     const result = await createAgentSession(childId, {
       loadChild: deps.loadChild,
@@ -101,7 +123,6 @@ export function createApp(makeDeps: (env: Bindings) => AppDeps = defaultDeps) {
       getSignedUrl: deps.getSignedUrl,
     });
     if (!result.ok) return c.json({ error: result.reason }, 404);
-
     return c.json({
       agentId: result.agentId,
       dynamicVariables: result.dynamicVariables,
@@ -109,8 +130,8 @@ export function createApp(makeDeps: (env: Bindings) => AppDeps = defaultDeps) {
     });
   });
 
-  // POST /session/save — { childId, conversationId } — fetches the ElevenLabs transcript,
-  // runs a Qwen recap, and saves to InstantDB. Called by Flutter after agent onDisconnect.
+  // POST /session/save — { childId, conversationId }
+  // Fetches ElevenLabs transcript, synthesizes audio, stores in R2, saves session.
   app.post("/session/save", async (c) => {
     const body = await c.req
       .json<{ childId?: string; conversationId?: string }>()
@@ -125,7 +146,25 @@ export function createApp(makeDeps: (env: Bindings) => AppDeps = defaultDeps) {
       c.executionCtx.waitUntil(
         (async () => {
           const transcript = await deps.fetchTranscript(conversationId);
-          await persistAgentSession(childId, transcript, deps);
+          const storyText = transcript
+            .filter((t) => t.role === "agent" && t.message)
+            .map((t) => t.message!)
+            .join("\n\n");
+
+          let audioKey: string | undefined;
+          if (storyText) {
+            try {
+              const audioBase64 = await deps.synthesize(storyText.slice(0, 4500));
+              if (audioBase64) {
+                audioKey = `stories/${crypto.randomUUID()}.mp3`;
+                await deps.storeAudio(audioKey, audioBase64);
+              }
+            } catch (err) {
+              console.error("audio synthesis/storage failed, continuing without audio:", err);
+            }
+          }
+
+          await persistAgentSession(childId, transcript, deps, audioKey);
         })(),
       );
     } catch {
@@ -134,7 +173,7 @@ export function createApp(makeDeps: (env: Bindings) => AppDeps = defaultDeps) {
     return c.json({ ok: true });
   });
 
-  // GET /child/:childId/sessions — past sessions newest-first, including storyText for replay.
+  // GET /child/:childId/sessions — past sessions newest-first.
   app.get("/child/:childId/sessions", async (c) => {
     const childId = c.req.param("childId");
     const deps = makeDeps(c.env);
@@ -150,23 +189,19 @@ export function createApp(makeDeps: (env: Bindings) => AppDeps = defaultDeps) {
         continuityNotes: s.continuityNotes ?? [],
         createdAt: s.createdAt ?? null,
         storyText: s.storyText ?? null,
+        audioKey: s.audioKey ?? null,
       }));
 
     return c.json({ sessions });
   });
 
-  // POST /tts — { text } -> { audio } — re-narrates any text via ElevenLabs TTS.
-  // Used by the history panel "listen again" feature.
-  app.post("/tts", async (c) => {
-    const body = await c.req
-      .json<{ text?: string }>()
-      .catch(() => ({}) as { text?: string });
-    const { text } = body;
-    if (!text) return c.json({ error: "text required" }, 400);
-
+  // GET /audio/:key — serve a stored audio file from R2.
+  app.get("/audio/:key{.+}", async (c) => {
+    const key = c.req.param("key");
     const deps = makeDeps(c.env);
-    const audio = await deps.synthesize(text);
-    return c.json({ audio: audio ? `data:audio/mpeg;base64,${audio}` : null });
+    const buf = await deps.getAudio(key);
+    if (!buf) return c.json({ error: "not_found" }, 404);
+    return new Response(buf, { headers: { "content-type": "audio/mpeg", "cache-control": "public, max-age=31536000" } });
   });
 
   return app;

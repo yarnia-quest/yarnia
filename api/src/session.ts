@@ -14,6 +14,7 @@ export type SaveSessionInput = {
   charactersUsed: string[];
   continuityNotes: string[];
   storyText?: string;
+  audioKey?: string;
 };
 
 // The full prompt/message chain for this session: the system + user prompt that produced
@@ -92,6 +93,7 @@ export async function persistSession(
   prompt: StoryPrompt,
   storyText: string,
   deps: PersistDeps,
+  audioKey?: string,
 ): Promise<void> {
   try {
     const recap = parseRecap(await deps.generate(buildRecapPrompt(storyText)));
@@ -102,6 +104,7 @@ export async function persistSession(
       charactersUsed: recap.characters.length ? recap.characters : [choice],
       continuityNotes: recap.continuityNotes,
       storyText,
+      audioKey,
     });
   } catch (err) {
     console.error("session write-back failed:", err);
@@ -115,6 +118,7 @@ export async function persistAgentSession(
   childId: string,
   transcript: ConversationTurn[],
   deps: PersistDeps,
+  audioKey?: string,
 ): Promise<void> {
   try {
     const agentText = transcript
@@ -138,6 +142,7 @@ export async function persistAgentSession(
       charactersUsed: recap.characters,
       continuityNotes: recap.continuityNotes,
       storyText: agentText,
+      audioKey,
     });
   } catch (err) {
     console.error("agent session write-back failed:", err);

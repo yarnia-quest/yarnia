@@ -15,6 +15,7 @@ type SessionRow = {
   continuityNotes?: string[];
   createdAt?: number;
   storyText?: string;
+  audioKey?: string;
 };
 
 export async function loadChild(childId: string, query: InstantQuery): Promise<Child | null> {
@@ -34,6 +35,7 @@ export async function loadChild(childId: string, query: InstantQuery): Promise<C
       continuityNotes: s.continuityNotes ?? [],
       createdAt: s.createdAt,
       storyText: s.storyText,
+      audioKey: s.audioKey,
     }));
 
   return {

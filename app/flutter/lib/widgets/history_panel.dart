@@ -1,9 +1,7 @@
 import 'dart:convert';
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:just_audio/just_audio.dart';
-import 'package:path_provider/path_provider.dart';
 import '../theme.dart';
 
 class HistoryPanel extends StatefulWidget {
@@ -210,30 +208,16 @@ class _StoryDetailSheetState extends State<_StoryDetailSheet> {
       return;
     }
 
-    final storyText = widget.session['storyText'] as String?;
-    if (storyText == null || storyText.isEmpty) {
-      setState(() => _audioError = 'No story text available for this entry.');
+    final audioKey = widget.session['audioKey'] as String?;
+    if (audioKey == null || audioKey.isEmpty) {
+      setState(() => _audioError = 'No audio stored for this story yet.');
       return;
     }
 
     setState(() { _loading = true; _audioError = null; });
     try {
-      final res = await http.post(
-        Uri.parse('${widget.apiBase}/tts'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'text': storyText}),
-      );
-      if (res.statusCode != 200) throw Exception('TTS failed: ${res.statusCode}');
-      final data = jsonDecode(res.body) as Map<String, dynamic>;
-      final audioDataUri = data['audio'] as String?;
-      if (audioDataUri == null) throw Exception('No audio returned');
-
-      final base64Data = audioDataUri.substring(audioDataUri.indexOf(',') + 1);
-      final bytes = base64Decode(base64Data);
-      final dir = await getTemporaryDirectory();
-      final file = File('${dir.path}/yarnia_replay.mp3');
-      await file.writeAsBytes(bytes);
-      await _player.setFilePath(file.path);
+      final audioUrl = '${widget.apiBase}/audio/$audioKey';
+      await _player.setUrl(audioUrl);
       await _player.play();
       setState(() => _playing = true);
 
@@ -243,7 +227,7 @@ class _StoryDetailSheetState extends State<_StoryDetailSheet> {
         }
       });
     } catch (e) {
-      debugPrint('TTS replay failed: $e');
+      debugPrint('Audio replay failed: $e');
       setState(() => _audioError = 'Could not load audio. Try again.');
     } finally {
       if (mounted) setState(() => _loading = false);
