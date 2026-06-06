@@ -1,0 +1,14 @@
+name = "yarnia-api"
+main = "src/index.ts"
+compatibility_date = "2026-06-06"
+compatibility_flags = ["nodejs_compat"]
+
+# Yarnia product backend. No ids/secrets here: secrets (OPENAI_API_KEY, ELEVENLABS_API_KEY,
+# INSTANT_ADMIN_TOKEN, INSTANT_APP_ID) come from `wrangler secret put` / GitHub Actions in
+# production, and from api/.dev.vars locally (generated from api/.env by the predev script).
+#
+# Deploys to api.yarnia.quest (the app backend). Cloudflare provisions DNS + TLS on deploy;
+# yarnia.quest must be an active zone. The marketing worker is separate, on the apex.
+[[routes]]
+pattern = "api.yarnia.quest"
+custom_domain = true
