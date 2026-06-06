@@ -63,7 +63,50 @@ type AppDeps = StoryDeps & {
   storeAudio: (key: string, base64: string) => Promise<string>;
   getAudioUrl: (key: string) => Promise<string | null>;
   createChild: (input: NewChild) => Promise<string>;
+  // Loads a single session for the public share page. Optional so test helpers that don't
+  // exercise /share need not provide it.
+  loadSession?: (sessionId: string) => Promise<ShareSession | null>;
 };
+
+// Minimal view of a session for the public /share page.
+type ShareSession = { title?: string; storyText?: string | null; audioKey?: string | null };
+
+const escapeHtml = (s: string) =>
+  s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+function sharePage(title: string, storyText: string, audioUrl: string | null): string {
+  const paragraphs = storyText
+    .split(/\n\s*\n/)
+    .map((p) => `<p>${escapeHtml(p.trim())}</p>`)
+    .join("\n");
+  const audio = audioUrl
+    ? `<audio controls preload="none" src="${escapeHtml(audioUrl)}"></audio>`
+    : "";
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>${escapeHtml(title)} — Yarnia</title>
+<style>
+  body{margin:0;background:#12132a;color:#f6efe0;font-family:Georgia,'Times New Roman',serif;line-height:1.7}
+  main{max-width:42rem;margin:0 auto;padding:3rem 1.5rem 5rem}
+  h1{font-size:1.6rem;color:#f1c673;font-weight:600}
+  .moon{font-size:2.5rem}
+  p{font-size:1.1rem;font-style:italic;opacity:.92}
+  audio{width:100%;margin:1.5rem 0}
+  a{color:#f1c673} footer{margin-top:3rem;opacity:.6;font-size:.9rem;font-style:normal}
+</style></head><body><main>
+<div class="moon">🌙</div>
+<h1>${escapeHtml(title)}</h1>
+${audio}
+${paragraphs}
+<footer>A bedtime story from <a href="https://yarnia.quest">Yarnia</a>. Make one for your little one.</footer>
+</main></body></html>`;
+}
+
+const shareNotFoundPage = () =>
+  `<!doctype html><html lang="en"><head><meta charset="utf-8"/><title>Story not found — Yarnia</title>
+<style>body{margin:0;background:#12132a;color:#f6efe0;font-family:Georgia,serif;text-align:center;padding:5rem 1.5rem}a{color:#f1c673}</style>
+</head><body><div style="font-size:2.5rem">🌙</div><p>This story could not be found.</p>
+<p><a href="https://yarnia.quest">Make a bedtime story with Yarnia</a></p></body></html>`;
 
 // What onboarding collects. name + age are required (the two questions the screen-off
 // onboarding asks); the rest default to empty. Stored verbatim into the `children` entity.
@@ -132,6 +175,13 @@ function defaultDeps(env: Bindings): AppDeps {
       );
       return childId;
     },
+    // Loads one session by id for the public /share page (best-effort; returns null if absent).
+    loadSession: async (sessionId) => {
+      const res = await db.query({ sessions: { $: { where: { id: sessionId } } } });
+      const row = res?.sessions?.[0];
+      if (!row) return null;
+      return { title: row.title, storyText: row.storyText, audioKey: row.audioKey };
+    },
   };
 }
 
@@ -147,7 +197,8 @@ export function createApp(makeDeps: (env: Bindings) => AppDeps = defaultDeps) {
     const required = c.env?.YARNIA_API_TOKEN;
     if (!required || c.req.method === "OPTIONS") return next();
     const path = c.req.path;
-    if (path === "/" || path === "/agent/webhook") return next();
+    // Public routes: health, the HMAC-verified webhook, and the shareable story page.
+    if (path === "/" || path === "/agent/webhook" || path.startsWith("/share/")) return next();
     if (c.req.header("x-yarnia-token") !== required) {
       return c.json({ error: "missing or invalid API token" }, 401);
     }
@@ -343,6 +394,24 @@ export function createApp(makeDeps: (env: Bindings) => AppDeps = defaultDeps) {
       }));
 
     return c.json({ sessions });
+  });
+
+  // GET /share/:sessionId — public, unauthenticated HTML page for a saved story ("send to
+  // grandma"). Renders the story text and, when available, an audio player. No token required.
+  app.get("/share/:sessionId", async (c) => {
+    const deps = makeDeps(c.env);
+    if (!deps.loadSession) return c.html(shareNotFoundPage(), 404);
+    const session = await deps.loadSession(c.req.param("sessionId"));
+    if (!session || !session.storyText) return c.html(shareNotFoundPage(), 404);
+    let audioUrl: string | null = null;
+    if (session.audioKey) {
+      try {
+        audioUrl = await deps.getAudioUrl(session.audioKey);
+      } catch {
+        audioUrl = null;
+      }
+    }
+    return c.html(sharePage(session.title ?? "A bedtime story", session.storyText, audioUrl));
   });
 
   // GET /audio-url/:key — return the signed CloudFront URL for a stored audio file.

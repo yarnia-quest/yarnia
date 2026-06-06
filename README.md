@@ -78,6 +78,7 @@ Backend endpoints (`api/src/index.ts`):
 - `POST /agent/webhook` - persist what the agent produced
 - `GET  /child/:childId/sessions` - a child's story history
 - `GET  /audio-url/:key` - signed URL for stored narration (replay)
+- `GET  /share/:sessionId` - public HTML page for a saved story ("send to grandma")
 
 ## Stack
 
@@ -119,7 +120,7 @@ More detail and worktree/CI notes are in `CLAUDE.md` and each subproject's READM
 
 ## Tests and CI
 
-- `api/` has 93 passing unit tests plus integration tests (Vitest). Run `npm test` in `api/`.
+- `api/` has 109 passing unit tests plus integration tests (Vitest). Run `npm test` in `api/`.
 - GitHub Actions deploy on push by path: `deploy-api.yml`, `deploy-app.yml`, `deploy.yml`
   (marketing), and `push-schema.yml` (InstantDB schema + permissions as code).
 - The demo-critical logic (content-safety guardrail + per-child memory in
@@ -134,8 +135,11 @@ More detail and worktree/CI notes are in `CLAUDE.md` and each subproject's READM
 - **Private child data:** InstantDB permissions (`instant/instant.perms.ts`) give the client
   no read or write access to `children` or `sessions`; only the backend Worker (admin token)
   touches them. The waitlist `signups` entity is create-only for guests.
-- **Content safety:** every story prompt carries an age-appropriate guardrail and avoids the
-  child's named fears (`api/src/prompt.ts`).
+- **Content safety (defense in depth):** every story prompt carries an age-appropriate
+  guardrail and avoids the child's named fears (`api/src/prompt.ts`); generated text is then
+  re-checked by an output moderation pass (`api/src/safety.ts`) that regenerates once and falls
+  back to a guaranteed-safe story if anything age-inappropriate slips through. Onboarding fields
+  that feed the prompt are sanitized too, not just the per-request choice.
 - **API access:** CORS is restricted to the app and marketing origins plus localhost (no
   wildcard). An optional shared secret gates every product route: set `YARNIA_API_TOKEN` on the
   Worker and build the client with `--dart-define=API_TOKEN=...`, and the app sends a matching
@@ -150,7 +154,10 @@ More detail and worktree/CI notes are in `CLAUDE.md` and each subproject's READM
 - If the live ElevenLabs voice agent can't run (microphone denied, network, or agent error),
   the app falls back to a tap/voice co-creation screen that generates and narrates a story via
   `POST /story`, so the bedtime ritual still completes.
-- Narration is an enhancement: if TTS fails, the story still returns as text (`audio: null`).
+- Narration is an enhancement: TTS calls retry transient failures with backoff
+  (`api/src/synthesize.ts`), and if it still fails the story returns as text (`audio: null`).
+- Stories are shareable: `GET /share/:sessionId` serves a public, self-contained HTML page
+  (story text plus an audio player) so "send to grandma" links open the actual story.
 - Session persistence is webhook-first (survives the phone locking); the client confirms with
   a backoff poll rather than a tight loop.
 

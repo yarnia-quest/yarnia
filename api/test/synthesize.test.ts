@@ -65,4 +65,33 @@ describe("synthesizeStory (ElevenLabs TTS)", () => {
     const f = fakeFetch(new Uint8Array([]));
     await expect(synthesizeStory("hi", { apiKey: "k", fetch: f })).rejects.toThrow(/empty/i);
   });
+
+  it("retries a transient 5xx and then succeeds", async () => {
+    let n = 0;
+    const f = vi.fn(async () => {
+      n++;
+      return n === 1 ? new Response("upstream", { status: 503 }) : new Response(AUDIO, { status: 200 });
+    });
+    const out = await synthesizeStory("hi", { apiKey: "k", fetch: f, retryDelayMs: 0 });
+    expect(out).toBe("AQIDBA==");
+    expect(f).toHaveBeenCalledTimes(2);
+  });
+
+  it("retries a thrown network error and then succeeds", async () => {
+    let n = 0;
+    const f = vi.fn(async () => {
+      n++;
+      if (n === 1) throw new Error("network down");
+      return new Response(AUDIO, { status: 200 });
+    });
+    const out = await synthesizeStory("hi", { apiKey: "k", fetch: f, retryDelayMs: 0 });
+    expect(out).toBe("AQIDBA==");
+    expect(f).toHaveBeenCalledTimes(2);
+  });
+
+  it("does NOT retry a permanent 401 (bad key / quota)", async () => {
+    const f = fakeFetch(AUDIO, 401);
+    await expect(synthesizeStory("hi", { apiKey: "k", fetch: f, retryDelayMs: 0 })).rejects.toThrow(/401/);
+    expect(f).toHaveBeenCalledOnce();
+  });
 });

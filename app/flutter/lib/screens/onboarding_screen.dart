@@ -5,10 +5,12 @@ import '../api_config.dart';
 import '../widgets/starfield.dart';
 import '../theme.dart';
 
-/// First-run onboarding: asks the child's name + age, then mints a child profile
+/// First-run onboarding: asks the child's name + age plus optional preferences
+/// (favorite characters, themes, fears to avoid), then mints a child profile
 /// (POST /child) so the rest of the app has a stable childId to personalize and
-/// remember the child across nights. On success it hands (childId, name) back to
-/// the root, which routes into the greeting -> voice conversation flow.
+/// remember the child across nights. The preferences seed the memory layer and the
+/// content-safety guardrail from night one. On success it hands (childId, name) back
+/// to the root, which routes into the greeting -> voice conversation flow.
 ///
 /// Age is collected as tappable chips rather than a keyboard field: a sleepy
 /// parent at 8pm should be able to onboard with two taps, screen mostly off.
@@ -29,10 +31,16 @@ class OnboardingScreen extends StatefulWidget {
 class _OnboardingScreenState extends State<OnboardingScreen> {
   final _nameController = TextEditingController();
   int? _age;
+  final Set<String> _characters = {};
+  final Set<String> _themes = {};
+  final Set<String> _fears = {};
   bool _submitting = false;
   String? _error;
 
   static const _ages = [2, 3, 4, 5, 6, 7, 8, 9, 10];
+  static const _characterOptions = ['dragons', 'owls', 'foxes', 'bears', 'bunnies', 'dinosaurs', 'mermaids', 'robots'];
+  static const _themeOptions = ['friendship', 'adventure', 'kindness', 'bravery', 'magic'];
+  static const _fearOptions = ['thunder', 'the dark', 'monsters', 'spiders', 'being alone'];
 
   @override
   void initState() {
@@ -60,7 +68,13 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       final res = await http.post(
         Uri.parse('${widget.apiBase}/child'),
         headers: apiHeaders(json: true),
-        body: jsonEncode({'name': _nameController.text.trim(), 'age': _age}),
+        body: jsonEncode({
+          'name': _nameController.text.trim(),
+          'age': _age,
+          'favoriteCharacters': _characters.toList(),
+          'themes': _themes.toList(),
+          'fearsToAvoid': _fears.toList(),
+        }),
       );
       if (res.statusCode != 200) {
         throw Exception('Sign-up failed (${res.statusCode})');
@@ -197,6 +211,41 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                       );
                     }).toList(),
                   ),
+                  const SizedBox(height: 32),
+
+                  // Optional preferences — seed the memory layer + safety guardrail.
+                  const _Label('Favorite characters (optional)'),
+                  const SizedBox(height: 14),
+                  _MultiChips(
+                    options: _characterOptions,
+                    selected: _characters,
+                    enabled: !_submitting,
+                    onToggle: (v) => setState(() {
+                      if (!_characters.add(v)) _characters.remove(v);
+                    }),
+                  ),
+                  const SizedBox(height: 24),
+                  const _Label('Loves stories about (optional)'),
+                  const SizedBox(height: 14),
+                  _MultiChips(
+                    options: _themeOptions,
+                    selected: _themes,
+                    enabled: !_submitting,
+                    onToggle: (v) => setState(() {
+                      if (!_themes.add(v)) _themes.remove(v);
+                    }),
+                  ),
+                  const SizedBox(height: 24),
+                  const _Label('Anything to avoid? (optional)'),
+                  const SizedBox(height: 14),
+                  _MultiChips(
+                    options: _fearOptions,
+                    selected: _fears,
+                    enabled: !_submitting,
+                    onToggle: (v) => setState(() {
+                      if (!_fears.add(v)) _fears.remove(v);
+                    }),
+                  ),
                   const SizedBox(height: 44),
 
                   // Begin
@@ -251,6 +300,48 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           ),
         ],
       ),
+    );
+  }
+}
+
+// Multi-select pill chips for optional onboarding preferences (matches the age-chip style).
+class _MultiChips extends StatelessWidget {
+  final List<String> options;
+  final Set<String> selected;
+  final bool enabled;
+  final void Function(String) onToggle;
+
+  const _MultiChips({
+    required this.options,
+    required this.selected,
+    required this.enabled,
+    required this.onToggle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: 10,
+      runSpacing: 10,
+      alignment: WrapAlignment.center,
+      children: options.map((opt) {
+        final on = selected.contains(opt);
+        return GestureDetector(
+          onTap: enabled ? () => onToggle(opt) : null,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            decoration: BoxDecoration(
+              color: on ? gold : Colors.transparent,
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(color: on ? gold : gold.withAlpha(90), width: 1.5),
+            ),
+            child: Text(
+              opt,
+              style: TextStyle(fontFamily: 'Lora', fontSize: 15, color: on ? navy : cream),
+            ),
+          ),
+        );
+      }).toList(),
     );
   }
 }
