@@ -10,7 +10,7 @@ on:
 #
 # The build is assets-only (no Worker script): `flutter build web` produces build/web/,
 # which wrangler ships via the [assets] binding in app/flutter/wrangler.toml. The backend
-# URL is baked in at compile time with --dart-define-from-file (dart_defines/device.prod.json ->
+# URL is baked in at compile time with --dart-define-from-file (dart_defines/prod.json ->
 # API_BASE=https://api.yarnia.quest), so the worker holds no secret. Only Cloudflare deploy
 # credentials are needed; DNS + TLS for app.yarnia.quest are provisioned by wrangler
 # (custom_domain route) against the existing yarnia.quest zone.
@@ -27,7 +27,7 @@ jobs:
           channel: stable
           flutter-version: 3.44.1
       - run: flutter pub get
-      - run: flutter build web --release --dart-define-from-file=dart_defines/device.prod.json
+      - run: flutter build web --release --dart-define-from-file=dart_defines/prod.json
       - uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}

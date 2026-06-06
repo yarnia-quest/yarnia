@@ -32,15 +32,15 @@ tail-prod:
 # Run Flutter on device against LOCAL API (requires: just api + adb reverse)
 flutter-local:
     adb reverse tcp:8787 tcp:8787
-    cd app/flutter && ~/flutter/bin/flutter run -d {{DEVICE}} --dart-define-from-file=dart_defines/device.dev.json
+    cd app/flutter && ~/flutter/bin/flutter run -d {{DEVICE}} --dart-define-from-file=dart_defines/local.json
 
 # Run Flutter on device against PRODUCTION API
 flutter-prod:
-    cd app/flutter && ~/flutter/bin/flutter run -d {{DEVICE}} --dart-define-from-file=dart_defines/device.prod.json
+    cd app/flutter && ~/flutter/bin/flutter run -d {{DEVICE}} --dart-define-from-file=dart_defines/prod.json
 
 # Build release APK against production API
 flutter-release:
-    cd app/flutter && ~/flutter/bin/flutter build apk --dart-define-from-file=dart_defines/device.prod.json
+    cd app/flutter && ~/flutter/bin/flutter build apk --dart-define-from-file=dart_defines/prod.json
 
 # ── Combined ─────────────────────────────────────────────────────────────────
 
@@ -52,4 +52,4 @@ dev:
     echo "API started (logs: just logs)"
     sleep 4
     adb reverse tcp:8787 tcp:8787
-    cd app/flutter && ~/flutter/bin/flutter run -d {{DEVICE}} --dart-define-from-file=dart_defines/device.dev.json
+    cd app/flutter && ~/flutter/bin/flutter run -d {{DEVICE}} --dart-define-from-file=dart_defines/local.json
