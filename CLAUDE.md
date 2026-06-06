@@ -44,6 +44,8 @@
 - **app / api:** _(to be added once scaffolded June 6 — e.g. `cd app && npm install && npx expo start`)._
 
 ## Parallel work & collaboration (git worktrees)
+> **HACKATHON OVERRIDE (active):** commit and push **directly to `main`**. Do NOT create feature branches or worktrees during the event; speed over isolation. The worktree workflow below is the post-hackathon default.
+
 We work fast on `main` with multiple Claude Code sessions at once. To avoid clobbering each other (stash/index/working-tree collisions on a shared checkout), **each session works in its own git worktree on its own branch.** A worktree is a second working folder backed by the same `.git`, checked out to a different branch.
 - **Make one:** `scripts/worktree-add.sh <branch-name> [base]` (runs from any checkout). It creates a sibling folder `yarnia-<branch>`, branches off `origin/<base>` (default `main`), and seeds the gitignored bits the api needs (`api/.env`, `api/.dev.vars`, and a `node_modules` symlink) so the api boots with no extra setup. Example: `scripts/worktree-add.sh fix/tts-retry`.
 - **Use one:** open a session there with `cd ../yarnia-<branch> && claude`. Edit `api/` freely; every commit lands on that worktree's branch, never on a teammate's.
