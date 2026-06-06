@@ -3,6 +3,24 @@
 // child (admin-only) and hands these to the client, which starts the conversation with them.
 import type { Child } from "./prompt";
 
+// All greeting copy in one place. The "do we know the child" branch lives here (not in the
+// ElevenLabs first message, which can't do conditionals); the dashboard first message is
+// just {{greeting}}. `last` present => returning child (recall a story); absent => first night.
+// English only by design: the agent itself handles other languages (e.g. German) at runtime
+// via its language_detection tool, so we do not localize the opener server-side.
+function greetingFor(
+  child: { name: string } | null,
+  last: { summary: string } | undefined,
+): string {
+  if (!child) {
+    return "Welcome to Yarnia, where your stories untangle. I'm so happy you're here. What's your name?";
+  }
+  if (last) {
+    return `Welcome back to Yarnia, ${child.name}, where your stories untangle. I remember our story about ${last.summary}. Are you all cozy and ready for a new one tonight?`;
+  }
+  return `Welcome to Yarnia, ${child.name}, where your stories untangle. I'm so glad you're here. Shall we find a cozy story for tonight?`;
+}
+
 // Every variable is derivable from the child's stored data (no parent model, no client
 // input). session_state + the series fields support the agent's returning-vs-first-time
 // and recurring-journey behavior. See infra/elevenlabs-agent.md.
@@ -33,7 +51,7 @@ export function toDynamicVariables(child: Child | null): DynamicVariables {
       session_state: "first_time",
       active_story_series: "",
       last_series_episode: "",
-      greeting: "Hello! It's Yarnia, your bedtime storyteller. I'm so happy you're here. What's your name?",
+      greeting: greetingFor(null, undefined),
     };
   }
 
@@ -50,9 +68,7 @@ export function toDynamicVariables(child: Child | null): DynamicVariables {
 
   // Branch the opener here, since the ElevenLabs first-message field can't: returning
   // children get the memory moment; first-timers get a warm welcome with no false memory.
-  const greeting = last
-    ? `Hello again, ${child.name}. It's Yarnia. I remember our story about ${last.summary}. Are you all cozy and ready for a new one tonight?`
-    : `Hello ${child.name}. It's Yarnia, and I'm so glad you're here. Shall we find a cozy story for tonight?`;
+  const greeting = greetingFor(child, last);
 
   return {
     child_name: child.name,

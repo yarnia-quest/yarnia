@@ -101,7 +101,7 @@ describe("GET /agent/session", () => {
         active_story_series: "",
         last_series_episode: "",
         greeting:
-          "Hello again, Lisa. It's Yarnia. I remember our story about a dragon who shared. Are you all cozy and ready for a new one tonight?",
+          "Welcome back to Yarnia, Lisa, where your stories untangle. I remember our story about a dragon who shared. Are you all cozy and ready for a new one tonight?",
       },
       signedUrl: "wss://signed",
     });
@@ -111,5 +111,13 @@ describe("GET /agent/session", () => {
     const res = await appWith({ loadChild: async () => null }).request("/agent/session?childId=ghost");
     expect(res.status).toBe(404);
     expect(await res.json()).toEqual({ error: "child_not_found" });
+  });
+
+  it("greets in English (the agent handles other languages itself at runtime)", async () => {
+    const res = await appWith({}).request("/agent/session?childId=lisa-1");
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as { dynamicVariables: { greeting: string } };
+    expect(json.dynamicVariables.greeting).toContain("Welcome back to Yarnia, Lisa");
+    expect(json.dynamicVariables.greeting).toContain("a dragon who shared");
   });
 });

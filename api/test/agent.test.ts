@@ -26,7 +26,7 @@ describe("toDynamicVariables", () => {
       active_story_series: "", // owl + dragon each appear once -> no series
       last_series_episode: "",
       greeting:
-        "Hello again, Lisa. It's Yarnia. I remember our story about a gentle dragon who learned to share. Are you all cozy and ready for a new one tonight?",
+        "Welcome back to Yarnia, Lisa, where your stories untangle. I remember our story about a gentle dragon who learned to share. Are you all cozy and ready for a new one tonight?",
     });
   });
 
@@ -75,8 +75,8 @@ describe("toDynamicVariables", () => {
     expect(v.active_story_series).toBe("");
     expect(v.last_series_episode).toBe("");
     // first-time greeting: welcomes by name, does NOT claim to remember a past story
-    expect(v.greeting).toContain("Hello Max");
-    expect(v.greeting).not.toMatch(/again|remember/i);
+    expect(v.greeting).toContain("Welcome to Yarnia, Max");
+    expect(v.greeting).not.toMatch(/again|remember|back/i);
   });
 });
 
