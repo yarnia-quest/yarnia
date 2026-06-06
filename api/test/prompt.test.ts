@@ -37,9 +37,43 @@ describe("buildStoryPrompt", () => {
     expect(user.toLowerCase()).toContain("dragon");
   });
 
-  it("references a prior session so the story remembers the child (the moat)", () => {
+  it("injects recent episode notes as optional context, not forced continuity (the moat)", () => {
     const { user } = buildStoryPrompt(lisa, "dragon");
-    expect(user).toMatch(/last time|before|remember/i);
+    // The past story surfaces as a recall note the model can use...
+    expect(user).toContain("A dragon who learned to share");
+    // ...but framed as optional ("may gently weave in"), so a standalone story is
+    // equally valid. We deliberately do NOT force the old "acknowledge that you
+    // remember / keep continuity" instruction.
+    expect(user).toMatch(/may|gently|if it (feels|fits)|standalone/i);
+    expect(user.toLowerCase()).not.toContain("acknowledge that you remember");
+  });
+
+  it("includes several recent episodes (titles + characters) when history exists", () => {
+    const multi: Child = {
+      ...lisa,
+      pastSessions: [
+        { title: "Sharing Stones", summary: "A dragon who learned to share", charactersUsed: ["dragon"] },
+        { title: "The Quiet Owl", summary: "An owl who found a calm tree", charactersUsed: ["owl"] },
+      ],
+    };
+    const { user } = buildStoryPrompt(multi, "dragon");
+    expect(user).toContain("A dragon who learned to share");
+    expect(user).toContain("An owl who found a calm tree");
+    expect(user).toContain("Sharing Stones");
+  });
+
+  it("caps injected notes to the most recent few to keep the prompt small", () => {
+    const many: Child = {
+      ...lisa,
+      pastSessions: Array.from({ length: 8 }, (_, i) => ({
+        summary: `Story number ${i}`,
+        charactersUsed: ["dragon"],
+      })),
+    };
+    const { user } = buildStoryPrompt(many, "dragon");
+    // The newest are kept; the oldest are dropped.
+    expect(user).toContain("Story number 7");
+    expect(user).not.toContain("Story number 0");
   });
 
   it("still produces a valid prompt for a child with no history or fears", () => {

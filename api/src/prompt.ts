@@ -46,11 +46,29 @@ export function buildStoryPrompt(child: Child, choice: string): StoryPrompt {
     `Tonight ${name} chose this to be in the story: ${choice}.`,
   ];
   if (pastSessions.length > 0) {
-    const last = pastSessions[pastSessions.length - 1];
+    // Recall layer: list the few most recent episodes (newest last) as notes the model
+    // MAY draw on. Framed as optional so both modes work — serial callbacks when they
+    // fit naturally (Ella-Finn style), or a fresh standalone story otherwise. We do not
+    // force continuity; forcing it makes every story feel like a recap.
+    const recent = pastSessions.slice(-MAX_RECALL_NOTES);
+    const notes = recent.map(formatRecallNote).join(" ");
     userParts.push(
-      `Remember ${name} from before: last time the story was "${last.summary}" (featuring ${last.charactersUsed.join(", ")}). Acknowledge that you remember, and keep continuity without repeating it.`,
+      `Notes from ${name}'s recent bedtime stories (most recent last): ${notes}`,
+      `You MAY gently weave in a familiar character or a small callback if it feels natural and soothing, but a fresh standalone story is equally welcome. Never force a reference and never retell a past story.`,
     );
   }
 
   return { system, user: userParts.join(" ") };
+}
+
+// How many recent episodes to surface in the prompt. Keeps prompts small; the full
+// archive stays in InstantDB.
+const MAX_RECALL_NOTES = 3;
+
+// One episode rendered as a short recall note, e.g. '"Sharing Stones": A dragon who
+// learned to share (dragon)'. Title and characters are optional.
+function formatRecallNote(s: PastSession): string {
+  const title = s.title ? `"${s.title}": ` : "";
+  const characters = s.charactersUsed.length > 0 ? ` (${s.charactersUsed.join(", ")})` : "";
+  return `- ${title}${s.summary}${characters}`;
 }
