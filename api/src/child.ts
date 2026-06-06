@@ -12,6 +12,7 @@ type SessionRow = {
   title?: string;
   summary?: string;
   charactersUsed?: string[];
+  continuityNotes?: string[];
   createdAt?: number;
 };
 
@@ -29,6 +30,7 @@ export async function loadChild(childId: string, query: InstantQuery): Promise<C
       title: s.title,
       summary: s.summary ?? "",
       charactersUsed: s.charactersUsed ?? [],
+      continuityNotes: s.continuityNotes ?? [],
     }));
 
   return {

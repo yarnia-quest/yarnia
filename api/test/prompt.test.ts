@@ -48,6 +48,22 @@ describe("buildStoryPrompt", () => {
     expect(user.toLowerCase()).not.toContain("acknowledge that you remember");
   });
 
+  it("surfaces stored continuity facts so callbacks can be specific", () => {
+    const withNotes: Child = {
+      ...lisa,
+      pastSessions: [
+        {
+          title: "Sharing Stones",
+          summary: "A dragon who learned to share",
+          charactersUsed: ["dragon"],
+          continuityNotes: ["the dragon shared his sparkly stones"],
+        },
+      ],
+    };
+    const { user } = buildStoryPrompt(withNotes, "dragon");
+    expect(user).toContain("the dragon shared his sparkly stones");
+  });
+
   it("includes several recent episodes (titles + characters) when history exists", () => {
     const multi: Child = {
       ...lisa,

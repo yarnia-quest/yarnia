@@ -46,6 +46,32 @@ describe("loadChild", () => {
     expect(await loadChild("nope", fakeQuery({ children: [] }))).toBeNull();
   });
 
+  it("carries each session's continuityNotes into the recall layer", async () => {
+    const row = {
+      id: "lisa-1",
+      name: "Lisa",
+      age: 4,
+      sessions: [
+        {
+          summary: "a dragon shared his stones",
+          charactersUsed: ["dragon"],
+          continuityNotes: ["the dragon shared his sparkly stones", "they became friends"],
+          createdAt: 100,
+        },
+      ],
+    };
+    const child = await loadChild("lisa-1", fakeQuery({ children: [row] }));
+    expect(child?.pastSessions[0].continuityNotes).toEqual([
+      "the dragon shared his sparkly stones",
+      "they became friends",
+    ]);
+  });
+
+  it("defaults a session's missing continuityNotes to an empty array", async () => {
+    const child = await loadChild("lisa-1", fakeQuery({ children: [lisaRow] }));
+    expect(child?.pastSessions[0].continuityNotes).toEqual([]);
+  });
+
   it("defaults missing array fields to empty arrays", async () => {
     const child = await loadChild("x", fakeQuery({ children: [{ id: "x", name: "Max", age: 6 }] }));
     expect(child).toMatchObject({

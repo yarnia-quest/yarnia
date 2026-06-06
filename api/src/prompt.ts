@@ -8,6 +8,10 @@ export type PastSession = {
   title?: string;
   summary: string;
   charactersUsed: string[];
+  // Compact carry-forward facts captured at write-back (session.ts), e.g. "the dragon
+  // shared his sparkly stones". Let callbacks be specific instead of just the summary.
+  // Optional so older callers/fixtures stay valid; loadChild always normalizes it to [].
+  continuityNotes?: string[];
 };
 
 export type Child = {
@@ -66,9 +70,11 @@ export function buildStoryPrompt(child: Child, choice: string): StoryPrompt {
 const MAX_RECALL_NOTES = 3;
 
 // One episode rendered as a short recall note, e.g. '"Sharing Stones": A dragon who
-// learned to share (dragon)'. Title and characters are optional.
+// learned to share (dragon) [the dragon shared his sparkly stones]'. Title, characters,
+// and continuity facts are all optional; the facts make any callback specific.
 function formatRecallNote(s: PastSession): string {
   const title = s.title ? `"${s.title}": ` : "";
   const characters = s.charactersUsed.length > 0 ? ` (${s.charactersUsed.join(", ")})` : "";
-  return `- ${title}${s.summary}${characters}`;
+  const facts = s.continuityNotes?.length ? ` [${s.continuityNotes.join("; ")}]` : "";
+  return `- ${title}${s.summary}${characters}${facts}`;
 }
