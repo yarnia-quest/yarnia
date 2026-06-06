@@ -33,7 +33,11 @@ export async function synthesizeStory(text: string, opts: SynthesizeOpts): Promi
   });
 
   if (!res.ok) {
-    throw new Error(`ElevenLabs request failed: ${res.status}`);
+    // ElevenLabs returns 401 for several distinct states (bad key, free-tier
+    // disabled, quota_exceeded). Surface its `detail.status` so the fallback log
+    // says *why* narration was skipped instead of a bare status code.
+    const reason = await readErrorReason(res);
+    throw new Error(`ElevenLabs request failed: ${res.status}${reason ? ` (${reason})` : ""}`);
   }
 
   const buf = await res.arrayBuffer();
@@ -41,6 +45,18 @@ export async function synthesizeStory(text: string, opts: SynthesizeOpts): Promi
     throw new Error("ElevenLabs returned empty audio");
   }
   return base64FromArrayBuffer(buf);
+}
+
+// Best-effort extraction of ElevenLabs' error reason. Their error bodies look like
+// { detail: { status, message } } (status e.g. "quota_exceeded", "detected_unusual_activity").
+// Returns "" if the body is missing or not the expected JSON shape.
+async function readErrorReason(res: Response): Promise<string> {
+  try {
+    const body = (await res.json()) as { detail?: { status?: string; message?: string } };
+    return body?.detail?.status ?? body?.detail?.message ?? "";
+  } catch {
+    return "";
+  }
 }
 
 // Workers-native base64 (no Node Buffer): build a binary string, then btoa.

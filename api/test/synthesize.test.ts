@@ -5,6 +5,16 @@ import { synthesizeStory } from "../src/synthesize";
 function fakeFetch(bytes: Uint8Array, status = 200) {
   return vi.fn(async () => new Response(bytes, { status }));
 }
+// Fake fetch returning a JSON error body, as ElevenLabs does for quota/auth failures.
+function fakeErrorFetch(detail: { status: string; message: string }, status = 401) {
+  return vi.fn(
+    async () =>
+      new Response(JSON.stringify({ detail }), {
+        status,
+        headers: { "content-type": "application/json" },
+      }),
+  );
+}
 const AUDIO = new Uint8Array([1, 2, 3, 4]); // base64 -> "AQIDBA=="
 
 describe("synthesizeStory (ElevenLabs TTS)", () => {
@@ -39,6 +49,16 @@ describe("synthesizeStory (ElevenLabs TTS)", () => {
   it("throws on a non-ok response", async () => {
     const f = fakeFetch(AUDIO, 401);
     await expect(synthesizeStory("hi", { apiKey: "k", fetch: f })).rejects.toThrow(/401/);
+  });
+
+  it("surfaces the ElevenLabs reason (e.g. quota_exceeded) in the thrown error", async () => {
+    const f = fakeErrorFetch({
+      status: "quota_exceeded",
+      message: "This request exceeds your quota.",
+    });
+    await expect(synthesizeStory("hi", { apiKey: "k", fetch: f })).rejects.toThrow(
+      /401.*quota_exceeded/,
+    );
   });
 
   it("throws when the audio is empty", async () => {
