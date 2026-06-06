@@ -17,6 +17,7 @@ class HistoryPanel extends StatefulWidget {
 // In-memory cache so reopening the panel is instant.
 List<Map<String, dynamic>>? _cachedSessions;
 void invalidateHistoryCache() => _cachedSessions = null;
+void warmHistoryCache(List<Map<String, dynamic>> sessions) => _cachedSessions = sessions;
 
 class _HistoryPanelState extends State<HistoryPanel> {
   List<Map<String, dynamic>>? _sessions;

@@ -60,7 +60,7 @@ class _YarniaRootState extends State<YarniaRoot> {
       );
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body) as Map<String, dynamic>;
-        _cachedSessions = (data['sessions'] as List).cast<Map<String, dynamic>>();
+        warmHistoryCache((data['sessions'] as List).cast<Map<String, dynamic>>());
       }
     } catch (e) {
       debugPrint('History prefetch failed: $e');
