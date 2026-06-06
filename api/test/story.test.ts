@@ -9,6 +9,7 @@ type AppDeps = {
   synthesize: (text: string) => Promise<string>;
   agentId: string;
   getSignedUrl: (agentId: string) => Promise<string>;
+  saveSession: (childId: string, input: { summary: string; charactersUsed: string[] }) => Promise<void>;
 };
 
 const lisa: Child = {
@@ -29,6 +30,7 @@ function appWith(deps: Partial<AppDeps>) {
     synthesize: deps.synthesize ?? (async () => "BASE64AUDIO"),
     agentId: deps.agentId ?? "agent_test",
     getSignedUrl: deps.getSignedUrl ?? (async () => "wss://signed"),
+    saveSession: deps.saveSession ?? (async () => {}),
   }));
 }
 

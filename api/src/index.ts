@@ -1,11 +1,12 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { init } from "@instantdb/admin";
+import { init, id } from "@instantdb/admin";
 import { loadChild } from "./child";
 import { generateStory } from "./generate";
 import { synthesizeStory } from "./synthesize";
 import { createStory, type StoryDeps } from "./story";
 import { createAgentSession, getSignedUrl } from "./agent";
+import { persistSession } from "./session";
 
 // Bindings come from api/.dev.vars locally (generated from api/.env) and from
 // `wrangler secret put` / GitHub Actions in production. Never hardcoded. See api/.env.example.
@@ -21,6 +22,7 @@ type Bindings = {
 type AppDeps = StoryDeps & {
   agentId: string;
   getSignedUrl: (agentId: string) => Promise<string>;
+  saveSession: (childId: string, input: { summary: string; charactersUsed: string[] }) => Promise<void>;
 };
 
 function defaultDeps(env: Bindings): AppDeps {
@@ -31,6 +33,16 @@ function defaultDeps(env: Bindings): AppDeps {
     synthesize: (text) => synthesizeStory(text, { apiKey: env.ELEVENLABS_API_KEY }),
     agentId: env.ELEVENLABS_AGENT_ID,
     getSignedUrl: (agentId) => getSignedUrl(agentId, { apiKey: env.ELEVENLABS_API_KEY }),
+    saveSession: (childId, input) =>
+      db.transact(
+        db.tx.sessions[id()]
+          .update({
+            summary: input.summary,
+            charactersUsed: input.charactersUsed,
+            createdAt: Date.now(),
+          })
+          .link({ child: childId }),
+      ),
   };
 }
 
@@ -52,8 +64,20 @@ export function createApp(makeDeps: (env: Bindings) => AppDeps = defaultDeps) {
     const { childId, choice } = body;
     if (!childId) return c.json({ error: "childId required" }, 400);
 
-    const result = await createStory(childId, choice ?? "a gentle surprise", makeDeps(c.env));
+    const deps = makeDeps(c.env);
+    const result = await createStory(childId, choice ?? "a gentle surprise", deps);
     if (!result.ok) return c.json({ error: result.reason }, 404);
+
+    // Grow the child's memory in the background: summarize tonight's story + save a session.
+    // Best-effort, after the response — adds no latency and never blocks /story. (No
+    // ExecutionContext in unit tests, so guard.)
+    try {
+      c.executionCtx.waitUntil(
+        persistSession(childId, choice ?? "a gentle surprise", result.text, deps),
+      );
+    } catch {
+      // no execution context (e.g. app.request in tests) — skip write-back
+    }
 
     return c.json({
       childId,
