@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'screens/onboarding_screen.dart';
 import 'screens/greeting_screen.dart';
 import 'screens/agent_screen.dart';
 import 'screens/cocreation_screen.dart';
@@ -13,8 +14,6 @@ import 'theme.dart';
 // A physical device can't reach the Mac's localhost, so its run config passes the deployed
 // api.yarnia.quest URL. Selected per target via VS Code launch configs or dart_defines/*.json (see README).
 const _apiBase = String.fromEnvironment('API_BASE', defaultValue: 'http://localhost:8787');
-const _demoChildId = '11111111-1111-4111-8111-111111111111';
-const _demoChildName = 'Lisa';
 
 void main() {
   runApp(const YarniaApp());
@@ -42,21 +41,32 @@ class YarniaRoot extends StatefulWidget {
 }
 
 class _YarniaRootState extends State<YarniaRoot> {
-  String _screen = 'greeting';
+  // Starts at onboarding: every session begins by asking who we're telling a story
+  // to. Onboarding mints a child (POST /child) and fills _childId / _childName, the
+  // stable handle the rest of the flow uses to personalize and remember the child.
+  String _screen = 'onboarding';
+  String? _childId;
+  String? _childName;
   String? _storyText;
   String? _audioUrl;
 
-  @override
-  void initState() {
-    super.initState();
-    // Warm the history cache in the background so the panel opens instantly.
+  // Called when onboarding succeeds: store the freshly minted child, warm the history
+  // cache, and move on to the greeting -> voice conversation.
+  void _handleOnboarded(String childId, String name) {
+    setState(() {
+      _childId = childId;
+      _childName = name;
+      _screen = 'greeting';
+    });
     _prefetchHistory();
   }
 
   Future<void> _prefetchHistory() async {
+    final childId = _childId;
+    if (childId == null) return;
     try {
       final res = await http.get(
-        Uri.parse('$_apiBase/child/$_demoChildId/sessions'),
+        Uri.parse('$_apiBase/child/$childId/sessions'),
       );
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body) as Map<String, dynamic>;
@@ -68,12 +78,14 @@ class _YarniaRootState extends State<YarniaRoot> {
   }
 
   Future<void> _handleChoice(String choice) async {
+    final childId = _childId;
+    if (childId == null) return;
     setState(() => _screen = 'playback');
     try {
       final res = await http.post(
         Uri.parse('$_apiBase/story'),
         headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'childId': _demoChildId, 'choice': choice}),
+        body: jsonEncode({'childId': childId, 'choice': choice}),
       );
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body) as Map<String, dynamic>;
@@ -99,26 +111,37 @@ class _YarniaRootState extends State<YarniaRoot> {
 
   @override
   Widget build(BuildContext context) {
+    // Onboarding is the only screen reachable before a child exists; every other
+    // screen runs after _childId / _childName are set, so the non-null reads are safe.
+    if (_screen == 'onboarding' || _childId == null) {
+      return OnboardingScreen(
+        apiBase: _apiBase,
+        onComplete: _handleOnboarded,
+      );
+    }
+
+    final childId = _childId!;
+    final childName = _childName!;
     return switch (_screen) {
       'greeting' => GreetingScreen(
-          childName: _demoChildName,
-          childId: _demoChildId,
+          childName: childName,
+          childId: childId,
           apiBase: _apiBase,
           onBegin: () => setState(() => _screen = 'agent'),
         ),
       'agent' => AgentScreen(
-          childName: _demoChildName,
-          childId: _demoChildId,
+          childName: childName,
+          childId: childId,
           apiBase: _apiBase,
           onDone: _handleRestart,
           onFallback: _handleRestart,
         ),
       'cocreation' => CoCreationScreen(
-          childName: _demoChildName,
+          childName: childName,
           onChoice: _handleChoice,
         ),
       _ => PlaybackScreen(
-          childName: _demoChildName,
+          childName: childName,
           storyText: _storyText,
           audioUrl: _audioUrl,
           onRestart: _handleRestart,
