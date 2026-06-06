@@ -86,6 +86,13 @@ class _AgentScreenState extends State<AgentScreen> with TickerProviderStateMixin
       return;
     }
 
+    // Latency tuning (if turn-around feels slow):
+    // 1. ElevenLabs dashboard > agent > LLM: use a faster model (e.g. gpt-4o-mini).
+    // 2. ElevenLabs dashboard > agent > Turn detection: lower silence duration (ms)
+    //    so the agent cuts in sooner after the user stops speaking. Too low = agent
+    //    interrupts mid-sentence; ~300-500ms is a good starting point.
+    // 3. Background noise fools VAD into keeping the mic "open" longer — test in
+    //    a quiet environment before tuning the threshold.
     try {
       final res = await http.get(
         Uri.parse('${widget.apiBase}/agent/session?childId=${widget.childId}'),
