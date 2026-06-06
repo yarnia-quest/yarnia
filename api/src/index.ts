@@ -4,7 +4,7 @@ import { cors } from "hono/cors";
 // Bindings come from api/.dev.vars locally (generated from api/.env) and from
 // `wrangler secret put` / GitHub Actions in production. Never hardcoded. See api/.env.example.
 type Bindings = {
-  OPENAI_API_KEY: string;
+  QWEN_API_KEY: string;
   ELEVENLABS_API_KEY: string;
   INSTANT_APP_ID: string;
   INSTANT_ADMIN_TOKEN: string;

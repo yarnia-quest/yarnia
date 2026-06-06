@@ -21,12 +21,12 @@
 - **Frontend:** Expo (React Native).
 - **Backend:** Cloudflare Workers (thin layers; wrangler).
 - **Data/auth/storage:** InstantDB.
-- **Voice/TTS:** ElevenLabs. **Story gen:** OpenAI or Qwen.
+- **Voice/TTS:** ElevenLabs. **Story gen:** Qwen (DashScope OpenAI-compatible API, `qwen-plus`, intl endpoint).
 - _(Team to confirm versions, package manager, and any other libraries.)_
 
 ## Config & secrets (important)
 - **Two env files, split by trust boundary** (each `.env` gitignored, each `.env.example` committed):
-  - **`api/.env`** (backend: `api/` Worker + `instant/`) — ALL secrets: `INSTANT_ADMIN_TOKEN`, `OPENAI_API_KEY`, `ELEVENLABS_API_KEY`, Cloudflare deploy creds, plus the public `INSTANT_APP_ID`.
+  - **`api/.env`** (backend: `api/` Worker + `instant/`) — ALL secrets: `INSTANT_ADMIN_TOKEN`, `QWEN_API_KEY`, `ELEVENLABS_API_KEY`, Cloudflare deploy creds, plus the public `INSTANT_APP_ID`.
   - **`app/.env`** (frontend: Expo) — PUBLIC ONLY, every var prefixed `EXPO_PUBLIC_` (`EXPO_PUBLIC_INSTANT_APP_ID`, `EXPO_PUBLIC_API_BASE_URL`). **No secret may ever appear here** — this file ships inside the client bundle on the user's device.
 - **Never hardcode** ids/tokens/keys in code, `wrangler.toml`, or the client. The public `INSTANT_APP_ID` is the only id safe client-side; the InstantDB **admin token** and any API keys are server-side only (so they live only in `api/.env`).
 - Workers read secrets from env bindings: set via `wrangler secret put` locally or GitHub repo secrets in CI. `wrangler dev` reads `api/.dev.vars` (gitignored); `api/.env` is the source of truth and the api dev script loads it.
