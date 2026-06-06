@@ -16,3 +16,7 @@ custom_domain = true
 
 # Audio file storage uses Instant Storage (db.storage.uploadFile -> $files), not R2.
 # No bucket/binding needed: the Worker writes/reads via the InstantDB admin SDK.
+
+[observability.logs]
+enabled = true
+invocation_logs = true
