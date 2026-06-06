@@ -10,6 +10,10 @@ directory = "./public"
 binding = "ASSETS"
 not_found_handling = "single-page-application"
 
+# Email forwarding — destination addresses verified in Cloudflare Email Routing dashboard.
+[[send_email]]
+name = "SEND_EMAIL"
+
 # Served at the apex. Cloudflare provisions DNS + TLS on deploy (yarnia.quest must be an active zone).
 [[routes]]
 pattern = "yarnia.quest"
