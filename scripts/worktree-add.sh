@@ -42,10 +42,14 @@ done
 
 # Share deps via symlink: instant, no npm install, no duplicated disk. Same lockfile
 # means identical deps. If a branch changes deps, rm the link and run `npm install`.
-if [ -d "$MAIN/api/node_modules" ]; then
-  ln -s "$MAIN/api/node_modules" "$DEST/api/node_modules"
-  echo "  linked api/node_modules -> main"
-fi
+# api/ (Worker runtime) and instant/ (schema push + seed-lisa.mjs use @instantdb/admin)
+# both need their node_modules.
+for d in api instant; do
+  if [ -d "$MAIN/$d/node_modules" ] && [ ! -e "$DEST/$d/node_modules" ]; then
+    ln -s "$MAIN/$d/node_modules" "$DEST/$d/node_modules"
+    echo "  linked $d/node_modules -> main"
+  fi
+done
 
 # Assign a unique dev-server port so this worktree's `npm run dev` never clashes with
 # another. Base 8787 (main's default), +1 per existing worktree, then skip any port
