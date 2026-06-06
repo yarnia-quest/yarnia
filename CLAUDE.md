@@ -59,6 +59,7 @@ Because all local worktrees share one `.git`, `origin/main` is what keeps teamma
 
 ## Conventions
 - **Package manager: npm + Node 24 (LTS)** everywhere (local and CI). Commit `package-lock.json`. Don't use bun for project deps (gstack's own CLI runs on bun, that's separate).
+- **Track every real lock file; never delete one that has a manifest.** A lock file paired with its manifest (`package-lock.json` next to a `package.json`, `pubspec.lock` next to `pubspec.yaml`, `skills-lock.json`) pins exact versions for reproducible builds and MUST be committed — never remove it, even if it looks sparse. The one exception: an *orphan* lock with no sibling manifest and no locked packages (e.g. an empty `package-lock.json` in a dir with no `package.json`) is cruft from a stray `npm` run — delete it. Real npm projects here: `api/`, `marketing/`, `instant/`, `app/expo/`, `app/astro/`. `app/flutter/` is Dart — it uses `pubspec.lock`, never `package-lock.json`.
 - Match the style of surrounding code; keep diffs small and explicit.
 - Prose/writing (READMEs, copy, messages): **no em dashes.**
 - **Testing: TDD, red/green, atomic.** For each feature: write the failing test first (red), implement the minimum to pass (green), then refactor. Work in small increments; do NOT implement multiple features at once. `api/` tests run on **Vitest** via Hono's `app.request(path, init, env)` (in-process, no `wrangler dev`; inject fake bindings to mock OpenAI/ElevenLabs so tests cost nothing). `npm test` in `api/`.
