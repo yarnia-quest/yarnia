@@ -4,7 +4,10 @@
 .dev.vars
 
 # deps / build
-node_modules/
+# No trailing slash: matches node_modules whether it's a real directory OR a symlink
+# (worktrees symlink api/ and instant/ node_modules to main's install — a trailing
+# slash would skip those symlinks and leave them showing as untracked).
+node_modules
 .wrangler/
 dist/
 .next/
