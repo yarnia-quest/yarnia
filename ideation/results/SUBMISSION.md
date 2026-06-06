@@ -50,8 +50,7 @@ cd ideation/results && "/Applications/Google Chrome.app/Contents/MacOS/Google Ch
 
 ## Final-hour run sheet (before 19:00)
 1. **Open `deck.html` on the presenter laptop**, fullscreen, click through once on the projector — confirm fonts load (needs network for Google Fonts; if venue wifi is flaky, present from `deck.pdf` instead — it has the fonts baked in).
-3. **Record / confirm the 60–90s backup demo video** is on the laptop and plays offline.
-4. **Screenshot the live signup count** from yarnia.quest and drop it onto Slide 5 (replace the Finn-&-Ella card or add beside it) if the number is strong.
-5. **Submit** the form with the paste block above. Do it by ~18:45 — never at 18:59.
-6. Rehearse the pitch twice against `pitch-script.md`. Protect the memory-line demo moment.
-```
+2. **Record / confirm the 60–90s backup demo video** is on the laptop and plays offline.
+3. **Screenshot the live signup count** from yarnia.quest and drop it onto Slide 5 (replace the Finn-&-Ella card or add beside it) if the number is strong.
+4. **Submit** the form with the paste block above. Do it by ~18:45 — never at 18:59.
+5. Rehearse the pitch twice against `pitch-script.md`. Protect the memory-line demo moment.
