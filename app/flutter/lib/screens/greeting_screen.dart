@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import '../services/agent_session_prefetch.dart';
+import '../services/subscribe.dart';
 import '../widgets/starfield.dart';
 import '../widgets/history_panel.dart';
 import '../theme.dart';
@@ -11,6 +12,8 @@ class GreetingScreen extends StatefulWidget {
   final String apiBase;
   final VoidCallback onBegin;
   final VoidCallback onLogout;
+  // Present (non-null) when the household has more than one child: opens the profile switcher.
+  final VoidCallback? onSwitchProfile;
 
   const GreetingScreen({
     super.key,
@@ -19,6 +22,7 @@ class GreetingScreen extends StatefulWidget {
     required this.apiBase,
     required this.onBegin,
     required this.onLogout,
+    this.onSwitchProfile,
   });
 
   @override
@@ -72,16 +76,34 @@ class _GreetingScreenState extends State<GreetingScreen> with SingleTickerProvid
           Positioned(
             top: 48,
             left: 20,
-            child: TextButton(
-              onPressed: widget.onLogout,
-              child: Text(
-                'Not ${widget.childName}?',
-                style: TextStyle(
-                  fontFamily: 'Lora',
-                  color: cream.withAlpha(120),
-                  fontSize: 13,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TextButton(
+                  onPressed: widget.onLogout,
+                  child: Text(
+                    'Not ${widget.childName}?',
+                    style: TextStyle(
+                      fontFamily: 'Lora',
+                      color: cream.withAlpha(120),
+                      fontSize: 13,
+                    ),
+                  ),
                 ),
-              ),
+                // Profile switcher: only when this household has more than one child.
+                if (widget.onSwitchProfile != null)
+                  TextButton(
+                    onPressed: widget.onSwitchProfile,
+                    child: Text(
+                      'Switch child',
+                      style: TextStyle(
+                        fontFamily: 'Lora',
+                        color: gold.withAlpha(160),
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+              ],
             ),
           ),
           Positioned(
@@ -140,6 +162,15 @@ class _GreetingScreenState extends State<GreetingScreen> with SingleTickerProvid
                                 'Begin',
                                 style: TextStyle(fontFamily: 'Lora', color: gold, fontSize: 16, letterSpacing: 1.5),
                               ),
+                            ),
+                          ),
+                          const SizedBox(height: 18),
+                          // Subscription upsell (EUR 8/month). Opens the Mollie checkout sheet.
+                          TextButton(
+                            onPressed: () => showSubscribeSheet(context, widget.apiBase),
+                            child: Text(
+                              '✨ Unlock unlimited nights · €8/mo',
+                              style: TextStyle(fontFamily: 'Lora', color: cream.withAlpha(140), fontSize: 13),
                             ),
                           ),
                         ],

@@ -9,6 +9,7 @@ import 'screens/cocreation_screen.dart';
 import 'screens/playback_screen.dart';
 import 'services/child_store.dart';
 import 'widgets/history_panel.dart';
+import 'widgets/profile_picker.dart';
 import 'widgets/starfield.dart';
 import 'theme.dart';
 
@@ -100,6 +101,8 @@ class _YarniaRootState extends State<YarniaRoot> {
   String? _childName;
   String? _storyText;
   String? _audioUrl;
+  // All profiles onboarded on this device (a household can have several children).
+  List<StoredChild> _children = [];
 
   @override
   void initState() {
@@ -107,45 +110,69 @@ class _YarniaRootState extends State<YarniaRoot> {
     _restoreChild();
   }
 
-  Future<void> _restoreChild() async {
-    final stored = await loadStoredChild();
-    if (!mounted) return;
-    if (stored != null) {
-      setState(() {
-        _childId = stored.childId;
-        _childName = stored.name;
-        _screen = 'greeting';
-      });
-      _prefetchHistory();
-    } else {
-      setState(() => _screen = 'onboarding');
-    }
-  }
-
-  // Called when onboarding succeeds: persist the freshly minted child (so future
-  // launches skip onboarding), warm the history cache, and move on to the greeting.
-  void _handleOnboarded(String childId, String name) {
-    saveStoredChild(childId, name);
+  // Makes a stored child the active profile: updates local state and the token sent on
+  // child-scoped API calls, then shows the greeting and warms history.
+  void _activate(StoredChild child) {
+    activeChildToken = child.token;
     setState(() {
-      _childId = childId;
-      _childName = name;
+      _childId = child.childId;
+      _childName = child.name;
       _screen = 'greeting';
     });
     _prefetchHistory();
   }
 
-  // "Logout": forget the remembered child and return to onboarding, so the two flows
-  // can be exercised on one device.
+  Future<void> _restoreChild() async {
+    final children = await loadChildren();
+    final stored = await loadStoredChild();
+    if (!mounted) return;
+    _children = children;
+    if (stored != null) {
+      _activate(stored);
+    } else {
+      setState(() => _screen = 'onboarding');
+    }
+  }
+
+  // Called when onboarding succeeds: persist the freshly minted child (with its auth token)
+  // so future launches skip onboarding, then activate it.
+  Future<void> _handleOnboarded(String childId, String name, String? token) async {
+    await saveStoredChild(childId, name, token: token);
+    _children = await loadChildren();
+    if (!mounted) return;
+    _activate(StoredChild(childId, name, token: token));
+  }
+
+  // Switch to an already-stored sibling profile.
+  Future<void> _handleSelectProfile(StoredChild child) async {
+    await setActiveChild(child.childId);
+    if (!mounted) return;
+    _activate(child);
+  }
+
+  // "Add a child" from the profile picker -> onboarding mints another profile.
+  void _handleAddChild() => setState(() => _screen = 'onboarding');
+
+  void _handleOpenProfiles() => setState(() => _screen = 'profiles');
+
+  // Remove the active profile. If a sibling remains, switch to it; otherwise onboard.
   Future<void> _handleLogout() async {
     await clearStoredChild();
+    _children = await loadChildren();
+    final next = await loadStoredChild();
     if (!mounted) return;
-    setState(() {
-      _childId = null;
-      _childName = null;
-      _storyText = null;
-      _audioUrl = null;
-      _screen = 'onboarding';
-    });
+    _storyText = null;
+    _audioUrl = null;
+    if (next != null) {
+      _activate(next);
+    } else {
+      activeChildToken = null;
+      setState(() {
+        _childId = null;
+        _childName = null;
+        _screen = 'onboarding';
+      });
+    }
   }
 
   Future<void> _prefetchHistory() async {
@@ -235,6 +262,15 @@ class _YarniaRootState extends State<YarniaRoot> {
           apiBase: _apiBase,
           onBegin: () => setState(() => _screen = 'agent'),
           onLogout: _handleLogout,
+          // Show the profile switcher when this household has more than one child.
+          onSwitchProfile: _children.length > 1 ? _handleOpenProfiles : null,
+        ),
+      'profiles' => ProfilePicker(
+          children: _children,
+          activeChildId: childId,
+          onSelect: _handleSelectProfile,
+          onAddChild: _handleAddChild,
+          onBack: () => setState(() => _screen = 'greeting'),
         ),
       'agent' => AgentScreen(
           childName: childName,

@@ -80,8 +80,11 @@ class _AgentScreenState extends State<AgentScreen> with TickerProviderStateMixin
           }
         },
         onError: (message, [context]) {
+          // Log the raw SDK message for debugging, but show the parent a calm, plain message.
           debugPrint('ElevenLabs error: $message ${context ?? ""}');
-          if (mounted) setState(() => _error = message);
+          if (mounted) {
+            setState(() => _error = "Yarnia's voice had a hiccup. Let's try again.");
+          }
         },
       ),
     );

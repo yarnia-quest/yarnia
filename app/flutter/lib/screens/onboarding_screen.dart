@@ -16,7 +16,7 @@ import '../theme.dart';
 /// parent at 8pm should be able to onboard with two taps, screen mostly off.
 class OnboardingScreen extends StatefulWidget {
   final String apiBase;
-  final void Function(String childId, String name) onComplete;
+  final void Function(String childId, String name, String? childToken) onComplete;
 
   const OnboardingScreen({
     super.key,
@@ -82,10 +82,11 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       final data = jsonDecode(res.body) as Map<String, dynamic>;
       final childId = data['childId'] as String?;
       final name = data['name'] as String?;
+      final childToken = data['childToken'] as String?;
       if (childId == null || name == null) {
         throw Exception('Unexpected response: ${res.body}');
       }
-      widget.onComplete(childId, name);
+      widget.onComplete(childId, name, childToken);
     } catch (e) {
       debugPrint('Onboarding failed: $e');
       if (mounted) {
