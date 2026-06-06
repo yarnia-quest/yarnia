@@ -210,6 +210,36 @@ describe("POST /session/save", () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true });
   });
+
+  it("retries an empty transcript with backoff, then saves once it's ready", async () => {
+    vi.useFakeTimers();
+    try {
+      // ElevenLabs is slow to assemble the transcript: empty first, ready on retry.
+      const fetchTranscript = vi
+        .fn<() => Promise<ConversationTurn[]>>()
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([])
+        .mockResolvedValue([{ role: "agent", message: "Once upon a time, a gentle dragon..." }]);
+      const generate = vi.fn(async () =>
+        JSON.stringify({ title: "Dragon", summary: "a gentle dragon", characters: ["dragon"], continuityNotes: [] }),
+      );
+      const saveSession = vi.fn(async () => {});
+
+      const pending = post(appWith({ fetchTranscript, generate, saveSession }), "/session/save", {
+        childId: "lisa-1",
+        conversationId: "conv_slow",
+      });
+      // Drive the backoff sleeps to completion.
+      await vi.runAllTimersAsync();
+      const res = await pending;
+
+      expect(res.status).toBe(200);
+      expect(fetchTranscript.mock.calls.length).toBeGreaterThanOrEqual(3); // retried past the empties
+      expect(saveSession).toHaveBeenCalledTimes(1); // saved once the transcript arrived
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe("GET /child/:childId/sessions", () => {

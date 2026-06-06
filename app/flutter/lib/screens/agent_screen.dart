@@ -88,18 +88,31 @@ class _AgentScreenState extends State<AgentScreen> with TickerProviderStateMixin
     final cid = _conversationId;
     if (cid == null) return;
     if (mounted) setState(() => _storySaving = true);
-    try {
-      await http.post(
-        Uri.parse('${widget.apiBase}/session/save'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'childId': widget.childId, 'conversationId': cid}),
-      );
-      invalidateHistoryCache();
-      _pollUntilSaved();
-    } catch (e) {
-      debugPrint('session/save failed: $e');
-      if (mounted) setState(() => _storySaving = false);
+
+    // The save ack is cheap but the request can drop (flaky network as the device
+    // wakes/sleeps at bedtime). Retry a few times so a transient failure doesn't
+    // silently lose the night's story. The server already retries the slow part
+    // (waiting for the ElevenLabs transcript) in the background.
+    for (int attempt = 0; attempt < 4; attempt++) {
+      try {
+        final res = await http.post(
+          Uri.parse('${widget.apiBase}/session/save'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({'childId': widget.childId, 'conversationId': cid}),
+        );
+        if (res.statusCode == 200) {
+          invalidateHistoryCache();
+          _pollUntilSaved();
+          return;
+        }
+        debugPrint('session/save HTTP ${res.statusCode} (attempt ${attempt + 1})');
+      } catch (e) {
+        debugPrint('session/save failed (attempt ${attempt + 1}): $e');
+      }
+      await Future.delayed(Duration(seconds: 2 * (attempt + 1)));
     }
+    debugPrint('session/save gave up after retries');
+    if (mounted) setState(() => _storySaving = false);
   }
 
   Future<void> _pollUntilSaved() async {

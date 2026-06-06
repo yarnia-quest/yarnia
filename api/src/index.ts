@@ -205,45 +205,49 @@ export function createApp(makeDeps: (env: Bindings) => AppDeps = defaultDeps) {
 
     const deps = makeDeps(c.env);
 
-    // Fetch transcript synchronously so it's available before the Worker can exit.
-    // ElevenLabs needs a moment after disconnect — retry up to 3 times with a short wait.
-    let transcript = await deps.fetchTranscript(conversationId);
-    if (!transcript.length) {
-      await new Promise((r) => setTimeout(r, 3000));
-      transcript = await deps.fetchTranscript(conversationId);
-    }
-    if (!transcript.length) {
-      await new Promise((r) => setTimeout(r, 4000));
-      transcript = await deps.fetchTranscript(conversationId);
-    }
+    // All the slow, drop-prone work runs in the background so the client gets an
+    // instant ack and the save survives the client closing the app. ElevenLabs needs
+    // a moment to assemble the transcript after disconnect, so we poll it with backoff
+    // for up to ~30s (Worker waitUntil budget) instead of giving up after ~7s — the
+    // main reason sessions used to silently fail to store.
+    const saveWork = async () => {
+      let transcript = await deps.fetchTranscript(conversationId);
+      for (const wait of [2000, 3000, 4000, 5000, 6000, 8000]) {
+        if (transcript.length) break;
+        await new Promise((r) => setTimeout(r, wait));
+        transcript = await deps.fetchTranscript(conversationId);
+      }
+      if (!transcript.length) {
+        console.error("session/save: transcript never became available for", conversationId);
+        return;
+      }
+
+      const storyText = transcript
+        .filter((t) => t.role === "agent" && t.message)
+        .map((t) => t.message!)
+        .join("\n\n");
+
+      let audioKey: string | undefined;
+      if (storyText) {
+        try {
+          const audioBase64 = await deps.synthesize(storyText.slice(0, 4500));
+          if (audioBase64) {
+            audioKey = `stories/${crypto.randomUUID()}.mp3`;
+            await deps.storeAudio(audioKey, audioBase64);
+          }
+        } catch (err) {
+          console.error("audio synthesis/storage failed, continuing without audio:", err);
+        }
+      }
+
+      await persistAgentSession(childId, transcript, deps, audioKey);
+    };
 
     try {
-      c.executionCtx.waitUntil(
-        (async () => {
-          const storyText = transcript
-            .filter((t) => t.role === "agent" && t.message)
-            .map((t) => t.message!)
-            .join("\n\n");
-
-          let audioKey: string | undefined;
-          if (storyText) {
-            try {
-              const audioBase64 = await deps.synthesize(storyText.slice(0, 4500));
-              if (audioBase64) {
-                audioKey = `stories/${crypto.randomUUID()}.mp3`;
-                await deps.storeAudio(audioKey, audioBase64);
-              }
-            } catch (err) {
-              console.error("audio synthesis/storage failed, continuing without audio:", err);
-            }
-          }
-
-          await persistAgentSession(childId, transcript, deps, audioKey);
-        })(),
-      );
+      c.executionCtx.waitUntil(saveWork());
     } catch {
       // no execution context in tests — run synchronously
-      await persistAgentSession(childId, transcript, deps);
+      await saveWork();
     }
     return c.json({ ok: true });
   });
