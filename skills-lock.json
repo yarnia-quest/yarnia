@@ -73,6 +73,12 @@
       "skillPath": "design/skills/ux-copy/SKILL.md",
       "computedHash": "f7addd20b733b196d870154c3e86ee3ada83e7a16b1ad910c861607f8b472735"
     },
+    "vitest": {
+      "source": "antfu/skills",
+      "sourceType": "github",
+      "skillPath": "skills/vitest/SKILL.md",
+      "computedHash": "669c7275f7e1379b06b2bcfa593603aead4c983b951c7e8edbc09640aa38d0a1"
+    },
     "webapp-testing": {
       "source": "anthropics/skills",
       "sourceType": "github",

@@ -40,7 +40,8 @@
 - **Package manager: npm + Node 24 (LTS)** everywhere (local and CI). Commit `package-lock.json`. Don't use bun for project deps (gstack's own CLI runs on bun, that's separate).
 - Match the style of surrounding code; keep diffs small and explicit.
 - Prose/writing (READMEs, copy, messages): **no em dashes.**
-- _(Team to provide: language/lint/format rules, file structure, naming, testing approach.)_
+- **Testing: TDD, red/green, atomic.** For each feature: write the failing test first (red), implement the minimum to pass (green), then refactor. Work in small increments; do NOT implement multiple features at once. `api/` tests run on **Vitest** via Hono's `app.request(path, init, env)` (in-process, no `wrangler dev`; inject fake bindings to mock OpenAI/ElevenLabs so tests cost nothing). `npm test` in `api/`.
+- _(Team to provide: language/lint/format rules, file structure, naming.)_
 
 ## Day-of integrity (build constraint)
 - The product (`app/` + `api/`) is built **June 6** with real commit history from that day. No prebuilt product code, no faked history/demo/evidence. (`marketing/` + `ideation/` are allowed pre-event prep.)
@@ -48,7 +49,8 @@
 ## Official docs (read before using a tool; verified 2026-06-05)
 - **Cloudflare Workers:** https://developers.cloudflare.com/workers/
 - **Hono on Cloudflare Workers** (the `api/` backend uses Hono — follow this guide): https://developers.cloudflare.com/workers/framework-guides/web-apps/more-web-frameworks/hono/ · **Workers bindings:** https://developers.cloudflare.com/workers/runtime-apis/bindings/
-- **Hono framework:** https://hono.dev/docs/ · Cloudflare Workers guide: https://hono.dev/docs/getting-started/cloudflare-workers · routing: https://hono.dev/docs/api/routing · context (`c.req`/`c.json`/`c.env`): https://hono.dev/docs/api/context · middleware: https://hono.dev/docs/concepts/middleware · validation (zod): https://hono.dev/docs/guides/validation
+- **Hono framework:** https://hono.dev/docs/ · Cloudflare Workers guide: https://hono.dev/docs/getting-started/cloudflare-workers · routing: https://hono.dev/docs/api/routing · context (`c.req`/`c.json`/`c.env`): https://hono.dev/docs/api/context · middleware: https://hono.dev/docs/concepts/middleware · validation (zod): https://hono.dev/docs/guides/validation · **testing** (`app.request()`): https://hono.dev/docs/guides/testing
+- **Vitest** (test runner — TDD red/green for `api/`): https://vitest.dev/guide/ · test API (`describe`/`it`/`expect`): https://vitest.dev/api/test · mocking (`vi.mock`/`vi.fn`, for OpenAI/ElevenLabs): https://vitest.dev/guide/mocking · CLI: https://vitest.dev/guide/cli
 - **Wrangler config** (vars, secrets, routes, custom_domain, compatibility flags): https://developers.cloudflare.com/workers/wrangler/configuration/
 - **Workers routes:** https://developers.cloudflare.com/workers/configuration/routing/routes/
 - **Cloudflare Pages:** https://developers.cloudflare.com/pages/ · custom domains: https://developers.cloudflare.com/pages/configuration/custom-domains/ · direct upload: https://developers.cloudflare.com/pages/get-started/direct-upload/
@@ -72,4 +74,4 @@ Verified facts in use (2026-06-05). **Pattern (from prism):** one Worker with St
 
 ## Tooling: agent skills
 - **`skills-lock.json` is committed** (the pinned manifest, like `package-lock.json`); **`.agents/`** (the materialized copy, like `node_modules`) is gitignored. After pulling, restore the exact skill set with `npx skills experimental_install`.
-- Add a new skill with `npx skills add <owner/repo> -y` (updates the lock; commit it). Currently pinned: the Hono skill (`yusukebe/hono-skill` — inline Hono API reference + `npx hono request` endpoint testing, by Hono's creator; https://skills.sh/yusukebe/hono-skill) plus the design/marketing/instantdb skills.
+- Add a new skill with `npx skills add <owner/repo> -y` (updates the lock; commit it). Currently pinned: the Hono skill (`yusukebe/hono-skill` — inline Hono API reference + `npx hono request` endpoint testing, by Hono's creator; https://skills.sh/yusukebe/hono-skill), the Vitest skill (`antfu/skills@vitest` — by a Vitest maintainer; https://skills.sh/antfu/skills), plus the design/marketing/instantdb skills.
