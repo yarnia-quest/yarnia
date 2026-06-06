@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:permission_handler/permission_handler.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import '../widgets/starfield.dart';
+import '../widgets/history_panel.dart';
 import '../theme.dart';
 
 class AgentScreen extends StatefulWidget {
@@ -155,7 +156,7 @@ class _AgentScreenState extends State<AgentScreen> with TickerProviderStateMixin
 
   @override
   Widget build(BuildContext context) {
-    if (_done) return _DoneScreen(onRestart: widget.onDone);
+    if (_done) return _DoneScreen(onRestart: widget.onDone, childId: widget.childId, apiBase: widget.apiBase);
 
     return Scaffold(
       backgroundColor: navy,
@@ -327,8 +328,10 @@ class _StatusLabel extends StatelessWidget {
 
 class _DoneScreen extends StatelessWidget {
   final VoidCallback onRestart;
+  final String childId;
+  final String apiBase;
 
-  const _DoneScreen({required this.onRestart});
+  const _DoneScreen({required this.onRestart, required this.childId, required this.apiBase});
 
   @override
   Widget build(BuildContext context) {
@@ -337,6 +340,14 @@ class _DoneScreen extends StatelessWidget {
       body: Stack(
         children: [
           const Positioned.fill(child: Starfield()),
+          Positioned(
+            top: 48,
+            right: 20,
+            child: IconButton(
+              icon: Icon(Icons.history, color: cream.withAlpha(120), size: 22),
+              onPressed: () => showHistoryPanel(context, childId: childId, apiBase: apiBase),
+            ),
+          ),
           Center(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
