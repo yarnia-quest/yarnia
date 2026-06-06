@@ -21,7 +21,7 @@
 - **Frontend:** Expo (React Native).
 - **Backend:** Cloudflare Workers (thin layers; wrangler).
 - **Data/auth/storage:** InstantDB.
-- **Voice/TTS:** ElevenLabs. **Story gen:** Qwen (DashScope OpenAI-compatible API, `qwen-plus`, intl endpoint).
+- **Voice/TTS:** ElevenLabs. **Story gen:** Qwen (DashScope OpenAI-compatible API, `qwen3.7-max`, intl endpoint).
 - _(Team to confirm versions, package manager, and any other libraries.)_
 
 ## Config & secrets (important)
@@ -59,7 +59,7 @@
 - **GitHub Actions:** https://docs.github.com/actions
 - **Expo (client):** https://docs.expo.dev/
 - **ElevenLabs (voice):** https://elevenlabs.io/docs
-- **Qwen (story gen — DashScope Model Studio, OpenAI-compatible):** OpenAI-compat guide: https://www.alibabacloud.com/help/en/model-studio/compatibility-of-openai-with-dashscope · get API key: https://www.alibabacloud.com/help/en/model-studio/get-api-key · models list: https://www.alibabacloud.com/help/en/model-studio/getting-started/models · first call: https://www.alibabacloud.com/help/en/model-studio/first-api-call-to-qwen · open-model docs: https://qwen.readthedocs.io/ · in use: base URL `https://dashscope-intl.aliyuncs.com/compatible-mode/v1`, model `qwen-plus`, Bearer `QWEN_API_KEY`. (No reputable first-party Qwen text-gen agent skill on skills.sh as of 2026-06-06; the API is OpenAI-compatible so the OpenAI SDK applies: https://platform.openai.com/docs.)
+- **Qwen (story gen — DashScope Model Studio, OpenAI-compatible):** OpenAI-compat guide: https://www.alibabacloud.com/help/en/model-studio/compatibility-of-openai-with-dashscope · get API key: https://www.alibabacloud.com/help/en/model-studio/get-api-key · models list: https://www.alibabacloud.com/help/en/model-studio/getting-started/models · first call: https://www.alibabacloud.com/help/en/model-studio/first-api-call-to-qwen · open-model docs: https://qwen.readthedocs.io/ · in use: base URL `https://dashscope-intl.aliyuncs.com/compatible-mode/v1`, model `qwen3.7-max` with `enable_thinking:false` (reasoning pass off — ~4s vs ~49s/timeout, no quality loss for stories), Bearer `QWEN_API_KEY`. (No reputable first-party Qwen text-gen agent skill on skills.sh as of 2026-06-06; the API is OpenAI-compatible so the OpenAI SDK applies: https://platform.openai.com/docs.)
 - **Mollie (payments, if used):** https://docs.mollie.com/
 
 Verified facts in use (2026-06-05). **Pattern (from prism):** one Worker with Static Assets per app — `[assets] directory binding=ASSETS` + the worker falls through to `env.ASSETS.fetch()`; deployed via `cloudflare/wrangler-action@v3`. Marketing: `[[routes]] pattern="yarnia.quest" custom_domain=true` (the worker serves the page; `api.yarnia.quest` is the app backend). **Client write (no token):** the page uses `@instantdb/core` `db.transact(db.tx.signups[id()].create({...}))` as a guest, gated by a `signups.create:true` permission (`view/update/delete:false`). **Admin token** (`@instantdb/admin`, bypasses perms) is used ONLY by schema CI: `instant-cli push schema/perms --app <id> --token <INSTANT_ADMIN_TOKEN> --yes` (the app admin token works as the CLI `--token`; no separate PAT). Schema: `i.entity({ email: i.string().unique().indexed(), ... })`. Tooling: use **Node 24 (LTS)**, not Bun, for wrangler. **Backend framework: Hono** — the `api/` Worker is a Hono app (`import { Hono } from 'hono'`; `export default app`); routes/middleware/validation per the Hono docs above.

@@ -27,11 +27,13 @@ describe("generateStory (Qwen, OpenAI-compatible)", () => {
     expect((init.headers as Record<string, string>).authorization).toBe("Bearer k-123");
   });
 
-  it("sends the system+user prompt as messages with the qwen-plus model", async () => {
+  it("sends the system+user prompt as messages with the qwen3.7-max model", async () => {
     const f = fakeFetch(okBody);
     await generateStory(prompt, { apiKey: "k", fetch: f });
     const body = JSON.parse((f.mock.calls[0][1] as RequestInit).body as string);
-    expect(body.model).toBe("qwen-plus");
+    expect(body.model).toBe("qwen3.7-max");
+    // Disable the reasoning pass: MAX with thinking takes ~49s (times out); without it ~4s.
+    expect(body.enable_thinking).toBe(false);
     expect(body.messages).toEqual([
       { role: "system", content: "SYS" },
       { role: "user", content: "USR" },

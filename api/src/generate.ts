@@ -5,7 +5,7 @@ import type { StoryPrompt } from "./prompt";
 
 // Singapore / international endpoint (right for an EU team). Override per region via baseUrl.
 const DEFAULT_BASE_URL = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1";
-const DEFAULT_MODEL = "qwen-plus";
+const DEFAULT_MODEL = "qwen3.7-max";
 
 export type GenerateOpts = {
   apiKey: string;
@@ -31,6 +31,9 @@ export async function generateStory(prompt: StoryPrompt, opts: GenerateOpts): Pr
     },
     body: JSON.stringify({
       model,
+      // qwen3.7-max with the reasoning pass on takes ~49s (times out); off it is ~4s and
+      // the bedtime-story quality is unaffected. A story does not need chain-of-thought.
+      enable_thinking: false,
       messages: [
         { role: "system", content: prompt.system },
         { role: "user", content: prompt.user },
