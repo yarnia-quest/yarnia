@@ -5,7 +5,7 @@ import { loadChild } from "./child";
 import { generateStory } from "./generate";
 import { synthesizeStory } from "./synthesize";
 import { createStory, type StoryDeps } from "./story";
-import { createAgentSession, getSignedUrl, fetchConversationTranscript, type ConversationTurn } from "./agent";
+import { createAgentSession, getSignedUrl, type ConversationTurn } from "./agent";
 import { persistSession, persistAgentSession, type SaveSessionInput } from "./session";
 import { verifyWebhookSignature } from "./webhook";
 
@@ -27,7 +27,6 @@ type AppDeps = StoryDeps & {
   agentId: string;
   getSignedUrl: (agentId: string) => Promise<string>;
   saveSession: (childId: string, input: SaveSessionInput) => Promise<void>;
-  fetchTranscript: (conversationId: string) => Promise<ConversationTurn[]>;
   storeAudio: (key: string, base64: string) => Promise<string>;
   getAudioUrl: (key: string) => Promise<string | null>;
   createChild: (input: NewChild) => Promise<string>;
@@ -66,8 +65,6 @@ function defaultDeps(env: Bindings): AppDeps {
           })
           .link({ child: childId }),
       ),
-    fetchTranscript: (conversationId) =>
-      fetchConversationTranscript(conversationId, { apiKey: env.ELEVENLABS_API_KEY }),
     storeAudio: async (key, base64) => {
       const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
       await db.storage.uploadFile(key, bytes, { contentType: "audio/mpeg" });
@@ -188,66 +185,6 @@ export function createApp(makeDeps: (env: Bindings) => AppDeps = defaultDeps) {
       dynamicVariables: result.dynamicVariables,
       signedUrl: result.signedUrl,
     });
-  });
-
-  // POST /session/save — { childId, conversationId }
-  // Fetches ElevenLabs transcript, synthesizes audio, stores in Instant Storage, saves session.
-  app.post("/session/save", async (c) => {
-    const body = await c.req
-      .json<{ childId?: string; conversationId?: string }>()
-      .catch(() => ({}) as { childId?: string; conversationId?: string });
-    const { childId, conversationId } = body;
-    if (!childId || !conversationId) {
-      return c.json({ error: "childId and conversationId required" }, 400);
-    }
-
-    const deps = makeDeps(c.env);
-
-    // All the slow, drop-prone work runs in the background so the client gets an
-    // instant ack and the save survives the client closing the app. ElevenLabs needs
-    // a moment to assemble the transcript after disconnect, so we poll it with backoff
-    // for up to ~30s (Worker waitUntil budget) instead of giving up after ~7s — the
-    // main reason sessions used to silently fail to store.
-    const saveWork = async () => {
-      let transcript = await deps.fetchTranscript(conversationId);
-      for (const wait of [2000, 3000, 4000, 5000, 6000, 8000]) {
-        if (transcript.length) break;
-        await new Promise((r) => setTimeout(r, wait));
-        transcript = await deps.fetchTranscript(conversationId);
-      }
-      if (!transcript.length) {
-        console.error("session/save: transcript never became available for", conversationId);
-        return;
-      }
-
-      const storyText = transcript
-        .filter((t) => t.role === "agent" && t.message)
-        .map((t) => t.message!)
-        .join("\n\n");
-
-      let audioKey: string | undefined;
-      if (storyText) {
-        try {
-          const audioBase64 = await deps.synthesize(storyText.slice(0, 4500));
-          if (audioBase64) {
-            const path = `stories/${crypto.randomUUID()}.mp3`;
-            audioKey = await deps.storeAudio(path, audioBase64);
-          }
-        } catch (err) {
-          console.error("audio synthesis/storage failed, continuing without audio:", err);
-        }
-      }
-
-      await persistAgentSession(childId, transcript, deps, audioKey);
-    };
-
-    try {
-      c.executionCtx.waitUntil(saveWork());
-    } catch {
-      // no execution context in tests — run synchronously
-      await saveWork();
-    }
-    return c.json({ ok: true });
   });
 
   // POST /agent/webhook — ElevenLabs post-call webhook (type "post_call_transcription").

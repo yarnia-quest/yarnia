@@ -85,40 +85,27 @@ class _AgentScreenState extends State<AgentScreen> with TickerProviderStateMixin
     _bootstrap();
   }
 
+  // The story is persisted server-side by the ElevenLabs post-call webhook
+  // (POST /agent/webhook), independent of this app — so the save survives the phone being
+  // locked, killed, or offline at the end of the call. We don't trigger the save from here
+  // anymore (that double-wrote the session); we just poll the child's sessions until the
+  // webhook-written episode lands, showing a saving indicator meanwhile. If it hasn't landed
+  // by the timeout the save still completes server-side; it simply appears next time history
+  // opens.
   Future<void> _saveSession() async {
-    final cid = _conversationId;
-    if (cid == null) return;
+    if (_conversationId == null) return;
     if (mounted) setState(() => _storySaving = true);
-
-    // The save ack is cheap but the request can drop (flaky network as the device
-    // wakes/sleeps at bedtime). Retry a few times so a transient failure doesn't
-    // silently lose the night's story. The server already retries the slow part
-    // (waiting for the ElevenLabs transcript) in the background.
-    for (int attempt = 0; attempt < 4; attempt++) {
-      try {
-        final res = await http.post(
-          Uri.parse('${widget.apiBase}/session/save'),
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode({'childId': widget.childId, 'conversationId': cid}),
-        );
-        if (res.statusCode == 200) {
-          invalidateHistoryCache();
-          _pollUntilSaved();
-          return;
-        }
-        debugPrint('session/save HTTP ${res.statusCode} (attempt ${attempt + 1})');
-      } catch (e) {
-        debugPrint('session/save failed (attempt ${attempt + 1}): $e');
-      }
-      await Future.delayed(Duration(seconds: 2 * (attempt + 1)));
-    }
-    debugPrint('session/save gave up after retries');
-    if (mounted) setState(() => _storySaving = false);
+    await _pollUntilSaved();
   }
 
   Future<void> _pollUntilSaved() async {
+    // Capture the count BEFORE invalidating, so we wait for a genuinely NEW episode
+    // (a returning child already has sessions; we must not treat those as "saved").
     final previousCount = getCachedSessions()?.length ?? 0;
-    for (int i = 0; i < 10; i++) {
+    invalidateHistoryCache();
+    // The webhook fires after ElevenLabs assembles the transcript, which can take a little
+    // while — poll for up to ~45s before giving up (the data is safe regardless).
+    for (int i = 0; i < 15; i++) {
       await Future.delayed(const Duration(seconds: 3));
       try {
         final res = await http.get(

@@ -91,32 +91,10 @@ export function toDynamicVariables(child: Child | null, childId = ""): DynamicVa
 
 // ─── Conversation transcript ────────────────────────────────────────────────
 
+// A turn of a completed conversation. The post-call webhook delivers the transcript in
+// this shape; persistAgentSession consumes it. (The old client-side transcript fetch was
+// removed when the ElevenLabs post-call webhook became the single source of truth.)
 export type ConversationTurn = { role: "agent" | "user"; message: string | null };
-
-export type TranscriptOpts = {
-  apiKey: string;
-  baseUrl?: string;
-  fetch?: typeof fetch;
-};
-
-// Fetches the full transcript for a completed conversation from the ElevenLabs API.
-// Used by POST /session/save to persist agent-told stories into the child's memory.
-export async function fetchConversationTranscript(
-  conversationId: string,
-  opts: TranscriptOpts,
-): Promise<ConversationTurn[]> {
-  const doFetch = opts.fetch ?? fetch;
-  const baseUrl = opts.baseUrl ?? DEFAULT_BASE_URL;
-  const res = await doFetch(
-    `${baseUrl}/v1/convai/conversations/${encodeURIComponent(conversationId)}`,
-    { headers: { "xi-api-key": opts.apiKey } },
-  );
-  if (!res.ok) {
-    throw new Error(`ElevenLabs conversation fetch failed: ${res.status}`);
-  }
-  const data = (await res.json()) as { transcript?: ConversationTurn[] };
-  return data.transcript ?? [];
-}
 
 // ─── Token / signed-URL ─────────────────────────────────────────────────────
 

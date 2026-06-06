@@ -1,7 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import app, { createApp } from "../src/index";
 import type { Child } from "../src/prompt";
-import type { ConversationTurn } from "../src/agent";
 
 // The app's deps: story deps plus the agent-session deps.
 type AppDeps = {
@@ -11,7 +10,6 @@ type AppDeps = {
   agentId: string;
   getSignedUrl: (agentId: string) => Promise<string>;
   saveSession: (childId: string, input: unknown) => Promise<void>;
-  fetchTranscript: (conversationId: string) => Promise<ConversationTurn[]>;
   storeAudio: (key: string, base64: string) => Promise<string>;
   getAudioUrl: (key: string) => Promise<string | null>;
   createChild: (input: unknown) => Promise<string>;
@@ -36,7 +34,6 @@ function appWith(deps: Partial<AppDeps>) {
     agentId: deps.agentId ?? "agent_test",
     getSignedUrl: deps.getSignedUrl ?? (async () => "wss://signed"),
     saveSession: deps.saveSession ?? (async () => {}),
-    fetchTranscript: deps.fetchTranscript ?? (async () => []),
     storeAudio: deps.storeAudio ?? (async (key) => key),
     getAudioUrl: deps.getAudioUrl ?? (async () => "https://fake-url"),
     createChild: deps.createChild ?? (async () => "new-child-id"),
@@ -182,64 +179,6 @@ describe("GET /agent/session", () => {
     const json = (await res.json()) as { dynamicVariables: { greeting: string } };
     expect(json.dynamicVariables.greeting).toContain("Welcome back to Yarnia, Lisa");
     expect(json.dynamicVariables.greeting).toContain("a dragon who shared");
-  });
-});
-
-describe("POST /session/save", () => {
-  it("400s when childId or conversationId is missing", async () => {
-    const r1 = await post(appWith({}), "/session/save", { childId: "lisa-1" });
-    expect(r1.status).toBe(400);
-    const r2 = await post(appWith({}), "/session/save", { conversationId: "conv_abc" });
-    expect(r2.status).toBe(400);
-  });
-
-  it("returns ok:true and calls fetchTranscript + saveSession in background", async () => {
-    const fetchTranscript = vi.fn(async (): Promise<ConversationTurn[]> => [
-      { role: "agent", message: "Welcome to Yarnia, Lisa." },
-      { role: "user", message: "Hi!" },
-      { role: "agent", message: "Once upon a time there was a gentle dragon..." },
-    ]);
-    const generate = vi.fn(async () =>
-      JSON.stringify({ title: "The Gentle Dragon", summary: "dragon helped friends", characters: ["dragon"], continuityNotes: [] }),
-    );
-    const saveSession = vi.fn(async () => {});
-
-    const res = await post(appWith({ fetchTranscript, generate, saveSession }), "/session/save", {
-      childId: "lisa-1",
-      conversationId: "conv_abc",
-    });
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ ok: true });
-  });
-
-  it("retries an empty transcript with backoff, then saves once it's ready", async () => {
-    vi.useFakeTimers();
-    try {
-      // ElevenLabs is slow to assemble the transcript: empty first, ready on retry.
-      const fetchTranscript = vi
-        .fn<() => Promise<ConversationTurn[]>>()
-        .mockResolvedValueOnce([])
-        .mockResolvedValueOnce([])
-        .mockResolvedValue([{ role: "agent", message: "Once upon a time, a gentle dragon..." }]);
-      const generate = vi.fn(async () =>
-        JSON.stringify({ title: "Dragon", summary: "a gentle dragon", characters: ["dragon"], continuityNotes: [] }),
-      );
-      const saveSession = vi.fn(async () => {});
-
-      const pending = post(appWith({ fetchTranscript, generate, saveSession }), "/session/save", {
-        childId: "lisa-1",
-        conversationId: "conv_slow",
-      });
-      // Drive the backoff sleeps to completion.
-      await vi.runAllTimersAsync();
-      const res = await pending;
-
-      expect(res.status).toBe(200);
-      expect(fetchTranscript.mock.calls.length).toBeGreaterThanOrEqual(3); // retried past the empties
-      expect(saveSession).toHaveBeenCalledTimes(1); // saved once the transcript arrived
-    } finally {
-      vi.useRealTimers();
-    }
   });
 });
 
