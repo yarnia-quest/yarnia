@@ -36,6 +36,21 @@
 - **Marketing (page + worker):** `cd marketing && npm install && npx wrangler deploy`. Local dev: `npx wrangler dev`. (CI: `deploy.yml` via wrangler-action.)
 - **app / api:** _(to be added once scaffolded June 6 — e.g. `cd app && npm install && npx expo start`)._
 
+## Parallel work & collaboration (git worktrees)
+We work fast on `main` with multiple Claude Code sessions at once. To avoid clobbering each other (stash/index/working-tree collisions on a shared checkout), **each session works in its own git worktree on its own branch.** A worktree is a second working folder backed by the same `.git`, checked out to a different branch.
+- **Make one:** `scripts/worktree-add.sh <branch-name> [base]` (runs from any checkout). It creates a sibling folder `yarnia-<branch>`, branches off `origin/<base>` (default `main`), and seeds the gitignored bits the api needs (`api/.env`, `api/.dev.vars`, and a `node_modules` symlink) so the api boots with no extra setup. Example: `scripts/worktree-add.sh fix/tts-retry`.
+- **Use one:** open a session there with `cd ../yarnia-<branch> && claude`. Edit `api/` freely; every commit lands on that worktree's branch, never on a teammate's.
+- **Keep the main checkout (`/…/yarnia` on `main`) clean** as the neutral integration spot. Do feature work in worktrees, not there.
+- **Dev-server port:** every worktree's `npm run dev` wants port 8787, so only the first can bind it. Second session: `cd api && npm run dev -- --port 8788`, and test against it with `API_BASE_URL=http://localhost:8788 npm run story`.
+- **node_modules is a symlink to main's** (one shared install). If a branch changes deps (edits `package.json`), break the link in that worktree and do a real install: `rm api/node_modules && cd api && npm install`.
+
+### Landing your work (the remote is the source of truth)
+Because all local worktrees share one `.git`, `origin/main` is what keeps teammates consistent. Branch off it, integrate through it.
+- **Catch up on a teammate's merged work:** `git fetch origin && git rebase origin/main` (run in your worktree before continuing).
+- **Land a feature:** `git push -u origin <branch>`, then merge on GitHub, or fast-forward directly with `git push origin HEAD:main` (succeeds only if `main` has not moved; if it has, rebase first).
+- **Clean up after merge:** `git worktree remove ../yarnia-<branch>` then `git branch -d <branch>`. (`worktree remove` refuses if there are uncommitted changes; commit or push first.)
+- List worktrees anytime with `git worktree list`.
+
 ## Conventions
 - **Package manager: npm + Node 24 (LTS)** everywhere (local and CI). Commit `package-lock.json`. Don't use bun for project deps (gstack's own CLI runs on bun, that's separate).
 - Match the style of surrounding code; keep diffs small and explicit.
