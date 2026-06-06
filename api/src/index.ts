@@ -7,6 +7,7 @@ import { synthesizeStory } from "./synthesize";
 import { createStory, type StoryDeps } from "./story";
 import { createAgentSession, getSignedUrl, fetchConversationTranscript, type ConversationTurn } from "./agent";
 import { persistSession, persistAgentSession, type SaveSessionInput } from "./session";
+import { verifyWebhookSignature } from "./webhook";
 
 // Bindings come from api/.dev.vars locally (generated from api/.env) and from
 // `wrangler secret put` / GitHub Actions in production. Never hardcoded. See api/.env.example.
@@ -14,6 +15,9 @@ type Bindings = {
   QWEN_API_KEY: string;
   ELEVENLABS_API_KEY: string;
   ELEVENLABS_AGENT_ID: string;
+  // Shared secret for verifying ElevenLabs post-call webhooks (HMAC-SHA256). Set via
+  // `wrangler secret put ELEVENLABS_WEBHOOK_SECRET`; copied from the EL webhook config.
+  ELEVENLABS_WEBHOOK_SECRET: string;
   INSTANT_APP_ID: string;
   INSTANT_ADMIN_TOKEN: string;
 };
@@ -250,6 +254,78 @@ export function createApp(makeDeps: (env: Bindings) => AppDeps = defaultDeps) {
       await saveWork();
     }
     return c.json({ ok: true });
+  });
+
+  // POST /agent/webhook — ElevenLabs post-call webhook (type "post_call_transcription").
+  // This is the PRIMARY, durable save path: ElevenLabs calls it when a conversation ends,
+  // so a story is persisted even if the app was killed/backgrounded or its network dropped
+  // (the client POST /session/save is just a faster-feedback fallback). The transcript is in
+  // the payload, so no polling is needed. We recover the child from the child_id dynamic
+  // variable that round-trips through the conversation. HMAC-verified to reject forgeries.
+  app.post("/agent/webhook", async (c) => {
+    // Read the RAW body: HMAC is computed over the exact bytes, so we must not re-serialize.
+    const rawBody = await c.req.text();
+    const signature = c.req.header("ElevenLabs-Signature");
+    const valid = await verifyWebhookSignature(rawBody, signature, c.env.ELEVENLABS_WEBHOOK_SECRET);
+    if (!valid) return c.json({ error: "invalid signature" }, 401);
+
+    let payload: {
+      type?: string;
+      data?: {
+        transcript?: Array<{ role?: string; message?: string | null }>;
+        conversation_initiation_client_data?: { dynamic_variables?: { child_id?: string } };
+      };
+    };
+    try {
+      payload = JSON.parse(rawBody);
+    } catch {
+      return c.json({ error: "invalid json" }, 400);
+    }
+
+    // Ignore other event types (e.g. audio webhooks) without erroring, so EL doesn't retry them.
+    if (payload.type !== "post_call_transcription") {
+      return c.json({ ok: true, ignored: payload.type ?? null });
+    }
+
+    const data = payload.data ?? {};
+    const childId = data.conversation_initiation_client_data?.dynamic_variables?.child_id;
+    const transcript: ConversationTurn[] = (data.transcript ?? [])
+      .filter((t): t is { role: string; message?: string | null } => t?.role === "agent" || t?.role === "user")
+      .map((t) => ({ role: t.role as "agent" | "user", message: t.message ?? null }));
+
+    // Anonymous conversation (no child) or an empty transcript: nothing to persist.
+    if (!childId || !transcript.some((t) => t.role === "agent" && t.message)) {
+      return c.json({ ok: true, persisted: false });
+    }
+
+    const deps = makeDeps(c.env);
+    const persist = async () => {
+      const storyText = transcript
+        .filter((t) => t.role === "agent" && t.message)
+        .map((t) => t.message!)
+        .join("\n\n");
+
+      let audioKey: string | undefined;
+      if (storyText) {
+        try {
+          const audioBase64 = await deps.synthesize(storyText.slice(0, 4500));
+          if (audioBase64) {
+            audioKey = `stories/${crypto.randomUUID()}.mp3`;
+            await deps.storeAudio(audioKey, audioBase64);
+          }
+        } catch (err) {
+          console.error("webhook audio synthesis/storage failed, continuing without audio:", err);
+        }
+      }
+      await persistAgentSession(childId, transcript, deps, audioKey);
+    };
+
+    try {
+      c.executionCtx.waitUntil(persist());
+    } catch {
+      await persist(); // no execution context in tests — run synchronously
+    }
+    return c.json({ ok: true, persisted: true });
   });
 
   // GET /child/:childId/sessions — past sessions newest-first.

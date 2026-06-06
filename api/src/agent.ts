@@ -25,6 +25,10 @@ function greetingFor(
 // input). session_state + the series fields support the agent's returning-vs-first-time
 // and recurring-journey behavior. See infra/elevenlabs-agent.md.
 export type DynamicVariables = {
+  // The child's stable id, round-tripped through the conversation so the post-call webhook
+  // (POST /agent/webhook) can recover who the story belongs to with NO client involvement.
+  // Empty for anonymous starts (no child to save to). Not referenced in the prompt.
+  child_id: string;
   child_name: string;
   child_age: string;
   favorite_characters: string;
@@ -38,11 +42,12 @@ export type DynamicVariables = {
   greeting: string;
 };
 
-export function toDynamicVariables(child: Child | null): DynamicVariables {
+export function toDynamicVariables(child: Child | null, childId = ""): DynamicVariables {
   // Anonymous: streaming voice may start before we know who is listening. Empty name signals
   // "unknown" so the agent's first job is to ask; safety stays on with a neutral fears default.
   if (!child) {
     return {
+      child_id: childId,
       child_name: "",
       child_age: "",
       favorite_characters: "",
@@ -71,6 +76,7 @@ export function toDynamicVariables(child: Child | null): DynamicVariables {
   const greeting = greetingFor(child, last);
 
   return {
+    child_id: childId,
     child_name: child.name,
     child_age: String(child.age),
     favorite_characters: child.favoriteCharacters.join(" and ") || "all kinds of friends",
@@ -185,6 +191,6 @@ export async function createAgentSession(
   // A given-but-unknown childId is still a 404 (the prefetched signed URL is simply discarded).
   if (childId && !child) return { ok: false, reason: "child_not_found" };
 
-  const dynamicVariables = toDynamicVariables(child);
+  const dynamicVariables = toDynamicVariables(child, childId ?? "");
   return { ok: true, agentId: deps.agentId, dynamicVariables, signedUrl };
 }

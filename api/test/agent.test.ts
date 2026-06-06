@@ -16,7 +16,8 @@ const lisa: Child = {
 
 describe("toDynamicVariables", () => {
   it("maps a returning child with no recurring cast (no active series)", () => {
-    expect(toDynamicVariables(lisa)).toEqual({
+    expect(toDynamicVariables(lisa, "lisa-1")).toEqual({
+      child_id: "lisa-1",
       child_name: "Lisa",
       child_age: "4",
       favorite_characters: "dragon and owl",
@@ -128,7 +129,7 @@ describe("createAgentSession (orchestration)", () => {
     expect(res).toEqual({
       ok: true,
       agentId: "agent_1",
-      dynamicVariables: toDynamicVariables(lisa),
+      dynamicVariables: toDynamicVariables(lisa, "lisa-1"),
       signedUrl: "wss://signed",
     });
   });

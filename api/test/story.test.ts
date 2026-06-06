@@ -154,6 +154,7 @@ describe("GET /agent/session", () => {
     expect(await res.json()).toEqual({
       agentId: "agent_test",
       dynamicVariables: {
+        child_id: "lisa-1",
         child_name: "Lisa",
         child_age: "4",
         favorite_characters: "dragon",
@@ -258,5 +259,96 @@ describe("GET /child/:childId/sessions", () => {
     const res = await appWith({ loadChild: async () => null }).request("/child/ghost/sessions");
     expect(res.status).toBe(404);
     expect(await res.json()).toEqual({ error: "child_not_found" });
+  });
+});
+
+describe("POST /agent/webhook (ElevenLabs post-call)", () => {
+  const SECRET = "whsec_test";
+  const ENV = { ELEVENLABS_WEBHOOK_SECRET: SECRET } as Record<string, string>;
+
+  async function signed(body: string, ts = Math.floor(Date.now() / 1000)) {
+    const key = await crypto.subtle.importKey(
+      "raw",
+      new TextEncoder().encode(SECRET),
+      { name: "HMAC", hash: "SHA-256" },
+      false,
+      ["sign"],
+    );
+    const mac = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(`${ts}.${body}`));
+    const hex = [...new Uint8Array(mac)].map((b) => b.toString(16).padStart(2, "0")).join("");
+    return `t=${ts},v0=${hex}`;
+  }
+
+  const webhookBody = (childId: string | null) =>
+    JSON.stringify({
+      type: "post_call_transcription",
+      event_timestamp: 1_700_000_000,
+      data: {
+        conversation_id: "conv_xyz",
+        transcript: [
+          { role: "agent", message: "Once upon a time, a gentle dragon..." },
+          { role: "user", message: "more!" },
+        ],
+        conversation_initiation_client_data: {
+          dynamic_variables: childId ? { child_id: childId } : {},
+        },
+      },
+    });
+
+  it("401s when the signature is missing or invalid", async () => {
+    const body = webhookBody("lisa-1");
+    const res = await appWith({}).request(
+      "/agent/webhook",
+      { method: "POST", headers: { "content-type": "application/json" }, body },
+      ENV,
+    );
+    expect(res.status).toBe(401);
+  });
+
+  it("verifies signature, persists the session, and synthesizes audio", async () => {
+    const saveSession = vi.fn(async () => {});
+    const synthesize = vi.fn(async () => "BASE64AUDIO");
+    const storeAudio = vi.fn(async () => {});
+    const generate = vi.fn(async () =>
+      JSON.stringify({ title: "Dragon", summary: "a gentle dragon", characters: ["dragon"], continuityNotes: [] }),
+    );
+    const body = webhookBody("lisa-1");
+    const res = await appWith({ saveSession, synthesize, storeAudio, generate }).request(
+      "/agent/webhook",
+      { method: "POST", headers: { "content-type": "application/json", "ElevenLabs-Signature": await signed(body) }, body },
+      ENV,
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, persisted: true });
+    expect(synthesize).toHaveBeenCalledOnce();
+    expect(storeAudio).toHaveBeenCalledOnce();
+    expect(saveSession).toHaveBeenCalledOnce();
+    expect(saveSession.mock.calls[0][0]).toBe("lisa-1"); // linked to the right child
+  });
+
+  it("ignores non-transcription event types", async () => {
+    const saveSession = vi.fn(async () => {});
+    const body = JSON.stringify({ type: "post_call_audio", data: {} });
+    const res = await appWith({ saveSession }).request(
+      "/agent/webhook",
+      { method: "POST", headers: { "content-type": "application/json", "ElevenLabs-Signature": await signed(body) }, body },
+      ENV,
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, ignored: "post_call_audio" });
+    expect(saveSession).not.toHaveBeenCalled();
+  });
+
+  it("does not persist an anonymous conversation (no child_id)", async () => {
+    const saveSession = vi.fn(async () => {});
+    const body = webhookBody(null);
+    const res = await appWith({ saveSession }).request(
+      "/agent/webhook",
+      { method: "POST", headers: { "content-type": "application/json", "ElevenLabs-Signature": await signed(body) }, body },
+      ENV,
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, persisted: false });
+    expect(saveSession).not.toHaveBeenCalled();
   });
 });
