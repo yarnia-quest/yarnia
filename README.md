@@ -18,10 +18,12 @@ it the first time), then co-creates a story with them and narrates it. It offers
 
 - **Personalized bedtime stories** with remembered characters, themes, and fears to avoid
 - **Conversational co-creation** ("an owl and a cat lost in Hamburg?") before it generates
-- **A content-safety guardrail** baked into every prompt (age-appropriate, avoids the
-  child's named fears)
+- **A content-safety guardrail** baked into every prompt AND an output moderation pass
+  (age-appropriate, avoids the child's named fears, never narrates unsafe text)
 - **A memory layer** so night two knows what worked on night one
-- **A shareable result** ("Send to grandma") and replayable narration
+- **Multiple children per device** with a profile picker (a household with siblings)
+- **A shareable result** ("Send to grandma") via an unguessable link, and replayable narration
+- **An EUR 8/month subscription** with Mollie hosted checkout
 
 It remembers. It adapts. It knows when to shut up.
 
@@ -34,8 +36,12 @@ The end-to-end demo arc runs against the live backend:
 - [x] Story generation (Qwen) + ElevenLabs narration, returned to the app as audio
 - [x] Session + child profile saved to InstantDB (private, worker-only)
 - [x] Per-child memory injected into the next session's prompt
-- [x] Shareable link and in-app replay of past stories
-- [x] 85 backend tests (Vitest) and CI deploy for api, app, marketing, and schema
+- [x] Multiple child profiles per device, with a profile switcher
+- [x] Per-child auth tokens (X-Child-Token) so a profile is bound to its device
+- [x] Shareable link (unguessable token) and in-app replay of past stories
+- [x] EUR 8/month subscription via Mollie hosted checkout (POST /checkout)
+- [x] Rate limiting, structured logging, and optional error/analytics webhooks
+- [x] 129 backend tests (Vitest) and CI deploy for api, app, marketing, and schema
 
 Stretch (not in the core demo): ambient soundscapes, public publishing.
 
@@ -71,14 +77,18 @@ the text and audio, and persists the session back to InstantDB.
 
 Backend endpoints (`api/src/index.ts`):
 
-- `POST /story` - generate + narrate a story for a child
-- `POST /child` - onboarding: create a child profile, return its id
+- `POST /story` - generate + narrate a story for a child (requires the child token)
+- `POST /child` - onboarding: create a child profile, return its id + a per-child auth token
 - `GET  /agent/session` - dynamic variables for the ElevenLabs conversational agent
-  (works anonymously before a child is known)
-- `POST /agent/webhook` - persist what the agent produced
-- `GET  /child/:childId/sessions` - a child's story history
+  (works anonymously before a child is known; a named child requires its token)
+- `POST /agent/webhook` - persist what the agent produced (HMAC-verified)
+- `GET  /child/:childId/sessions` - a child's story history (requires the child token)
 - `GET  /audio-url/:key` - signed URL for stored narration (replay)
-- `GET  /share/:sessionId` - public HTML page for a saved story ("send to grandma")
+- `GET  /share/:shareToken` - public HTML page for a saved story ("send to grandma")
+- `POST /checkout` - start the EUR 8/month subscription (Mollie hosted checkout)
+
+Child-scoped routes require the `X-Child-Token` header (minted at onboarding, stored hashed).
+Write routes are rate-limited per IP; the optional `X-Yarnia-Token` gate can lock the whole API.
 
 ## Stack
 
@@ -120,7 +130,7 @@ More detail and worktree/CI notes are in `CLAUDE.md` and each subproject's READM
 
 ## Tests and CI
 
-- `api/` has 109 passing unit tests plus integration tests (Vitest). Run `npm test` in `api/`.
+- `api/` has 129 passing unit tests plus integration tests (Vitest). Run `npm test` in `api/`.
 - GitHub Actions deploy on push by path: `deploy-api.yml`, `deploy-app.yml`, `deploy.yml`
   (marketing), and `push-schema.yml` (InstantDB schema + permissions as code).
 - The demo-critical logic (content-safety guardrail + per-child memory in
@@ -135,6 +145,14 @@ More detail and worktree/CI notes are in `CLAUDE.md` and each subproject's READM
 - **Private child data:** InstantDB permissions (`instant/instant.perms.ts`) give the client
   no read or write access to `children` or `sessions`; only the backend Worker (admin token)
   touches them. The waitlist `signups` entity is create-only for guests.
+- **Per-child auth (no bearer childId):** `POST /child` mints a per-child token and stores only
+  its SHA-256 hash (`api/src/auth.ts`); the raw token is returned once and kept on-device. Every
+  child-scoped route (`/story`, `/child/:id/sessions`, `/agent/session`) requires the matching
+  `X-Child-Token`, so knowing a childId is no longer enough to read history or spend quota.
+- **Rate limiting:** write routes (`/story`, `/child`, `/checkout`) are throttled per IP
+  (`api/src/ratelimit.ts`); pair with Cloudflare account-level rules for durable enforcement.
+- **Unguessable share links:** `/share` is keyed by a random `shareToken`, never the internal
+  session id, and the HTML is escaped.
 - **Content safety (defense in depth):** every story prompt carries an age-appropriate
   guardrail and avoids the child's named fears (`api/src/prompt.ts`); generated text is then
   re-checked by an output moderation pass (`api/src/safety.ts`) that regenerates once and falls
@@ -156,24 +174,31 @@ More detail and worktree/CI notes are in `CLAUDE.md` and each subproject's READM
   `POST /story`, so the bedtime ritual still completes.
 - Narration is an enhancement: TTS calls retry transient failures with backoff
   (`api/src/synthesize.ts`), and if it still fails the story returns as text (`audio: null`).
-- Stories are shareable: `GET /share/:sessionId` serves a public, self-contained HTML page
+- Stories are shareable: `GET /share/:shareToken` serves a public, self-contained HTML page
   (story text plus an audio player) so "send to grandma" links open the actual story.
 - Session persistence is webhook-first (survives the phone locking); the client confirms with
   a backoff poll rather than a tight loop.
+- **Observability:** every request path emits structured JSON logs, and errors/analytics
+  (`story_created`, `child_created`, `checkout_*`) are forwarded to optional `ERROR_WEBHOOK` /
+  `ANALYTICS_WEBHOOK` collectors (`api/src/observability.ts`).
+- **Offline-friendly replay:** narration mp3s are cached on-device after first play, so past
+  stories replay from history without re-downloading.
 
 ## Pricing and monetization
 
 EUR 8/month, positioned below the "do I really need this" threshold (Spotify EUR 10, Calm
-EUR 8). Payments are planned via Mollie (a hackathon sponsor); the subscription/paywall is on
-the roadmap and not wired into the demo build.
+EUR 8). Payments are live via Mollie: `POST /checkout` returns a hosted-checkout URL (set
+`MOLLIE_API_KEY`, or a static `MOLLIE_PAYMENT_LINK` fallback), and the app surfaces a
+"Unlock unlimited nights · EUR 8/mo" subscribe flow.
 
 ## Known limitations / roadmap
 
-- One child profile per device today (`SharedPreferences` stores a single child). Multi-child
-  households need a profile picker - on the roadmap.
+- Recurring billing uses Mollie's first-payment checkout; full subscription lifecycle
+  (renewals, dunning, customer portal) is the next step.
 - Ambient soundscapes, adult wind-down stories, and public story publishing are designed but
   not in the core demo build.
-- Mollie payments / subscription gating: planned, not yet implemented.
+- The in-isolate rate limiter is best-effort; production should also enable Cloudflare
+  account-level rate-limiting rules on the `api.yarnia.quest` route.
 
 ## Repo layout
 
