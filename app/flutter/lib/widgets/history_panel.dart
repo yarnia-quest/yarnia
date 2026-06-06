@@ -30,14 +30,17 @@ class _HistoryPanelState extends State<HistoryPanel> {
   @override
   void initState() {
     super.initState();
+    // Seed from cache for an instant paint, but ALWAYS refetch. The just-ended story can be
+    // cached before its audio finishes attaching: the webhook writes the session row first and
+    // attaches the narration mp3 a few seconds later (deferred so the story appears fast). If we
+    // only trusted the cache here, that story would show with no audioKey and never gain replay.
     if (_cachedSessions != null) {
       _sessions = _cachedSessions;
-    } else {
-      _load();
     }
+    _load();
   }
 
-  Future<void> _load() async {
+  Future<void> _load({int attempt = 0}) async {
     try {
       final res = await http.get(
         Uri.parse('${widget.apiBase}/child/${widget.childId}/sessions'),
@@ -46,12 +49,23 @@ class _HistoryPanelState extends State<HistoryPanel> {
         final data = jsonDecode(res.body) as Map<String, dynamic>;
         final sessions = (data['sessions'] as List).cast<Map<String, dynamic>>();
         _cachedSessions = sessions;
-        setState(() => _sessions = sessions);
+        if (mounted) setState(() => _sessions = sessions);
+
+        // The newest story's narration mp3 attaches a few seconds after its row is saved. If it
+        // isn't there yet, refetch shortly so replay appears without the user reopening the panel.
+        // Bounded (~15s); if synthesis truly failed, the story still shows, just without audio.
+        final newest = sessions.isNotEmpty ? sessions.first : null;
+        final audioKey = newest != null ? newest['audioKey'] as String? : null;
+        final audioPending = newest != null && (audioKey == null || audioKey.isEmpty);
+        if (audioPending && attempt < 5 && mounted) {
+          await Future.delayed(const Duration(seconds: 3));
+          if (mounted) _load(attempt: attempt + 1);
+        }
       } else {
-        setState(() => _error = 'Could not load stories (${res.statusCode})');
+        if (mounted) setState(() => _error = 'Could not load stories (${res.statusCode})');
       }
     } catch (e) {
-      setState(() => _error = 'Could not reach Yarnia: $e');
+      if (mounted) setState(() => _error = 'Could not reach Yarnia: $e');
     }
   }
 
