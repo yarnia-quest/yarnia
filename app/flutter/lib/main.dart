@@ -85,7 +85,7 @@ class _YarniaRootState extends State<YarniaRoot> {
           childName: _demoChildName,
           childId: _demoChildId,
           apiBase: _apiBase,
-          onDone: () => _handleChoice(''),
+          onDone: _handleRestart,
           onFallback: _handleRestart,
         ),
       'cocreation' => CoCreationScreen(
