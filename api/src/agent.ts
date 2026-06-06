@@ -67,8 +67,10 @@ export function toDynamicVariables(child: Child | null): DynamicVariables {
   };
 }
 
-// Fetches a signed WebSocket URL so the browser client can start a conversation with a
-// private agent. fetch is injectable for testing. Docs: ElevenLabs convai get-signed-url.
+// Fetches a LiveKit JWT token so the Flutter SDK can start a conversation with a
+// private agent. Uses the /token endpoint (not the old get-signed-url WebSocket endpoint)
+// because the elevenlabs_agents Flutter SDK (0.6.1+) uses LiveKit as transport and needs
+// a LiveKit JWT, not a WebSocket URL.
 const DEFAULT_BASE_URL = "https://api.elevenlabs.io";
 
 export type SignedUrlOpts = {
@@ -82,19 +84,19 @@ export async function getSignedUrl(agentId: string, opts: SignedUrlOpts): Promis
   const baseUrl = opts.baseUrl ?? DEFAULT_BASE_URL;
 
   const res = await doFetch(
-    `${baseUrl}/v1/convai/conversation/get-signed-url?agent_id=${encodeURIComponent(agentId)}`,
+    `${baseUrl}/v1/convai/conversation/token?agent_id=${encodeURIComponent(agentId)}`,
     { headers: { "xi-api-key": opts.apiKey } },
   );
 
   if (!res.ok) {
-    throw new Error(`ElevenLabs signed-url request failed: ${res.status}`);
+    throw new Error(`ElevenLabs token request failed: ${res.status}`);
   }
 
-  const data = (await res.json()) as { signed_url?: string };
-  if (!data.signed_url) {
-    throw new Error("ElevenLabs returned no signed_url");
+  const data = (await res.json()) as { token?: string };
+  if (!data.token) {
+    throw new Error("ElevenLabs returned no token");
   }
-  return data.signed_url;
+  return data.token;
 }
 
 // Orchestrates an agent session: load the child if we know one, render dynamic variables,

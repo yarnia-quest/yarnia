@@ -7,7 +7,7 @@ import 'screens/cocreation_screen.dart';
 import 'screens/playback_screen.dart';
 import 'theme.dart';
 
-const _apiBase = 'https://yellowpine.taileb7778.ts.net';
+const _apiBase = 'http://localhost:8787';
 const _demoChildId = '11111111-1111-4111-8111-111111111111';
 const _demoChildName = 'Lisa';
 

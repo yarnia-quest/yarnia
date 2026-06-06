@@ -90,17 +90,17 @@ describe("getSignedUrl", () => {
         }),
     );
 
-  it("GETs the convai signed-url endpoint with the agent id and xi-api-key", async () => {
-    const f = fakeFetch({ signed_url: "wss://signed" });
+  it("GETs the convai token endpoint with the agent id and xi-api-key", async () => {
+    const f = fakeFetch({ token: "eyJ.livekit.jwt" });
     await getSignedUrl("agent_123", { apiKey: "el-key", fetch: f });
     const [url, init] = f.mock.calls[0] as [string, RequestInit];
-    expect(url).toContain("/v1/convai/conversation/get-signed-url?agent_id=agent_123");
+    expect(url).toContain("/v1/convai/conversation/token?agent_id=agent_123");
     expect((init.headers as Record<string, string>)["xi-api-key"]).toBe("el-key");
   });
 
-  it("returns the signed_url", async () => {
-    const f = fakeFetch({ signed_url: "wss://signed" });
-    expect(await getSignedUrl("a", { apiKey: "k", fetch: f })).toBe("wss://signed");
+  it("returns the token", async () => {
+    const f = fakeFetch({ token: "eyJ.livekit.jwt" });
+    expect(await getSignedUrl("a", { apiKey: "k", fetch: f })).toBe("eyJ.livekit.jwt");
   });
 
   it("throws on a non-ok response", async () => {
@@ -108,9 +108,9 @@ describe("getSignedUrl", () => {
     await expect(getSignedUrl("a", { apiKey: "k", fetch: f })).rejects.toThrow(/401/);
   });
 
-  it("throws when no signed_url is returned", async () => {
+  it("throws when no token is returned", async () => {
     const f = fakeFetch({});
-    await expect(getSignedUrl("a", { apiKey: "k", fetch: f })).rejects.toThrow(/signed_url/i);
+    await expect(getSignedUrl("a", { apiKey: "k", fetch: f })).rejects.toThrow(/token/i);
   });
 });
 
