@@ -1,0 +1,26 @@
+name: fetch-roast
+
+# Temporary helper: fetch the live userroast.com report from a GitHub runner (which has open
+# outbound internet, unlike the Claude Code sandbox) so we can read the actual findings.
+on:
+  push:
+    branches: [claude/yarnia-quest-userroast-mUnKv]
+  workflow_dispatch:
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch userroast report JSON
+        run: |
+          echo "=== API JSON (/api/scans/<id>) ==="
+          curl -sS -w "\n---HTTP %{http_code}---\n" \
+            -H "User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120 Safari/537.36" \
+            -H "Accept: application/json" \
+            "https://userroast.com/api/scans/yarnia-quest-yarnia-qd1lk8" || echo "curl exit $?"
+      - name: Fetch roast page (fallback)
+        run: |
+          echo "=== ROAST PAGE (first 3000 bytes) ==="
+          curl -sS -w "\n---HTTP %{http_code}---\n" \
+            -H "User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120 Safari/537.36" \
+            "https://userroast.com/roast/yarnia-quest-yarnia-qd1lk8" | head -c 3000 || echo "curl exit $?"
