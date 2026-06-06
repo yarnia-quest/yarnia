@@ -1,5 +1,8 @@
+import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import '../widgets/starfield.dart';
@@ -49,7 +52,16 @@ class _PlaybackScreenState extends State<PlaybackScreen> with SingleTickerProvid
     final url = widget.audioUrl;
     if (url == null) return;
     try {
-      await _player.setUrl(url);
+      if (url.startsWith('data:audio')) {
+        final base64Data = url.substring(url.indexOf(',') + 1);
+        final bytes = base64Decode(base64Data);
+        final dir = await getTemporaryDirectory();
+        final file = File('${dir.path}/yarnia_story.mp3');
+        await file.writeAsBytes(bytes);
+        await _player.setFilePath(file.path);
+      } else {
+        await _player.setUrl(url);
+      }
       await _player.play();
     } catch (e) {
       debugPrint('Audio playback failed: $e');

@@ -8,7 +8,7 @@ import 'screens/playback_screen.dart';
 import 'theme.dart';
 
 const _apiBase = 'https://yellowpine.taileb7778.ts.net';
-const _demoChildId = 'lisa-seed';
+const _demoChildId = '11111111-1111-4111-8111-111111111111';
 const _demoChildName = 'Lisa';
 
 void main() {
@@ -54,9 +54,11 @@ class _YarniaRootState extends State<YarniaRoot> {
       );
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body) as Map<String, dynamic>;
+        final base64Audio = data['audio'] as String?;
         setState(() {
           _storyText = data['text'] as String?;
-          _audioUrl = data['audioUrl'] as String?;
+          _audioUrl = data['audioUrl'] as String? ??
+              (base64Audio != null ? 'data:audio/mpeg;base64,$base64Audio' : null);
         });
       }
     } catch (e) {
@@ -84,7 +86,7 @@ class _YarniaRootState extends State<YarniaRoot> {
           childId: _demoChildId,
           apiBase: _apiBase,
           onDone: _handleRestart,
-          onFallback: () => setState(() => _screen = 'cocreation'),
+          onFallback: _handleRestart,
         ),
       'cocreation' => CoCreationScreen(
           childName: _demoChildName,

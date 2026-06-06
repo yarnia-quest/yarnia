@@ -82,7 +82,7 @@ class _AgentScreenState extends State<AgentScreen> with TickerProviderStateMixin
   Future<void> _bootstrap() async {
     final micStatus = await Permission.microphone.request();
     if (!micStatus.isGranted) {
-      widget.onFallback();
+      if (mounted) setState(() => _error = 'Microphone permission denied — please allow mic access and restart.');
       return;
     }
 
@@ -90,7 +90,7 @@ class _AgentScreenState extends State<AgentScreen> with TickerProviderStateMixin
       final res = await http.get(
         Uri.parse('${widget.apiBase}/agent/session?childId=${widget.childId}'),
       );
-      if (res.statusCode != 200) throw Exception('Session ${res.statusCode}');
+      if (res.statusCode != 200) throw Exception('Session ${res.statusCode}: ${res.body}');
 
       final data = jsonDecode(res.body) as Map<String, dynamic>;
       final signedUrl = data['signedUrl'] as String?;
@@ -105,11 +105,11 @@ class _AgentScreenState extends State<AgentScreen> with TickerProviderStateMixin
           dynamicVariables: dynamicVariables,
         );
       } else {
-        throw Exception('No agentId or signedUrl in response');
+        throw Exception('No agentId or signedUrl in response: $data');
       }
     } catch (e) {
       debugPrint('Agent bootstrap failed: $e');
-      if (mounted) widget.onFallback();
+      if (mounted) setState(() => _error = e.toString());
     }
   }
 
