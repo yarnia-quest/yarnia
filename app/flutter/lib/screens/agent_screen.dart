@@ -103,7 +103,7 @@ class _AgentScreenState extends State<AgentScreen> with TickerProviderStateMixin
   }
 
   Future<void> _pollUntilSaved() async {
-    final previousCount = _cachedSessions?.length ?? 0;
+    final previousCount = getCachedSessions()?.length ?? 0;
     for (int i = 0; i < 10; i++) {
       await Future.delayed(const Duration(seconds: 3));
       try {
