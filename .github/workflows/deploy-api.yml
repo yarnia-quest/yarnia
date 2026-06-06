@@ -1,0 +1,37 @@
+name: Deploy API
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ["api/**"]
+
+# Deploys the yarnia-api Worker to api.yarnia.quest whenever api/ changes on main.
+#
+# The Worker's secrets (QWEN_API_KEY, ELEVENLABS_API_KEY, ELEVENLABS_AGENT_ID, INSTANT_APP_ID,
+# INSTANT_ADMIN_TOKEN) are set once via `wrangler secret put` and PERSIST across deploys, so this
+# workflow needs only the Cloudflare deploy credentials to ship code. (We don't push secrets here:
+# wrangler-action's `secrets` input would blank any key not mirrored as a GitHub secret.)
+#
+# Audio is stored in InstantDB Storage ($files), not R2 — no bucket/binding to provision.
+# Tests + typecheck gate the deploy so a red build never reaches production.
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: api
+          command: deploy
