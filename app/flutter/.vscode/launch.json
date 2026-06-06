@@ -9,7 +9,7 @@
       "toolArgs": ["--dart-define-from-file=dart_defines/local.json"]
     },
     {
-      "name": "Yarnia — physical device (Tailscale)",
+      "name": "Yarnia — physical device (deployed)",
       "request": "launch",
       "type": "dart",
       "program": "lib/main.dart",

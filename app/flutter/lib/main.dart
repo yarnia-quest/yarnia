@@ -10,8 +10,8 @@ import 'theme.dart';
 
 // Base URL of the api/ Worker — chosen at BUILD time via a --dart-define (no runtime
 // detection). Default localhost covers web + iOS simulator (they share the Mac's network).
-// A physical device can't reach the Mac's localhost, so its run config passes the Tailscale
-// URL. Selected per target via VS Code launch configs or dart_defines/*.json (see README).
+// A physical device can't reach the Mac's localhost, so its run config passes the deployed
+// api.yarnia.quest URL. Selected per target via VS Code launch configs or dart_defines/*.json (see README).
 const _apiBase = String.fromEnvironment('API_BASE', defaultValue: 'http://localhost:8787');
 const _demoChildId = '11111111-1111-4111-8111-111111111111';
 const _demoChildName = 'Lisa';
