@@ -1,7 +1,7 @@
 // Session write-back: after a story is told, archive it as a rich "episode" so the child's
 // memory grows night over night (see ideation/ELLA-FINN-EXAMPLE.md). Each session stores the
-// full message chain (archive) + a title + summary (the light recall layer). Runs best-effort,
-// after the response (route fires it via executionCtx.waitUntil), so it adds no latency.
+// full message chain (archive) + title + summary + characters + continuityNotes (the recall
+// layer). Runs best-effort, after the response (route fires it via executionCtx.waitUntil).
 import type { StoryPrompt } from "./prompt";
 
 export type Message = { role: "system" | "user" | "assistant"; content: string };
@@ -11,6 +11,9 @@ export type SaveSessionInput = {
   summary: string;
   messages: Message[];
   charactersUsed: string[];
+  // Compact carry-forward facts (like the example's "Continuity Notes"), so future
+  // episodes can reference what happened ("the dragon shared his sparkly stones").
+  continuityNotes: string[];
 };
 
 // The full prompt/message chain for this session: the system + user prompt that produced
@@ -23,30 +26,58 @@ export function toMessages(prompt: StoryPrompt, storyText: string): Message[] {
   ];
 }
 
-// Reuses the story generator (deps.generate) to recap tonight's story into a title + summary.
+// Reuses the story generator (deps.generate) to extract the recall layer as JSON.
 export function buildRecapPrompt(storyText: string): StoryPrompt {
   return {
     system:
-      "You read a children's bedtime story and recap it. Respond in EXACTLY this format, two lines:\n" +
-      "Title: <a short evocative title, 2 to 5 words>\n" +
-      "Summary: <one short phrase, 5 to 8 words, describing what happened>\n" +
-      "No quotes, no extra commentary.",
+      "You read a children's bedtime story and extract a compact memory record. " +
+      "Respond with ONLY a JSON object (no markdown, no commentary) of exactly this shape:\n" +
+      '{"title": "a short evocative title, 2 to 5 words", ' +
+      '"summary": "one short phrase, 5 to 8 words, describing what happened", ' +
+      '"characters": ["each named or notable character"], ' +
+      '"continuityNotes": ["2 to 4 short facts to remember for future stories, e.g. \'they found a glowing coin\'"]}',
     user: storyText,
   };
 }
 
-// Robustly parse the recap. Falls back gracefully if the model deviates from the format.
-export function parseRecap(raw: string): { title: string; summary: string } {
-  const strip = (s: string) => s.trim().replace(/^["']|["']$/g, "");
-  const title = raw.match(/Title:\s*(.+)/i)?.[1];
-  const summary = raw.match(/Summary:\s*(.+)/i)?.[1];
-  const firstLine = raw.trim().split(/\r?\n/)[0]?.replace(/^(Title|Summary):\s*/i, "");
-  const t = title ? strip(title) : "";
-  const s = summary ? strip(summary) : "";
-  const fallback = firstLine ? strip(firstLine) : "";
+export type Recap = {
+  title: string;
+  summary: string;
+  characters: string[];
+  continuityNotes: string[];
+};
+
+// Robustly parse the recap JSON. Tolerates markdown fences / surrounding prose, missing
+// keys, and outright non-JSON output — always returns a usable Recap.
+export function parseRecap(raw: string): Recap {
+  const firstLine = raw.trim().split(/\r?\n/)[0]?.trim() || "A bedtime story";
+  const fallback: Recap = {
+    title: firstLine,
+    summary: firstLine,
+    characters: [],
+    continuityNotes: [],
+  };
+
+  const match = raw.match(/\{[\s\S]*\}/);
+  if (!match) return fallback;
+
+  let obj: Record<string, unknown>;
+  try {
+    obj = JSON.parse(match[0]);
+  } catch {
+    return fallback;
+  }
+
+  const str = (v: unknown, d: string) =>
+    typeof v === "string" && v.trim() ? v.trim() : d;
+  const arr = (v: unknown) =>
+    Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && !!x.trim()).map((x) => x.trim()) : [];
+
   return {
-    title: t || s || fallback || "A bedtime story",
-    summary: s || fallback || "a gentle bedtime story",
+    title: str(obj.title, fallback.title),
+    summary: str(obj.summary, str(obj.title, "a gentle bedtime story")),
+    characters: arr(obj.characters),
+    continuityNotes: arr(obj.continuityNotes),
   };
 }
 
@@ -63,12 +94,13 @@ export async function persistSession(
   deps: PersistDeps,
 ): Promise<void> {
   try {
-    const { title, summary } = parseRecap(await deps.generate(buildRecapPrompt(storyText)));
+    const recap = parseRecap(await deps.generate(buildRecapPrompt(storyText)));
     await deps.saveSession(childId, {
-      title,
-      summary,
+      title: recap.title,
+      summary: recap.summary,
       messages: toMessages(prompt, storyText),
-      charactersUsed: [choice],
+      charactersUsed: recap.characters.length ? recap.characters : [choice],
+      continuityNotes: recap.continuityNotes,
     });
   } catch (err) {
     console.error("session write-back failed:", err);

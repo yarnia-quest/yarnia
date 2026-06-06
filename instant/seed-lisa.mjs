@@ -47,7 +47,8 @@ const SESSIONS = [
     createdAt: T1,
     title: "The Glowing Owl",
     summary: "An owl who was afraid of the dark and found a softly glowing friend",
-    charactersUsed: ["owl"],
+    charactersUsed: ["Pip the owl", "a firefly"],
+    continuityNotes: ["Pip the owl was shy of the dark", "a tiny firefly became Pip's glowing friend"],
     messages: chain(
       "Tell Lisa a gentle story about an owl.",
       "Once there was a small owl named Pip who felt shy of the dark. Then a tiny firefly drifted close and glowed like a warm nightlight. Together they watched the quiet stars until Pip's eyes grew heavy and soft.",
@@ -58,7 +59,8 @@ const SESSIONS = [
     createdAt: T2,
     title: "The Blanket Fort",
     summary: "A dragon and an owl built a cozy blanket fort under the stars",
-    charactersUsed: ["dragon", "owl"],
+    charactersUsed: ["the gentle dragon", "Pip the owl"],
+    continuityNotes: ["the dragon and Pip built a cozy blanket fort", "they watched the stars together before sleep"],
     messages: chain(
       "Tell Lisa a calm story with a dragon and an owl.",
       "A gentle dragon and the little owl Pip gathered the softest blankets they could find. They built a warm, cozy fort and peeked out at the slow, twinkling stars. Snug and sleepy, they whispered goodnight.",
@@ -69,7 +71,8 @@ const SESSIONS = [
     createdAt: T3,
     title: "The Sharing Dragon",
     summary: "A gentle dragon who learned to share his sparkly stones",
-    charactersUsed: ["dragon"],
+    charactersUsed: ["the gentle dragon"],
+    continuityNotes: ["the dragon shared his sparkly stones with his forest friends", "sharing made the dragon feel calm and happy"],
     messages: chain(
       "Tell Lisa a soothing story about a dragon.",
       "A gentle dragon kept a little pile of sparkly stones. When his forest friends admired them, he learned how warm it felt to share. He gave one to each friend, then curled up, calm and happy, ready to sleep.",
@@ -102,6 +105,7 @@ await db.transact([
         summary: s.summary,
         messages: s.messages,
         charactersUsed: s.charactersUsed,
+        continuityNotes: s.continuityNotes,
         createdAt: s.createdAt,
       })
       .link({ child: LISA }),

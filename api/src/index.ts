@@ -41,6 +41,7 @@ function defaultDeps(env: Bindings): AppDeps {
             summary: input.summary,
             messages: input.messages,
             charactersUsed: input.charactersUsed,
+            continuityNotes: input.continuityNotes,
             createdAt: Date.now(),
           })
           .link({ child: childId }),

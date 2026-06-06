@@ -27,6 +27,7 @@ const _schema = i.schema({
       summary: i.string(),
       messages: i.json().optional(), // full prompt/message chain: [{ role, content }, ...]
       charactersUsed: i.json(),
+      continuityNotes: i.json().optional(), // carry-forward facts for future episodes
       createdAt: i.number().indexed(),
     }),
   },

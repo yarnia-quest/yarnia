@@ -20,49 +20,64 @@ describe("toMessages", () => {
 });
 
 describe("buildRecapPrompt", () => {
-  it("passes the story and asks for a Title + Summary", () => {
+  it("passes the story and asks for structured JSON with all recall fields", () => {
     const p = buildRecapPrompt("a dragon shared his stones");
     expect(p.user).toContain("a dragon shared his stones");
-    expect(p.system).toMatch(/Title:/);
-    expect(p.system).toMatch(/Summary:/);
+    expect(p.system).toMatch(/json/i);
+    expect(p.system).toMatch(/title/i);
+    expect(p.system).toMatch(/summary/i);
+    expect(p.system).toMatch(/characters/i);
+    expect(p.system).toMatch(/continuityNotes/i);
   });
 });
 
 describe("parseRecap", () => {
-  it("extracts title and summary from the two-line format", () => {
-    expect(parseRecap("Title: The Sleepy Dragon\nSummary: a dragon who learned to share")).toEqual({
-      title: "The Sleepy Dragon",
+  it("parses a clean JSON object", () => {
+    const r = parseRecap(
+      '{"title":"The Sharing Dragon","summary":"a dragon who learned to share","characters":["dragon","owl"],"continuityNotes":["the dragon shared his sparkly stones"]}',
+    );
+    expect(r).toEqual({
+      title: "The Sharing Dragon",
       summary: "a dragon who learned to share",
+      characters: ["dragon", "owl"],
+      continuityNotes: ["the dragon shared his sparkly stones"],
     });
   });
 
-  it("strips surrounding quotes", () => {
-    expect(parseRecap('Title: "The Owl"\nSummary: "a brave owl"')).toEqual({
-      title: "The Owl",
-      summary: "a brave owl",
-    });
+  it("extracts JSON even when wrapped in markdown fences or prose", () => {
+    const r = parseRecap(
+      'Here you go:\n```json\n{"title":"The Owl","summary":"a brave owl","characters":["owl"],"continuityNotes":["the owl found a glowing friend"]}\n```',
+    );
+    expect(r.title).toBe("The Owl");
+    expect(r.continuityNotes).toEqual(["the owl found a glowing friend"]);
   });
 
-  it("falls back when only a summary is present", () => {
-    const r = parseRecap("Summary: a quiet night");
-    expect(r.summary).toBe("a quiet night");
-    expect(r.title).toBe("a quiet night");
+  it("coerces missing keys to safe defaults", () => {
+    const r = parseRecap('{"title":"Just a Title"}');
+    expect(r.title).toBe("Just a Title");
+    expect(r.summary).toBeTruthy();
+    expect(r.characters).toEqual([]);
+    expect(r.continuityNotes).toEqual([]);
   });
 
-  it("falls back to sensible defaults on unformatted text", () => {
+  it("falls back to defaults on non-JSON text", () => {
     const r = parseRecap("A gentle dragon adventure");
     expect(r.title).toBe("A gentle dragon adventure");
-    expect(r.summary).toBe("A gentle dragon adventure");
+    expect(r.summary).toBeTruthy();
+    expect(r.characters).toEqual([]);
+    expect(r.continuityNotes).toEqual([]);
   });
 });
 
 describe("persistSession (write-back, best-effort)", () => {
-  it("recaps tonight's story and saves a rich session for the child", async () => {
-    const generate = vi.fn(async () => "Title: The Sleepy Dragon\nSummary: a dragon who learned to share");
+  it("recaps the story and saves a rich session incl. continuity notes", async () => {
+    const generate = vi.fn(
+      async () =>
+        '{"title":"The Sleepy Dragon","summary":"a dragon who learned to share","characters":["dragon"],"continuityNotes":["the dragon shared his sparkly stones with friends"]}',
+    );
     const saveSession = vi.fn(async () => {});
     await persistSession("lisa-1", "dragon", prompt, "the full story text", { generate, saveSession });
 
-    expect(generate).toHaveBeenCalledOnce();
     expect(saveSession).toHaveBeenCalledWith("lisa-1", {
       title: "The Sleepy Dragon",
       summary: "a dragon who learned to share",
@@ -72,7 +87,18 @@ describe("persistSession (write-back, best-effort)", () => {
         { role: "assistant", content: "the full story text" },
       ],
       charactersUsed: ["dragon"],
+      continuityNotes: ["the dragon shared his sparkly stones with friends"],
     });
+  });
+
+  it("falls back to the chosen character when the recap extracts none", async () => {
+    const generate = vi.fn(async () => '{"title":"T","summary":"s","characters":[],"continuityNotes":[]}');
+    const saveSession = vi.fn(async () => {});
+    await persistSession("lisa-1", "owl", prompt, "story", { generate, saveSession });
+    expect(saveSession).toHaveBeenCalledWith(
+      "lisa-1",
+      expect.objectContaining({ charactersUsed: ["owl"] }),
+    );
   });
 
   it("swallows errors so it never breaks the request it runs after", async () => {
@@ -80,7 +106,7 @@ describe("persistSession (write-back, best-effort)", () => {
       throw new Error("InstantDB write failed");
     });
     await expect(
-      persistSession("lisa-1", "dragon", prompt, "t", { generate: vi.fn(async () => "x"), saveSession }),
+      persistSession("lisa-1", "dragon", prompt, "t", { generate: vi.fn(async () => "{}"), saveSession }),
     ).resolves.toBeUndefined();
   });
 });
