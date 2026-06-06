@@ -93,7 +93,7 @@ class _AgentScreenState extends State<AgentScreen> with TickerProviderStateMixin
         body: jsonEncode({'childId': widget.childId, 'conversationId': cid}),
       );
       // Invalidate cache so history panel reloads fresh data next open.
-      _cachedSessions = null;
+      invalidateHistoryCache();
     } catch (e) {
       debugPrint('session/save failed: $e');
     }
