@@ -76,7 +76,7 @@ class _GreetingScreenState extends State<GreetingScreen> with SingleTickerProvid
                           ),
                           const SizedBox(height: 10),
                           Text(
-                            "Ready for tonight's story?",
+                            'Your story is waiting in Yarnia.',
                             style: const TextStyle(fontFamily: 'serif', fontSize: 16, color: gold),
                             textAlign: TextAlign.center,
                           ),

@@ -288,7 +288,7 @@ class _StatusLabel extends StatelessWidget {
     final text = error != null
         ? 'Something went wrong'
         : status == ConversationStatus.disconnected
-            ? 'Preparing your story…'
+            ? 'Travelling to Yarnia…'
             : isSpeaking
                 ? 'Yarnia is speaking…'
                 : 'Your turn…';
