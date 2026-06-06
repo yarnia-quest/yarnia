@@ -6,7 +6,7 @@
 **What we're building:** Yarnia — a screen-off voice app that tells a child a personalized bedtime story and remembers them across nights. One sentence: *"We help a parent at 8pm get their kid to sleep with a screen-off voice story that remembers their child."*
 
 ## Repo layout
-- `app/` — the Yarnia app (Expo / React Native). The product frontend.
+- `app/` — the Yarnia app. The product frontend is `app/flutter/` (Flutter / Dart); `app/astro/` is a web client variant.
 - `api/` — product backend (Cloudflare Worker): story gen + ElevenLabs TTS + InstantDB + content-safety guardrail.
 - `marketing/` — landing page (`public/`) served by an assets-only Cloudflare Worker (`src/worker.ts`) at yarnia.quest. The signup writes client-side to InstantDB (no secret). **Deployed.**
 - `infra/` — config / secrets / CI notes.
@@ -18,7 +18,7 @@
 - `api.yarnia.quest` → **app backend** (`api/`). Reserved; the marketing side must not use it.
 
 ## Stack
-- **Frontend:** Expo (React Native).
+- **Frontend:** Flutter (Dart) — `app/flutter/`. (`app/astro/` is a secondary web client.)
 - **Backend:** Cloudflare Workers (thin layers; wrangler).
 - **Data/auth/storage:** InstantDB.
 - **Voice/TTS:** ElevenLabs. **Story gen:** Qwen (DashScope OpenAI-compatible API, `qwen3.7-max`, intl endpoint).
@@ -62,7 +62,7 @@ Because all local worktrees share one `.git`, `origin/main` is what keeps teamma
 
 ## Conventions
 - **Package manager: npm + Node 24 (LTS)** everywhere (local and CI). Commit `package-lock.json`. Don't use bun for project deps (gstack's own CLI runs on bun, that's separate).
-- **Track every real lock file; never delete one that has a manifest.** A lock file paired with its manifest (`package-lock.json` next to a `package.json`, `pubspec.lock` next to `pubspec.yaml`, `skills-lock.json`) pins exact versions for reproducible builds and MUST be committed — never remove it, even if it looks sparse. The one exception: an *orphan* lock with no sibling manifest and no locked packages (e.g. an empty `package-lock.json` in a dir with no `package.json`) is cruft from a stray `npm` run — delete it. Real npm projects here: `api/`, `marketing/`, `instant/`, `app/expo/`, `app/astro/`. `app/flutter/` is Dart — it uses `pubspec.lock`, never `package-lock.json`.
+- **Track every real lock file; never delete one that has a manifest.** A lock file paired with its manifest (`package-lock.json` next to a `package.json`, `pubspec.lock` next to `pubspec.yaml`, `skills-lock.json`) pins exact versions for reproducible builds and MUST be committed — never remove it, even if it looks sparse. The one exception: an *orphan* lock with no sibling manifest and no locked packages (e.g. an empty `package-lock.json` in a dir with no `package.json`) is cruft from a stray `npm` run — delete it. Real npm projects here: `api/`, `marketing/`, `instant/`, `app/astro/`. `app/flutter/` is Dart — it uses `pubspec.lock`, never `package-lock.json`.
 - Match the style of surrounding code; keep diffs small and explicit.
 - Prose/writing (READMEs, copy, messages): **no em dashes.**
 - **Testing: TDD, red/green, atomic.** For each feature: write the failing test first (red), implement the minimum to pass (green), then refactor. Work in small increments; do NOT implement multiple features at once. `api/` tests run on **Vitest** via Hono's `app.request(path, init, env)` (in-process, no `wrangler dev`; inject fake bindings to mock OpenAI/ElevenLabs so tests cost nothing). `npm test` in `api/`.

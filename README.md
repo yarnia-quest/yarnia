@@ -35,7 +35,7 @@ Every consumer app in 2026 is optimizing for your attention. Yarnia optimizes fo
 
 ## Stack
 
-- **Frontend**: Expo (React Native)
+- **Frontend**: Flutter (Dart)
 - **DB / Auth / Realtime / Storage**: InstantDB
 - **Voice / TTS**: ElevenLabs
 - **Story generation**: OpenAI or Qwen (hackathon sponsors)
