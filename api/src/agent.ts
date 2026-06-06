@@ -165,20 +165,26 @@ export async function createAgentSession(
   childId: string | undefined,
   deps: AgentSessionDeps,
 ): Promise<AgentSessionResult> {
-  let child: Child | null = null;
-  if (childId) {
-    child = await deps.loadChild(childId);
-    if (!child) return { ok: false, reason: "child_not_found" };
-  }
+  // loadChild (InstantDB) and getSignedUrl (ElevenLabs) are independent, so fire them
+  // together: the signed URL doesn't depend on the child, and starting it in parallel
+  // shaves one round-trip off the "Travelling to Yarnia" wait. Signing is best-effort
+  // (a public agent connects with agentId + variables alone), so we catch per-call and
+  // degrade to signedUrl:null rather than failing the whole session.
+  const childPromise: Promise<Child | null> = childId
+    ? deps.loadChild(childId)
+    : Promise.resolve(null);
+  const signedUrlPromise: Promise<string | null> = deps
+    .getSignedUrl(deps.agentId)
+    .catch((err) => {
+      console.error("get-signed-url failed; client can connect publicly with agentId:", err);
+      return null;
+    });
+
+  const [child, signedUrl] = await Promise.all([childPromise, signedUrlPromise]);
+
+  // A given-but-unknown childId is still a 404 (the prefetched signed URL is simply discarded).
+  if (childId && !child) return { ok: false, reason: "child_not_found" };
 
   const dynamicVariables = toDynamicVariables(child);
-
-  let signedUrl: string | null = null;
-  try {
-    signedUrl = await deps.getSignedUrl(deps.agentId);
-  } catch (err) {
-    console.error("get-signed-url failed; client can connect publicly with agentId:", err);
-  }
-
   return { ok: true, agentId: deps.agentId, dynamicVariables, signedUrl };
 }

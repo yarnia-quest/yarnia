@@ -5,6 +5,7 @@ import 'package:elevenlabs_agents/elevenlabs_agents.dart';
 import 'package:http/http.dart' as http;
 import 'package:permission_handler/permission_handler.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
+import '../services/agent_session_prefetch.dart';
 import '../widgets/starfield.dart';
 import '../widgets/history_panel.dart';
 import '../theme.dart';
@@ -162,15 +163,12 @@ class _AgentScreenState extends State<AgentScreen> with TickerProviderStateMixin
     // 3. Background noise fools VAD into keeping the mic "open" longer — test in
     //    a quiet environment before tuning the threshold.
     try {
-      final res = await http.get(
-        Uri.parse('${widget.apiBase}/agent/session?childId=${widget.childId}'),
-      );
-      if (res.statusCode != 200) throw Exception('Session ${res.statusCode}: ${res.body}');
-
-      final data = jsonDecode(res.body) as Map<String, dynamic>;
-      final signedUrl = data['signedUrl'] as String?;
-      final agentId = data['agentId'] as String?;
-      final dynamicVariables = data['dynamicVariables'] as Map<String, dynamic>?;
+      // Use the session warmed by GreetingScreen if it's ready; otherwise fetch now.
+      // Either way the parse + connect path below is identical.
+      final session = await (takeAgentSession(widget.childId) ?? _fetchSession());
+      final signedUrl = session.signedUrl;
+      final agentId = session.agentId;
+      final dynamicVariables = session.dynamicVariables;
 
       if (signedUrl != null) {
         // Pass dynamicVariables here too: the signed URL only authenticates the
@@ -187,12 +185,24 @@ class _AgentScreenState extends State<AgentScreen> with TickerProviderStateMixin
           dynamicVariables: dynamicVariables,
         );
       } else {
-        throw Exception('No agentId or signedUrl in response: $data');
+        throw Exception('No agentId or signedUrl in session response');
       }
     } catch (e) {
       debugPrint('Agent bootstrap failed: $e');
       if (mounted) setState(() => _error = e.toString());
     }
+  }
+
+  // Fallback when GreetingScreen didn't prefetch (e.g. a restarted session): same
+  // GET /agent/session the prefetch uses, so the connect path stays identical.
+  Future<AgentSessionData> _fetchSession() async {
+    final res = await http.get(
+      Uri.parse('${widget.apiBase}/agent/session?childId=${widget.childId}'),
+    );
+    if (res.statusCode != 200) {
+      throw Exception('Session ${res.statusCode}: ${res.body}');
+    }
+    return AgentSessionData.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
   }
 
   @override

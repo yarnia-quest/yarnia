@@ -137,7 +137,9 @@ describe("createAgentSession (orchestration)", () => {
     const res = await createAgentSession("nope", {
       loadChild: vi.fn(async () => null),
       agentId: "agent_1",
-      getSignedUrl: vi.fn(),
+      // getSignedUrl now runs in parallel with loadChild (its result is discarded on 404),
+      // so the mock must be awaitable.
+      getSignedUrl: vi.fn(async () => "wss://signed"),
     });
     expect(res).toEqual({ ok: false, reason: "child_not_found" });
   });
@@ -152,6 +154,40 @@ describe("createAgentSession (orchestration)", () => {
     expect(loadChild).not.toHaveBeenCalled();
     expect(res).toMatchObject({ ok: true, agentId: "agent_1", signedUrl: "wss://signed" });
     if (res.ok) expect(res.dynamicVariables.child_name).toBe("");
+  });
+
+  it("runs loadChild and getSignedUrl concurrently (signing starts before the child loads)", async () => {
+    // Latency win: the two calls are independent, so getSignedUrl must not wait for
+    // loadChild to resolve. We prove overlap by holding loadChild open and asserting
+    // getSignedUrl was already invoked while it was still pending.
+    let releaseChild!: (c: Child) => void;
+    let childResolved = false;
+    const childGate = new Promise<Child>((resolve) => {
+      releaseChild = resolve;
+    }).then((c) => {
+      childResolved = true;
+      return c;
+    });
+    const loadChild = vi.fn(() => childGate);
+    let signedCalledWhileChildPending = false;
+    const getSignedUrlDep = vi.fn(async () => {
+      // True overlap: getSignedUrl runs while loadChild's promise is still unresolved.
+      signedCalledWhileChildPending = !childResolved;
+      return "wss://signed";
+    });
+
+    const resultPromise = createAgentSession("lisa-1", {
+      loadChild,
+      agentId: "agent_1",
+      getSignedUrl: getSignedUrlDep,
+    });
+    // Let microtasks drain so getSignedUrl can run while the child is still gated.
+    await Promise.resolve();
+    releaseChild(lisa);
+    const res = await resultPromise;
+
+    expect(signedCalledWhileChildPending).toBe(true);
+    expect(res).toMatchObject({ ok: true, signedUrl: "wss://signed" });
   });
 
   it("degrades to signedUrl:null (still returns variables) when signing fails", async () => {

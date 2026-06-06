@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
+import '../services/agent_session_prefetch.dart';
 import '../widgets/starfield.dart';
 import '../widgets/history_panel.dart';
 import '../theme.dart';
@@ -32,6 +33,9 @@ class _GreetingScreenState extends State<GreetingScreen> with SingleTickerProvid
   void initState() {
     super.initState();
     WakelockPlus.enable();
+    // Warm the agent session (and mic permission) while the parent reads "Good night, X"
+    // so tapping Begin connects to ElevenLabs with no /agent/session round-trip in the way.
+    prefetchAgentSession(widget.apiBase, widget.childId);
     _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 2000));
     _moonScale = Tween(begin: 0.7, end: 1.0).animate(
       CurvedAnimation(parent: _controller, curve: const Interval(0, 0.6, curve: Curves.elasticOut)),
