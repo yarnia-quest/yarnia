@@ -11,11 +11,11 @@ import 'widgets/history_panel.dart';
 import 'widgets/starfield.dart';
 import 'theme.dart';
 
-// Base URL of the api/ Worker — chosen at BUILD time via a --dart-define (no runtime
-// detection). Default localhost covers web + iOS simulator (they share the Mac's network).
-// A physical device can't reach the Mac's localhost, so its run config passes the deployed
-// api.yarnia.quest URL. Selected per target via VS Code launch configs or dart_defines/*.json (see README).
-const _apiBase = String.fromEnvironment('API_BASE', defaultValue: 'http://localhost:8787');
+// Base URL of the api/ Worker, chosen at BUILD time via a --dart-define (no runtime
+// detection). Defaults to the deployed prod backend, so any build that forgets the flag
+// still hits api.yarnia.quest and never localhost. Opt into a local dev server explicitly
+// with --dart-define-from-file=dart_defines/local.json (see README).
+const _apiBase = String.fromEnvironment('API_BASE', defaultValue: 'https://api.yarnia.quest');
 
 void main() {
   runApp(const YarniaApp());

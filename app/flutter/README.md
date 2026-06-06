@@ -6,29 +6,37 @@ The Yarnia client: a screen-off voice bedtime-story app that talks to the `api/`
 ## API base URL (per target)
 
 The app reads its backend URL from a compile-time env var, `API_BASE`, via
-`String.fromEnvironment` in `lib/main.dart`. No runtime detection — you pick it per target:
+`String.fromEnvironment` in `lib/main.dart`. No runtime detection. The default is the
+deployed prod backend (`https://api.yarnia.quest`), so any build that forgets the flag
+(web, device, release) connects to prod and never to localhost. Local dev against a local
+`api/` Worker is an explicit opt-in.
 
 | Target | `API_BASE` | Why |
 |---|---|---|
-| Web (Chrome on the Mac) | `http://localhost:8787` (default) | browser shares the Mac's network |
-| iOS Simulator | `http://localhost:8787` (default) | simulator shares the Mac's network |
-| Physical iPhone | `https://api.yarnia.quest` | a device can't reach the Mac's `localhost`; hit the deployed Worker (no dev server or tailnet needed) |
+| Physical iPhone, web, any release build | `https://api.yarnia.quest` (default) | hits the deployed prod Worker; no dev server or tailnet needed |
+| Web / iOS Simulator, local dev | `http://localhost:8787` (opt in via `local.json`) | browser / simulator share the Mac's network; needs the local `api/` running |
 
-Values live in `dart_defines/local.json` and `dart_defines/device.json`. Run with the matching one:
+Values live in `dart_defines/local.json` (localhost) and `dart_defines/device.json` (prod,
+same as the default). Run with the matching one:
 
 ```sh
-# web + simulator (localhost)
+# prod backend (default, no flag needed)
+flutter run -d chrome
+flutter build web
+
+# local dev against a local api/ Worker (explicit opt-in)
 flutter run --dart-define-from-file=dart_defines/local.json -d chrome      # web
 flutter run --dart-define-from-file=dart_defines/local.json -d <simulator> # iOS simulator
 
-# physical iPhone (deployed api.yarnia.quest)
+# physical iPhone, explicit prod (same as default)
 flutter run --dart-define-from-file=dart_defines/device.json -d <device>
 
 # one-off override (e.g. a LAN IP)
 flutter run --dart-define=API_BASE=http://192.168.1.42:8787 -d <device>
 ```
 
-In VS Code, pick **"Yarnia — local (web / simulator)"** or **"Yarnia — physical device (deployed)"**
-from the Run menu (`.vscode/launch.json`) — selecting the target sets `API_BASE` for you.
+In VS Code, pick **"Yarnia: prod backend (device / web / release)"** (the default) or
+**"Yarnia: local dev (web / simulator)"** from the Run menu (`.vscode/launch.json`);
+selecting the target sets `API_BASE` for you.
 
-The local targets need the `api/` Worker running: `cd ../../api && npm run dev` (serves `:8787`).
+The local-dev target needs the `api/` Worker running: `cd ../../api && npm run dev` (serves `:8787`).
