@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Yarnia — Pitch Deck</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Lora:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --navy: #12132a;
+    --navy-2: #1b1d3a;
+    --gold: #f1c673;
+    --gold-soft: #e9c98c;
+    --cream: #f6efe0;
+    --cream-dim: #cfc7b6;
+    --muted: #8d8aa8;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    background: var(--navy);
+    color: var(--cream);
+    font-family: "Lora", Georgia, serif;
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+  /* Starfield */
+  .stars { position: fixed; inset: 0; pointer-events: none; z-index: 0; }
+  .stars::before, .stars::after {
+    content: ""; position: absolute; inset: 0;
+    background-image:
+      radial-gradient(1px 1px at 20% 30%, rgba(246,239,224,.7), transparent),
+      radial-gradient(1px 1px at 70% 20%, rgba(246,239,224,.5), transparent),
+      radial-gradient(1.5px 1.5px at 40% 70%, rgba(241,198,115,.6), transparent),
+      radial-gradient(1px 1px at 85% 60%, rgba(246,239,224,.4), transparent),
+      radial-gradient(1px 1px at 55% 45%, rgba(246,239,224,.5), transparent),
+      radial-gradient(1px 1px at 10% 80%, rgba(246,239,224,.4), transparent),
+      radial-gradient(1.5px 1.5px at 90% 35%, rgba(241,198,115,.5), transparent),
+      radial-gradient(1px 1px at 30% 15%, rgba(246,239,224,.5), transparent);
+    background-repeat: no-repeat;
+  }
+
+  .deck { position: relative; z-index: 1; height: 100%; }
+  .slide {
+    position: absolute; inset: 0;
+    display: none;
+    flex-direction: column;
+    justify-content: center;
+    padding: 7vh 9vw;
+    opacity: 0;
+    transition: opacity .4s ease;
+  }
+  .slide.active { display: flex; opacity: 1; }
+
+  .wordmark {
+    font-family: "Fraunces", serif;
+    font-size: clamp(15px, 1.6vw, 22px);
+    color: var(--gold);
+    letter-spacing: .04em;
+    margin-bottom: 3.5vh;
+  }
+  .wordmark em { color: var(--cream-dim); font-style: italic; font-size: .85em; }
+  .kicker {
+    font-family: "Lora", serif;
+    text-transform: uppercase;
+    letter-spacing: .32em;
+    font-size: clamp(11px, 1.1vw, 14px);
+    color: var(--gold);
+    margin-bottom: 2.2vh;
+    font-weight: 500;
+  }
+  h1 {
+    font-family: "Fraunces", serif;
+    font-weight: 600;
+    line-height: 1.04;
+    font-size: clamp(34px, 5.6vw, 78px);
+    letter-spacing: -0.5px;
+    color: var(--cream);
+  }
+  h2 {
+    font-family: "Fraunces", serif;
+    font-weight: 600;
+    line-height: 1.08;
+    font-size: clamp(28px, 4vw, 54px);
+    letter-spacing: -0.3px;
+    margin-bottom: 3vh;
+  }
+  h2 .accent, h1 .accent { color: var(--gold); }
+  .lede {
+    font-size: clamp(17px, 2vw, 27px);
+    line-height: 1.5;
+    color: var(--cream-dim);
+    max-width: 60ch;
+  }
+  .lede.tight { max-width: 46ch; }
+  p.body { font-size: clamp(15px, 1.5vw, 21px); line-height: 1.55; color: var(--cream-dim); max-width: 62ch; }
+
+  ul.points { list-style: none; margin-top: 1vh; }
+  ul.points li {
+    position: relative;
+    padding-left: 1.6em;
+    margin: 1.6vh 0;
+    font-size: clamp(16px, 1.7vw, 24px);
+    line-height: 1.45;
+    color: var(--cream);
+    max-width: 60ch;
+  }
+  ul.points li::before {
+    content: "✦";
+    position: absolute; left: 0; top: 0;
+    color: var(--gold);
+    font-size: .85em;
+  }
+  ul.points li b { color: var(--cream); font-weight: 600; }
+  ul.points li span { color: var(--muted); }
+
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 5vw; align-items: start; }
+  .cols.tri { grid-template-columns: repeat(3, 1fr); gap: 2.5vw; }
+
+  .card {
+    background: rgba(255,255,255,.035);
+    border: 1px solid rgba(241,198,115,.18);
+    border-radius: 16px;
+    padding: 3vh 2vw;
+  }
+  .card h3 {
+    font-family: "Fraunces", serif;
+    font-size: clamp(18px, 1.9vw, 26px);
+    color: var(--gold);
+    margin-bottom: 1.2vh;
+    font-weight: 600;
+  }
+  .card p { font-size: clamp(14px, 1.35vw, 19px); line-height: 1.5; color: var(--cream-dim); }
+
+  .quote {
+    font-family: "Fraunces", serif;
+    font-style: italic;
+    font-size: clamp(20px, 2.6vw, 38px);
+    line-height: 1.3;
+    color: var(--cream);
+  }
+  .quote .accent { color: var(--gold); font-style: normal; }
+
+  .metric { display: flex; gap: 4vw; flex-wrap: wrap; margin-top: 3vh; }
+  .metric .m { max-width: 22ch; }
+  .metric .m b {
+    display: block;
+    font-family: "Fraunces", serif;
+    font-size: clamp(28px, 3.6vw, 52px);
+    color: var(--gold);
+    font-weight: 600;
+    line-height: 1.08;
+  }
+  .metric .m span {
+    display: block;
+    margin-top: .7em;
+    font-size: clamp(13px, 1.2vw, 16px);
+    line-height: 1.4;
+    color: var(--cream-dim);
+    text-transform: uppercase;
+    letter-spacing: .12em;
+  }
+
+  .compete-row { display: flex; flex-direction: column; gap: 1.4vh; margin-top: 1vh; }
+  .compete-row .row {
+    display: grid; grid-template-columns: 1.1fr 2fr; gap: 2vw;
+    padding: 1.4vh 1.6vw;
+    border: 1px solid rgba(255,255,255,.08);
+    border-radius: 12px;
+    align-items: center;
+  }
+  .compete-row .row.win { border-color: rgba(241,198,115,.45); background: rgba(241,198,115,.06); }
+  .compete-row .row b { font-family:"Fraunces",serif; font-size: clamp(15px,1.5vw,21px); }
+  .compete-row .row .who { color: var(--gold); }
+  .compete-row .row .what { color: var(--cream-dim); font-size: clamp(13px,1.3vw,18px); }
+
+  .footer-note { margin-top: 3.5vh; font-size: clamp(13px,1.3vw,18px); color: var(--muted); }
+  .footer-note b { color: var(--gold-soft); }
+
+  .contact { margin-top: 4vh; font-size: clamp(15px,1.5vw,21px); color: var(--cream); }
+  .contact a, a { color: var(--gold); text-decoration: none; }
+
+  .timeline { display: flex; flex-direction: column; gap: 1.2vh; margin-top:1vh; }
+  .timeline .step { display:flex; align-items:baseline; gap:1.2vw; }
+  .timeline .step .yr { font-family:"Fraunces",serif; color: var(--gold); font-size: clamp(14px,1.4vw,20px); min-width: 8.5em; }
+  .timeline .step .ev { color: var(--cream-dim); font-size: clamp(14px,1.4vw,20px); }
+
+  /* progress + chrome */
+  .chrome {
+    position: fixed; z-index: 5; bottom: 3.2vh; left: 0; right: 0;
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 0 9vw; pointer-events: none;
+  }
+  .pager { font-size: 13px; letter-spacing: .2em; color: var(--muted); text-transform: uppercase; }
+  .brand { font-family:"Fraunces",serif; font-size: 15px; color: var(--gold); letter-spacing:.04em; }
+  .progress { position: fixed; top: 0; left: 0; height: 3px; background: var(--gold); z-index: 6; transition: width .4s ease; }
+
+  .moon {
+    position: absolute; top: 8vh; right: 9vw;
+    width: clamp(60px, 7vw, 110px); height: clamp(60px, 7vw, 110px);
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 35%, var(--gold) 0%, var(--gold-soft) 45%, #c89a4e 100%);
+    box-shadow: 0 0 60px 12px rgba(241,198,115,.25);
+    opacity: .9;
+  }
+  .hint { position: fixed; bottom: 3.2vh; left: 50%; transform: translateX(-50%); font-size: 12px; color: var(--muted); z-index:5; letter-spacing:.1em; }
+  @media (max-width: 760px) {
+    .cols, .cols.tri { grid-template-columns: 1fr; gap: 2.5vh; }
+    .compete-row .row { grid-template-columns: 1fr; gap: .4vh; }
+  }
+
+  /* Print / PDF export: every slide visible, one 16:9 page each */
+  @media print {
+    @page { size: 13.333in 7.5in; margin: 0; }
+    html, body { overflow: visible; height: auto; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .chrome, .hint, .progress { display: none !important; }
+    .stars { display: none; }
+    .deck { height: auto; }
+    .slide {
+      display: flex !important;
+      opacity: 1 !important;
+      position: relative; inset: auto;
+      width: 100%; height: 7.5in;
+      page-break-after: always; break-after: page;
+      background-color: var(--navy);
+      background-image:
+        radial-gradient(1px 1px at 20% 30%, rgba(246,239,224,.7), transparent),
+        radial-gradient(1px 1px at 70% 20%, rgba(246,239,224,.5), transparent),
+        radial-gradient(1.5px 1.5px at 40% 70%, rgba(241,198,115,.6), transparent),
+        radial-gradient(1px 1px at 85% 60%, rgba(246,239,224,.4), transparent),
+        radial-gradient(1px 1px at 55% 45%, rgba(246,239,224,.5), transparent),
+        radial-gradient(1.5px 1.5px at 90% 35%, rgba(241,198,115,.5), transparent),
+        radial-gradient(1px 1px at 30% 15%, rgba(246,239,224,.5), transparent);
+      background-repeat: no-repeat;
+    }
+    .slide:last-child { page-break-after: avoid; break-after: avoid; }
+  }
+</style>
+</head>
+<body>
+<div class="stars"></div>
+<div class="progress" id="progress"></div>
+
+<div class="deck" id="deck">
+
+  <!-- SLIDE 1 — PROBLEM + CUSTOMER (opens with the wordmark) -->
+  <section class="slide active">
+    <div class="moon"></div>
+    <div class="wordmark">✦ Yarnia <em>— the opposite of a screen</em></div>
+    <div class="kicker">The customer · the problem</div>
+    <h2>It's 8pm. The kid won't settle.<br />The parent reaches for the iPad <span class="accent">they'll regret.</span></h2>
+    <ul class="points">
+      <li><b>Who:</b> a parent of a 3–7 year old. Not "families broadly" — one person you can picture, who exists <b>every single night.</b></li>
+      <li><b>Today they choose between two bad options:</b> hand over a glowing screen (and the guilt), or fight bedtime alone.</li>
+      <li>The one ritual parents most want to protect is the one most colonized by screens.</li>
+    </ul>
+  </section>
+
+  <!-- SLIDE 2 — SOLUTION + PRODUCT -->
+  <section class="slide">
+    <div class="kicker">The product · live demo</div>
+    <h2>Yarnia: a <span class="accent">screen-off</span> voice that knows your child.</h2>
+    <div class="cols">
+      <div>
+        <ul class="points">
+          <li>Open it → the screen goes dark → a warm voice greets your child <b>by name.</b></li>
+          <li>A quick, low-key co-creation ("an owl or a dragon tonight?"), then it narrates a calm, personalized story to sleep.</li>
+          <li>Every story is saved. Send tonight's to grandma with one tap.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>The moment that wins</h3>
+        <p class="quote" style="font-size:clamp(17px,1.9vw,26px);">"Another dragon story like last time? <span class="accent">I'll keep the thunder out.</span>"</p>
+        <p style="margin-top:1.6vh;">It opens already knowing the child. That single line is the whole pitch — and the one thing a recorded catalog can't say.</p>
+      </div>
+    </div>
+    <div class="footer-note">Live demo on the laptop · backup video ready · built today on Flutter + Cloudflare + InstantDB + ElevenLabs.</div>
+  </section>
+
+  <!-- SLIDE 3 — WHY NOW -->
+  <section class="slide">
+    <div class="kicker">Why now</div>
+    <h2>This is only possible in <span class="accent">2026.</span></h2>
+    <div class="cols tri">
+      <div class="card"><h3>Expressive voice</h3><p>Real-time, emotional TTS (ElevenLabs) finally sounds like a person telling a story, not a robot reading one. A year ago this broke the spell.</p></div>
+      <div class="card"><h3>Cheap generation</h3><p>A fresh, safe, personalized story per child per night went from a research budget to fractions of a cent.</p></div>
+      <div class="card"><h3>The anti-attention turn</h3><p>Parents in 2026 actively want <b>less</b> screen, not more. The cultural moment finally rewards a product that turns the screen off.</p></div>
+    </div>
+  </section>
+
+  <!-- SLIDE 4 — MARKET + COMPETITION -->
+  <section class="slide">
+    <div class="kicker">Market · competition</div>
+    <h2>Sleep apps play the same recording for every kid. <span class="accent">We don't.</span></h2>
+    <div class="compete-row">
+      <div class="row"><b class="who">Moshi · Calm Kids</b><span class="what">Pre-recorded catalog. Same story for every child. No memory.</span></div>
+      <div class="row"><b class="who">Yoto · Toniebox</b><span class="what">Fixed physical cards. Lovely hardware, frozen content.</span></div>
+      <div class="row win"><b class="who">Yarnia</b><span class="what">Generative + per-child memory. The kid is the hero, and it remembers them. A different product shape — costly for a catalog/kid-safety business to retrofit.</span></div>
+    </div>
+    <div class="metric">
+      <div class="m"><b>~€8/mo</b><span>price they say without hesitation</span></div>
+      <div class="m"><b>Bottom-up</b><span># parents of 3–7s × €8/mo, not "1% of a big number"</span></div>
+    </div>
+  </section>
+
+  <!-- SLIDE 5 — BUSINESS + EVIDENCE -->
+  <section class="slide">
+    <div class="kicker">Business model · evidence</div>
+    <h2>€8/mo — and the behavior is <span class="accent">already real.</span></h2>
+    <div class="cols">
+      <div>
+        <ul class="points">
+          <li><b>Model:</b> €8/mo subscription. Calm is €8, Spotify €10 — a price below the "do I need this" threshold.</li>
+          <li><b>Trust as a feature:</b> every story runs through age + safety constraints and avoids the exact things that scare your kid — because it remembers them.</li>
+          <li><b>Live signups</b> at yarnia.quest, driven through parent communities all day.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Non-copyable evidence</h3>
+        <p>Before Yarnia existed, our founder ran the exact ritual by hand: a recurring ChatGPT bedtime saga for his kids — <b>"Finn &amp; Ella."</b></p>
+        <div class="timeline">
+          <div class="step"><span class="yr">Jan 2025</span><span class="ev">first story: Finn &amp; Ella go to Kita</span></div>
+          <div class="step"><span class="yr">Jan–Feb</span><span class="ev">the golden key, the secret in the glass…</span></div>
+          <div class="step"><span class="yr">Jun 2025</span><span class="ev">still returning — the cherry tree, the horses Luma &amp; Rocco</span></div>
+        </div>
+        <p style="margin-top:1.4vh;">10+ stories over 6 months, same world, growing memory. The demand isn't a guess. We <b>lived it.</b></p>
+      </div>
+    </div>
+  </section>
+
+  <!-- SLIDE 6 — GO-TO-MARKET -->
+  <section class="slide">
+    <div class="kicker">Go-to-market</div>
+    <h2>The story sells the <span class="accent">next parent.</span></h2>
+    <div class="cols">
+      <div class="card">
+        <h3>1 · The share loop</h3>
+        <p>Every story ends with "send tonight's story to grandma." Grandma hears it → a new parent lands at the top of the funnel. Distribution is built into the product, not bolted on.</p>
+      </div>
+      <div class="card">
+        <h3>2 · Where parents already gather</h3>
+        <p>Parent communities (r/Parenting, local Hamburg/DE groups) and preschool / daycare partnerships — naming a real channel, not "we'll do ads."</p>
+      </div>
+    </div>
+    <div class="footer-note">The moat compounds: <b>the longer a family uses Yarnia, the more it knows their child — and the more starting over costs.</b></div>
+  </section>
+
+  <!-- SLIDE 7 — TEAM -->
+  <section class="slide">
+    <div class="moon"></div>
+    <div class="kicker">Team · contact</div>
+    <h2>Two engineers. One <span class="accent">lives the problem.</span></h2>
+    <div class="cols">
+      <div class="card">
+        <h3>Burhan</h3>
+        <p>Father of two daughters. Bedtime is the ritual he refuses to outsource to a screen — and the one he already hand-built for years. Founder-market fit, and he builds.</p>
+      </div>
+      <div class="card">
+        <h3>Cansin</h3>
+        <p>Engineering — voice, memory, and the backend that makes the story feel alive in real time.</p>
+      </div>
+    </div>
+    <div class="footer-note">Our open question: do parents trust an AI to tell their kid a story? So we built safety in from day one — <b>and our next test is 20 parents this week.</b></div>
+    <div class="contact"><a href="https://yarnia.quest">yarnia.quest</a> &nbsp;·&nbsp; hi@ai-beavers.com &nbsp;·&nbsp; github.com/yarnia-quest/yarnia</div>
+  </section>
+
+</div>
+
+<div class="chrome">
+  <div class="brand">✦ Yarnia</div>
+  <div class="pager" id="pager">01 / 07</div>
+</div>
+<div class="hint" id="hint">← → to navigate · F for fullscreen</div>
+
+<script>
+  const slides = Array.from(document.querySelectorAll('.slide'));
+  let i = 0;
+  const pager = document.getElementById('pager');
+  const progress = document.getElementById('progress');
+  const hint = document.getElementById('hint');
+  function pad(n){ return String(n).padStart(2,'0'); }
+  function show(n){
+    i = Math.max(0, Math.min(slides.length - 1, n));
+    slides.forEach((s, idx) => s.classList.toggle('active', idx === i));
+    pager.textContent = pad(i+1) + ' / ' + pad(slides.length);
+    progress.style.width = ((i)/(slides.length-1)*100) + '%';
+    if (i > 0) hint.style.display = 'none';
+  }
+  document.addEventListener('keydown', (e) => {
+    if (['ArrowRight','ArrowDown',' ','PageDown'].includes(e.key)) { e.preventDefault(); show(i+1); }
+    else if (['ArrowLeft','ArrowUp','PageUp'].includes(e.key)) { e.preventDefault(); show(i-1); }
+    else if (e.key === 'Home') show(0);
+    else if (e.key === 'End') show(slides.length-1);
+    else if (e.key.toLowerCase() === 'f') {
+      if (!document.fullscreenElement) document.documentElement.requestFullscreen();
+      else document.exitFullscreen();
+    }
+  });
+  document.addEventListener('click', (e) => { if (!e.target.closest('a')) show(i+1); });
+  show(0);
+</script>
+</body>
+</html>
