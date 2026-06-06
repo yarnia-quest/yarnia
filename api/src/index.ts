@@ -26,6 +26,17 @@ type AppDeps = StoryDeps & {
   fetchTranscript: (conversationId: string) => Promise<ConversationTurn[]>;
   storeAudio: (key: string, base64: string) => Promise<void>;
   getAudio: (key: string) => Promise<ArrayBuffer | null>;
+  createChild: (input: NewChild) => Promise<string>;
+};
+
+// What onboarding collects. name + age are required (the two questions the screen-off
+// onboarding asks); the rest default to empty. Stored verbatim into the `children` entity.
+type NewChild = {
+  name: string;
+  age: number;
+  favoriteCharacters: string[];
+  themes: string[];
+  fearsToAvoid: string[];
 };
 
 function defaultDeps(env: Bindings): AppDeps {
@@ -58,6 +69,23 @@ function defaultDeps(env: Bindings): AppDeps {
     storeAudio: async (key, base64) => {
       const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
       await db.storage.uploadFile(key, bytes, { contentType: "audio/mpeg" });
+    },
+    // Mints a child row with the admin token (clients can't write `children` — perms are
+    // all-false). The generated id is the stable handle the app keeps so the same child is
+    // recalled on future nights.
+    createChild: async (input) => {
+      const childId = id();
+      await db.transact(
+        db.tx.children[childId].update({
+          name: input.name,
+          age: input.age,
+          favoriteCharacters: input.favoriteCharacters,
+          themes: input.themes,
+          fearsToAvoid: input.fearsToAvoid,
+          createdAt: Date.now(),
+        }),
+      );
+      return childId;
     },
     getAudio: async (key) => {
       // Admin query bypasses $files permissions; resolve the CDN url, then proxy the bytes.
@@ -116,6 +144,35 @@ export function createApp(makeDeps: (env: Bindings) => AppDeps = defaultDeps) {
       audioKey,
       status: "ok",
     });
+  });
+
+  // POST /child — onboarding. { name, age, favoriteCharacters?, themes?, fearsToAvoid? }
+  // -> { childId, name }. Mints a child row (admin-only write) and returns its id so the
+  // app can immediately start a personalized voice session with GET /agent/session?childId=.
+  app.post("/child", async (c) => {
+    type ChildBody = {
+      name?: string;
+      age?: number;
+      favoriteCharacters?: string[];
+      themes?: string[];
+      fearsToAvoid?: string[];
+    };
+    const body = await c.req.json<ChildBody>().catch(() => ({}) as ChildBody);
+    const name = body.name?.trim();
+    if (!name) return c.json({ error: "name required" }, 400);
+    if (typeof body.age !== "number" || !Number.isFinite(body.age)) {
+      return c.json({ error: "age required" }, 400);
+    }
+
+    const deps = makeDeps(c.env);
+    const childId = await deps.createChild({
+      name,
+      age: body.age,
+      favoriteCharacters: body.favoriteCharacters ?? [],
+      themes: body.themes ?? [],
+      fearsToAvoid: body.fearsToAvoid ?? [],
+    });
+    return c.json({ childId, name });
   });
 
   // GET /agent/session?childId=...

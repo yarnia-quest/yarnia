@@ -14,6 +14,7 @@ type AppDeps = {
   fetchTranscript: (conversationId: string) => Promise<ConversationTurn[]>;
   storeAudio: (key: string, base64: string) => Promise<void>;
   getAudio: (key: string) => Promise<ArrayBuffer | null>;
+  createChild: (input: unknown) => Promise<string>;
 };
 
 const lisa: Child = {
@@ -38,6 +39,7 @@ function appWith(deps: Partial<AppDeps>) {
     fetchTranscript: deps.fetchTranscript ?? (async () => []),
     storeAudio: deps.storeAudio ?? (async () => {}),
     getAudio: deps.getAudio ?? (async () => null),
+    createChild: deps.createChild ?? (async () => "new-child-id"),
   }));
 }
 
@@ -81,6 +83,59 @@ describe("POST /story", () => {
     const res = await post(appWith({ loadChild: async () => null }), "/story", { childId: "ghost" });
     expect(res.status).toBe(404);
     expect(await res.json()).toEqual({ error: "child_not_found" });
+  });
+});
+
+describe("POST /child", () => {
+  it("400s when name is missing (without building any deps)", async () => {
+    const res = await post(createApp(), "/child", {});
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "name required" });
+  });
+
+  it("400s when name is blank after trimming", async () => {
+    const res = await post(appWith({}), "/child", { name: "   ", age: 6 });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "name required" });
+  });
+
+  it("400s when age is missing", async () => {
+    const res = await post(appWith({}), "/child", { name: "Mira" });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "age required" });
+  });
+
+  it("creates a child and returns the new childId + name", async () => {
+    const createChild = vi.fn(async () => "child-abc");
+    const res = await post(appWith({ createChild }), "/child", {
+      name: "Mira",
+      age: 6,
+      favoriteCharacters: ["fox"],
+      fearsToAvoid: ["spiders"],
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ childId: "child-abc", name: "Mira" });
+    expect(createChild).toHaveBeenCalledWith({
+      name: "Mira",
+      age: 6,
+      favoriteCharacters: ["fox"],
+      themes: [],
+      fearsToAvoid: ["spiders"],
+    });
+  });
+
+  it("trims the name and defaults the optional preference fields", async () => {
+    const createChild = vi.fn(async () => "child-xyz");
+    const res = await post(appWith({ createChild }), "/child", { name: "  Sam  ", age: 4 });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ childId: "child-xyz", name: "Sam" });
+    expect(createChild).toHaveBeenCalledWith({
+      name: "Sam",
+      age: 4,
+      favoriteCharacters: [],
+      themes: [],
+      fearsToAvoid: [],
+    });
   });
 });
 
