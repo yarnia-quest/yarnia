@@ -13,11 +13,11 @@ deployed prod backend (`https://api.yarnia.quest`), so any build that forgets th
 
 | Target | `API_BASE` | Why |
 |---|---|---|
-| Physical iPhone, web, any release build | `https://api.yarnia.quest` (default) | hits the deployed prod Worker; no dev server or tailnet needed |
-| Web / iOS Simulator, local dev | `http://localhost:8787` (opt in via `local.json`) | browser / simulator share the Mac's network; needs the local `api/` running |
+| Physical device, web, any release build | `https://api.yarnia.quest` (default) | hits the deployed prod Worker; no dev server or tailnet needed |
+| Web / simulator / device, local dev | `http://localhost:8787` (opt in via `device.dev.json`) | shares the Mac's network (device via `adb reverse`); needs the local `api/` running |
 
-Values live in `dart_defines/local.json` (localhost) and `dart_defines/device.json` (prod,
-same as the default). Run with the matching one:
+Values live in `dart_defines/device.dev.json` (localhost) and `dart_defines/device.prod.json`
+(prod, same as the default). Run with the matching one:
 
 ```sh
 # prod backend (default, no flag needed)
@@ -25,11 +25,11 @@ flutter run -d chrome
 flutter build web
 
 # local dev against a local api/ Worker (explicit opt-in)
-flutter run --dart-define-from-file=dart_defines/local.json -d chrome      # web
-flutter run --dart-define-from-file=dart_defines/local.json -d <simulator> # iOS simulator
+flutter run --dart-define-from-file=dart_defines/device.dev.json -d chrome      # web
+flutter run --dart-define-from-file=dart_defines/device.dev.json -d <simulator> # iOS simulator
 
-# physical iPhone, explicit prod (same as default)
-flutter run --dart-define-from-file=dart_defines/device.json -d <device>
+# physical device, explicit prod (same as default)
+flutter run --dart-define-from-file=dart_defines/device.prod.json -d <device>
 
 # one-off override (e.g. a LAN IP)
 flutter run --dart-define=API_BASE=http://192.168.1.42:8787 -d <device>

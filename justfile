@@ -1,9 +1,9 @@
 # Yarnia dev commands
 # Run: just <recipe>   (requires https://github.com/casey/just)
 
+# Backend URL per environment lives in dart_defines/device.{dev,prod}.json
+# (dev = http://localhost:8787, prod = https://api.yarnia.quest). Single source of truth.
 DEVICE := "53111FDAP004SA"
-LOCAL_API := "http://localhost:8787"
-PROD_API  := "https://api.yarnia.quest"
 
 # ── API ──────────────────────────────────────────────────────────────────────
 
@@ -32,15 +32,15 @@ tail-prod:
 # Run Flutter on device against LOCAL API (requires: just api + adb reverse)
 flutter-local:
     adb reverse tcp:8787 tcp:8787
-    cd app/flutter && ~/flutter/bin/flutter run -d {{DEVICE}} --dart-define=API_BASE={{LOCAL_API}}
+    cd app/flutter && ~/flutter/bin/flutter run -d {{DEVICE}} --dart-define-from-file=dart_defines/device.dev.json
 
 # Run Flutter on device against PRODUCTION API
 flutter-prod:
-    cd app/flutter && ~/flutter/bin/flutter run -d {{DEVICE}} --dart-define-from-file=dart_defines/device.json
+    cd app/flutter && ~/flutter/bin/flutter run -d {{DEVICE}} --dart-define-from-file=dart_defines/device.prod.json
 
 # Build release APK against production API
 flutter-release:
-    cd app/flutter && ~/flutter/bin/flutter build apk --dart-define-from-file=dart_defines/device.json
+    cd app/flutter && ~/flutter/bin/flutter build apk --dart-define-from-file=dart_defines/device.prod.json
 
 # ── Combined ─────────────────────────────────────────────────────────────────
 
@@ -52,4 +52,4 @@ dev:
     echo "API started (logs: just logs)"
     sleep 4
     adb reverse tcp:8787 tcp:8787
-    cd app/flutter && ~/flutter/bin/flutter run -d {{DEVICE}} --dart-define=API_BASE={{LOCAL_API}}
+    cd app/flutter && ~/flutter/bin/flutter run -d {{DEVICE}} --dart-define-from-file=dart_defines/device.dev.json
