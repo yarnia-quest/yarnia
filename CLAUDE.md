@@ -16,6 +16,7 @@
 ## Domains
 - `yarnia.quest` (apex) → **marketing** Worker (serves `marketing/public/`; the page writes signups directly to InstantDB via the public app id + a create-only permission).
 - `api.yarnia.quest` → **app backend** (`api/`). Reserved; the marketing side must not use it.
+- `app.yarnia.quest` → **Flutter web client** (`app/flutter/`, `flutter build web`). Assets-only Worker (`yarnia-app`), no secrets; deployed by `.github/workflows/deploy-app.yml`.
 
 ## Stack
 - **Frontend:** Flutter (Dart) — `app/flutter/`. (`app/astro/` is a secondary web client.)

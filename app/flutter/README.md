@@ -40,3 +40,26 @@ In VS Code, pick **"Yarnia: prod backend (device / web / release)"** (the defaul
 selecting the target sets `API_BASE` for you.
 
 The local-dev target needs the `api/` Worker running: `cd ../../api && npm run dev` (serves `:8787`).
+
+## Web deploy (app.yarnia.quest)
+
+`flutter build web` is served at **https://app.yarnia.quest** by an assets-only Cloudflare
+Worker (`wrangler.toml` here — no Worker script; Cloudflare serves `build/web/` directly and
+falls back to `index.html` for client-side routes via `not_found_handling`). The deploy holds
+no secret: the backend URL is baked into the build at compile time, so the worker just serves
+files and the app talks to `api.yarnia.quest`.
+
+**Automatic (preferred):** any push to `main` touching `app/flutter/**` triggers
+`.github/workflows/deploy-app.yml`, which builds with the prod backend
+(`dart_defines/device.prod.json`) and deploys via `cloudflare/wrangler-action`. DNS + TLS for
+`app.yarnia.quest` are provisioned by wrangler (`custom_domain` route) against the existing
+`yarnia.quest` zone — nothing to set up by hand.
+
+**Manual** (needs the Cloudflare deploy creds, which live in `api/.env`, never `app/.env` —
+they are secrets and must not ship in the client bundle):
+
+```sh
+flutter build web --release --dart-define-from-file=dart_defines/device.prod.json
+# load CLOUDFLARE_API_TOKEN + CLOUDFLARE_ACCOUNT_ID from api/.env, then:
+npx wrangler deploy
+```
