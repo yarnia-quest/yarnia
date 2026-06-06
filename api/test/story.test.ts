@@ -9,7 +9,8 @@ type AppDeps = {
   synthesize: (text: string) => Promise<string>;
   agentId: string;
   getSignedUrl: (agentId: string) => Promise<string>;
-  saveSession: (childId: string, input: unknown) => Promise<void>;
+  saveSession: (childId: string, input: unknown) => Promise<string>;
+  updateSessionAudio: (sessionId: string, audioKey: string) => Promise<void>;
   storeAudio: (key: string, base64: string) => Promise<string>;
   getAudioUrl: (key: string) => Promise<string | null>;
   createChild: (input: unknown) => Promise<string>;
@@ -33,7 +34,8 @@ function appWith(deps: Partial<AppDeps>) {
     synthesize: deps.synthesize ?? (async () => "BASE64AUDIO"),
     agentId: deps.agentId ?? "agent_test",
     getSignedUrl: deps.getSignedUrl ?? (async () => "wss://signed"),
-    saveSession: deps.saveSession ?? (async () => {}),
+    saveSession: deps.saveSession ?? (async () => "session-id"),
+    updateSessionAudio: deps.updateSessionAudio ?? (async () => {}),
     storeAudio: deps.storeAudio ?? (async (key) => key),
     getAudioUrl: deps.getAudioUrl ?? (async () => "https://fake-url"),
     createChild: deps.createChild ?? (async () => "new-child-id"),
@@ -245,29 +247,35 @@ describe("POST /agent/webhook (ElevenLabs post-call)", () => {
     expect(res.status).toBe(401);
   });
 
-  it("verifies signature, persists the session, and synthesizes audio", async () => {
-    const saveSession = vi.fn(async () => {});
+  it("verifies signature, persists the session first, then attaches synthesized audio", async () => {
+    const saveSession = vi.fn(async () => "sess-1");
     const synthesize = vi.fn(async () => "BASE64AUDIO");
-    const storeAudio = vi.fn(async () => {});
+    const storeAudio = vi.fn(async (key: string) => key);
+    const updateSessionAudio = vi.fn(async () => {});
     const generate = vi.fn(async () =>
       JSON.stringify({ title: "Dragon", summary: "a gentle dragon", characters: ["dragon"], continuityNotes: [] }),
     );
     const body = webhookBody("lisa-1");
-    const res = await appWith({ saveSession, synthesize, storeAudio, generate }).request(
+    const res = await appWith({ saveSession, synthesize, storeAudio, updateSessionAudio, generate }).request(
       "/agent/webhook",
       { method: "POST", headers: { "content-type": "application/json", "ElevenLabs-Signature": await signed(body) }, body },
       ENV,
     );
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true, persisted: true });
-    expect(synthesize).toHaveBeenCalledOnce();
-    expect(storeAudio).toHaveBeenCalledOnce();
     expect(saveSession).toHaveBeenCalledOnce();
     expect(saveSession.mock.calls[0][0]).toBe("lisa-1"); // linked to the right child
+    // Row is written WITHOUT audio; the mp3 is synthesized + attached afterward.
+    expect((saveSession.mock.calls[0][1] as { audioKey?: string }).audioKey).toBeUndefined();
+    expect(synthesize).toHaveBeenCalledOnce();
+    expect(storeAudio).toHaveBeenCalledOnce();
+    expect(updateSessionAudio).toHaveBeenCalledOnce();
+    expect(updateSessionAudio.mock.calls[0][0]).toBe("sess-1"); // attached to the saved row
+    expect(updateSessionAudio.mock.calls[0][1]).toMatch(/^stories\/.*\.mp3$/);
   });
 
   it("ignores non-transcription event types", async () => {
-    const saveSession = vi.fn(async () => {});
+    const saveSession = vi.fn(async () => "sess-x");
     const body = JSON.stringify({ type: "post_call_audio", data: {} });
     const res = await appWith({ saveSession }).request(
       "/agent/webhook",
@@ -280,7 +288,7 @@ describe("POST /agent/webhook (ElevenLabs post-call)", () => {
   });
 
   it("does not persist an anonymous conversation (no child_id)", async () => {
-    const saveSession = vi.fn(async () => {});
+    const saveSession = vi.fn(async () => "sess-y");
     const body = webhookBody(null);
     const res = await appWith({ saveSession }).request(
       "/agent/webhook",

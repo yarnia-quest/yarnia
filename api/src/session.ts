@@ -84,7 +84,8 @@ export function parseRecap(raw: string): Recap {
 
 export type PersistDeps = {
   generate: (prompt: StoryPrompt) => Promise<string>;
-  saveSession: (childId: string, input: SaveSessionInput) => Promise<void>;
+  // Returns the id of the created session row, so callers can attach audio to it later.
+  saveSession: (childId: string, input: SaveSessionInput) => Promise<string>;
 };
 
 export async function persistSession(
@@ -114,12 +115,16 @@ export async function persistSession(
 // Persists an agent (ElevenLabs voice) conversation as a session. The transcript
 // is already available from the ElevenLabs API; we extract the agent's story turns,
 // run the same recap pass as the /story flow, and save to InstantDB.
+// Returns the new session id (so the caller can attach audio afterward), or null if there
+// was nothing to save / it failed. Audio is intentionally NOT done here: the row is written
+// fast (recap + DB write) and the slow mp3 synthesis is attached separately, so a story shows
+// up in history quickly instead of waiting on TTS.
 export async function persistAgentSession(
   childId: string,
   transcript: ConversationTurn[],
   deps: PersistDeps,
   audioKey?: string,
-): Promise<void> {
+): Promise<string | null> {
   try {
     const agentText = transcript
       .filter((t) => t.role === "agent" && t.message)
@@ -127,7 +132,7 @@ export async function persistAgentSession(
       .join("\n\n");
     if (!agentText) {
       console.error("agent session write-back skipped: empty transcript");
-      return;
+      return null;
     }
 
     const recap = parseRecap(await deps.generate(buildRecapPrompt(agentText)));
@@ -135,7 +140,7 @@ export async function persistAgentSession(
       .filter((t) => t.message)
       .map((t) => ({ role: t.role === "agent" ? "assistant" : "user", content: t.message! }));
 
-    await deps.saveSession(childId, {
+    return await deps.saveSession(childId, {
       title: recap.title,
       summary: recap.summary,
       messages,
@@ -146,5 +151,6 @@ export async function persistAgentSession(
     });
   } catch (err) {
     console.error("agent session write-back failed:", err);
+    return null;
   }
 }

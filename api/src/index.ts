@@ -26,7 +26,8 @@ type Bindings = {
 type AppDeps = StoryDeps & {
   agentId: string;
   getSignedUrl: (agentId: string) => Promise<string>;
-  saveSession: (childId: string, input: SaveSessionInput) => Promise<void>;
+  saveSession: (childId: string, input: SaveSessionInput) => Promise<string>;
+  updateSessionAudio: (sessionId: string, audioKey: string) => Promise<void>;
   storeAudio: (key: string, base64: string) => Promise<string>;
   getAudioUrl: (key: string) => Promise<string | null>;
   createChild: (input: NewChild) => Promise<string>;
@@ -50,9 +51,10 @@ function defaultDeps(env: Bindings): AppDeps {
     synthesize: (text) => synthesizeStory(text, { apiKey: env.ELEVENLABS_API_KEY }),
     agentId: env.ELEVENLABS_AGENT_ID,
     getSignedUrl: (agentId) => getSignedUrl(agentId, { apiKey: env.ELEVENLABS_API_KEY }),
-    saveSession: (childId, input) =>
-      db.transact(
-        db.tx.sessions[id()]
+    saveSession: async (childId, input) => {
+      const sessionId = id();
+      await db.transact(
+        db.tx.sessions[sessionId]
           .update({
             title: input.title,
             summary: input.summary,
@@ -64,7 +66,14 @@ function defaultDeps(env: Bindings): AppDeps {
             createdAt: Date.now(),
           })
           .link({ child: childId }),
-      ),
+      );
+      return sessionId;
+    },
+    // Attaches the narration mp3 to an already-saved session (the audio is synthesized
+    // after the row is written so the story shows up in history without waiting on TTS).
+    updateSessionAudio: async (sessionId, audioKey) => {
+      await db.transact(db.tx.sessions[sessionId].update({ audioKey }));
+    },
     storeAudio: async (key, base64) => {
       const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
       await db.storage.uploadFile(key, bytes, { contentType: "audio/mpeg" });
@@ -231,24 +240,29 @@ export function createApp(makeDeps: (env: Bindings) => AppDeps = defaultDeps) {
 
     const deps = makeDeps(c.env);
     const persist = async () => {
+      // 1) Write the session row FIRST (recap + memory). This is fast, so the story shows up
+      //    in history almost immediately instead of waiting on mp3 synthesis.
+      const sessionId = await persistAgentSession(childId, transcript, deps);
+      if (!sessionId) return;
+
+      // 2) Then the slow part — synthesize + store the narration mp3 — and attach it to the
+      //    saved row. If TTS fails, the story is already saved (just without replay audio).
       const storyText = transcript
         .filter((t) => t.role === "agent" && t.message)
         .map((t) => t.message!)
         .join("\n\n");
-
-      let audioKey: string | undefined;
       if (storyText) {
         try {
           const audioBase64 = await deps.synthesize(storyText.slice(0, 4500));
           if (audioBase64) {
-            audioKey = `stories/${crypto.randomUUID()}.mp3`;
+            const audioKey = `stories/${crypto.randomUUID()}.mp3`;
             await deps.storeAudio(audioKey, audioBase64);
+            await deps.updateSessionAudio(sessionId, audioKey);
           }
         } catch (err) {
-          console.error("webhook audio synthesis/storage failed, continuing without audio:", err);
+          console.error("webhook audio synthesis/storage failed, story saved without audio:", err);
         }
       }
-      await persistAgentSession(childId, transcript, deps, audioKey);
     };
 
     try {

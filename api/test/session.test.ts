@@ -75,7 +75,7 @@ describe("persistSession (write-back, best-effort)", () => {
       async () =>
         '{"title":"The Sleepy Dragon","summary":"a dragon who learned to share","characters":["dragon"],"continuityNotes":["the dragon shared his sparkly stones with friends"]}',
     );
-    const saveSession = vi.fn(async () => {});
+    const saveSession = vi.fn(async () => "sess-1");
     await persistSession("lisa-1", "dragon", prompt, "the full story text", { generate, saveSession });
 
     expect(saveSession).toHaveBeenCalledWith("lisa-1", {
@@ -94,7 +94,7 @@ describe("persistSession (write-back, best-effort)", () => {
 
   it("falls back to the chosen character when the recap extracts none", async () => {
     const generate = vi.fn(async () => '{"title":"T","summary":"s","characters":[],"continuityNotes":[]}');
-    const saveSession = vi.fn(async () => {});
+    const saveSession = vi.fn(async () => "sess-2");
     await persistSession("lisa-1", "owl", prompt, "story", { generate, saveSession });
     expect(saveSession).toHaveBeenCalledWith(
       "lisa-1",
