@@ -49,6 +49,8 @@
 	</dict>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Yarnia needs your microphone so your child can choose tonight's story character by speaking.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Yarnia uses speech recognition to understand what character or story your child asks for out loud.</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>
