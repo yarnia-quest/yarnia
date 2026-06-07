@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="108" height="108" viewBox="0 0 108 108" role="img" aria-label="Yarnia background">
+  <defs>
+    <radialGradient id="sky" cx="64%" cy="30%" r="90%">
+      <stop offset="0" stop-color="#232a57"/>
+      <stop offset="0.6" stop-color="#161836"/>
+      <stop offset="1" stop-color="#0c0d1f"/>
+    </radialGradient>
+  </defs>
+  <rect x="0" y="0" width="108" height="108" fill="url(#sky)"/>
+  <g fill="#f6efe0">
+    <circle cx="26" cy="28" r="1.1" opacity="0.7"/>
+    <circle cx="84" cy="24" r="0.9" opacity="0.55"/>
+    <circle cx="90" cy="68" r="1.0" opacity="0.6"/>
+    <circle cx="30" cy="82" r="0.9" opacity="0.5"/>
+    <circle cx="78" cy="90" r="0.8" opacity="0.45"/>
+  </g>
+</svg>
