@@ -85,10 +85,12 @@ if (!webm || !existsSync(webm)) {
   );
 }
 
-// Orb timing in the WEBM timeline (the capture logs orbAppear/orbEnd relative to navigation start).
+// Orb timing in the WEBM timeline. The capture logs marks in its OWN timeline (from process start),
+// but the webm only starts recording a few seconds later (browser launch + context creation), so the
+// marks run ahead of the webm. orbEnd is logged right before the recording is finalized, so it lines
+// up with the end of the webm: offset = orbEnd - webmDuration converts every mark into webm time.
 const webmDur = probeDuration(webm);
 let orbAt = Math.max(0, webmDur - 14); // fallback: the capture records ~14s after the orb appears
-let orbEnd = webmDur;
 let onboardAt = null; // webm ts when the onboarding form is ready (start of the demo's pre-roll)
 if (existsSync(MARKS)) {
   try {
@@ -96,23 +98,35 @@ if (existsSync(MARKS)) {
     const a = parseFloat(m?.marks?.orbAppear);
     const e = parseFloat(m?.marks?.orbEnd);
     const o = parseFloat(m?.marks?.onboardReady);
-    if (Number.isFinite(a)) orbAt = a;
-    if (Number.isFinite(e)) orbEnd = e;
-    if (Number.isFinite(o)) onboardAt = o;
+    if (Number.isFinite(a) && Number.isFinite(e)) {
+      const offset = e - webmDur; // capture-timeline -> webm-timeline
+      orbAt = Math.max(0, a - offset);
+      if (Number.isFinite(o)) onboardAt = Math.max(0, o - offset);
+    } else if (Number.isFinite(a)) {
+      orbAt = a;
+      if (Number.isFinite(o)) onboardAt = o;
+    }
   } catch {
     /* fall back to the duration-based estimate */
   }
 }
+
+// Clamp the orb windows to what was actually recorded after the orb, so a short capture can never
+// slice past the end of the webm (which produces empty streams).
+const availAfterOrb = Math.max(0, webmDur - orbAt);
+let goldLen = GOLD_LEN;
+let creamLen = CREAM_LEN;
+if (availAfterOrb < goldLen + CREAM_GAP + creamLen) {
+  const scale = Math.max(0, (availAfterOrb - CREAM_GAP) / (goldLen + creamLen));
+  goldLen = Math.max(1, goldLen * scale);
+  creamLen = Math.max(1, creamLen * scale);
+  console.warn(`warning: only ${availAfterOrb.toFixed(1)}s after the orb; clamped gold=${goldLen.toFixed(1)} cream=${creamLen.toFixed(1)}`);
+}
+
 // The pre-roll shows the real onboarding (name -> age -> favorite characters -> ...) running up to
 // the orb, so the demo opens on the actual setup the kid sees. Spans onboardReady -> orbAppear.
 const PREROLL_LEN =
   onboardAt != null && orbAt - onboardAt > 2 ? orbAt - onboardAt : PREROLL_FALLBACK;
-const availAfterOrb = Math.min(orbEnd, webmDur) - orbAt;
-if (availAfterOrb < GOLD_LEN + CREAM_GAP + CREAM_LEN) {
-  console.warn(
-    `warning: only ${availAfterOrb.toFixed(1)}s recorded after the orb (need ${(GOLD_LEN + CREAM_GAP + CREAM_LEN).toFixed(1)}s); windows may be tight`,
-  );
-}
 
 const greetingDur = probeDuration(resolve(publicDir, "realapp-greeting.mp3"));
 const kidDur = probeDuration(resolve(publicDir, "realapp-kid.mp3"));
@@ -127,7 +141,7 @@ const total = storyAt + storyDur + TAIL;
 // Source windows in the webm timeline.
 const prerollSrc = onboardAt != null ? onboardAt : Math.max(0, orbAt - PREROLL_LEN);
 const goldSrc = orbAt; // GOLD starts when the orb appears
-const creamSrc = orbAt + GOLD_LEN + CREAM_GAP;
+const creamSrc = orbAt + goldLen + CREAM_GAP;
 
 // Visual segment target durations.
 const goldGreetingLen = kidAt - greetingAt; // gold under the greeting
@@ -149,15 +163,15 @@ console.log(
 // re-encoded identically so the later concat is seamless.
 const scaleVf = `scale=${SCALE}:flags=lanczos,fps=${FPS}`;
 ff(["-i", webm, "-ss", String(prerollSrc), "-t", String(PREROLL_LEN), "-vf", scaleVf, ...V, T("preroll.mp4")]);
-ff(["-i", webm, "-ss", String(goldSrc), "-t", String(GOLD_LEN), "-vf", scaleVf, ...V, T("gold.mp4")]);
-ff(["-i", webm, "-ss", String(creamSrc), "-t", String(CREAM_LEN), "-vf", scaleVf, ...V, T("cream.mp4")]);
+ff(["-i", webm, "-ss", String(goldSrc), "-t", String(goldLen), "-vf", scaleVf, ...V, T("gold.mp4")]);
+ff(["-i", webm, "-ss", String(creamSrc), "-t", String(creamLen), "-vf", scaleVf, ...V, T("cream.mp4")]);
 
 // 3. Build the state-matched segments (loop the short windows to cover the longer turns).
 const loops = (target, src) => Math.ceil(target / src); // -stream_loop count
 ff(["-i", T("gold.mp4"), "-t", String(goldGreetingLen), ...V, T("seg-greeting.mp4")]);
-ff(["-stream_loop", String(loops(creamKidLen, CREAM_LEN)), "-i", T("cream.mp4"),
+ff(["-stream_loop", String(loops(creamKidLen, creamLen)), "-i", T("cream.mp4"),
   "-t", String(creamKidLen), ...V, T("seg-kid.mp4")]);
-ff(["-stream_loop", String(loops(goldStoryLen, GOLD_LEN)), "-i", T("gold.mp4"),
+ff(["-stream_loop", String(loops(goldStoryLen, goldLen)), "-i", T("gold.mp4"),
   "-t", String(goldStoryLen), ...V, T("seg-story.mp4")]);
 
 // Concatenate the four segments into one silent visual track.
