@@ -15,6 +15,7 @@
 ## Slide 2 — Solution + product
 - **Headline:** Yarnia: open it, the screen goes dark, a voice tells your kid a story made just for them.
 - Light co-creation up front ("an owl or a dragon?"), then a calm narrated story to sleep.
+- Built and demoable: per-child memory, multi-child profiles, a content-safety guardrail, and a live subscribe flow (not a mockup).
 - *(Live demo / QR here. This slide is mostly the demo.)*
 
 ## Slide 3 — Why now
@@ -29,14 +30,15 @@
 - Bottom-up: # parents × €8/mo. (Fill the real number.)
 
 ## Slide 5 — Business model + evidence
-- **Model:** €8/mo subscription (Calm €8, Spotify €10 — a price you say without hesitation).
-- **Evidence:** landing-page signups [screenshot the count] + any "I'd pay for this" quote, verbatim.
+- **Model:** €8/mo subscription (Calm €8, Spotify €10, a price you say without hesitation). The subscribe flow is wired end-to-end in the prototype (demonstrated, not a mockup).
+- **Evidence:** live landing page at yarnia.quest with a real-time waitlist counter; screenshot the count + any "I'd pay for this" quote, verbatim.
 - Content safety as trust: every story runs through age + safety constraints, and avoids the child's known fears.
 
 ## Slide 6 — Go-to-market
 - **Headline:** The story sells the next parent.
 - Channel 1: the share loop — "send tonight's story to grandma" → grandma hears it → new parent at the top of the funnel.
 - Channel 2: parent communities + preschool/daycare partnerships.
+- Moat compounds per child: each kid gets their own remembered world, so a family with two kids has twice the switching cost.
 
 ## Slide 7 — Team
 - **Burhan** — dad of two, lives the problem, builds.

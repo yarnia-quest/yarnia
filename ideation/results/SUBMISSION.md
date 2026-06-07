@@ -40,11 +40,13 @@ Contact: hi@ai-beavers.com
 | `SUBMISSION.md` | This file — the checklist + form block. |
 
 ### Re-export the PDF after any deck edit
+Locally (macOS Chrome):
 ```bash
 cd ideation/results && "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
   --headless --disable-gpu --no-pdf-header-footer \
   --print-to-pdf="deck.pdf" --virtual-time-budget=4000 "file://$(pwd)/deck.html"
 ```
+Or run the **Regenerate deck PDF** GitHub Action (`.github/workflows/regenerate-deck-pdf.yml`, `workflow_dispatch`): it renders `deck.pdf` from `deck.html` on a runner and commits it. It also runs automatically when `deck.html` changes on `main`.
 
 ---
 

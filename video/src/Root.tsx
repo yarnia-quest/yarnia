@@ -1,3 +1,6 @@
+// The YarniaDemo composition below is rendered to video/out/yarnia-demo.mp4 by
+// .github/workflows/render-demo-video.yml (Remotion render on a CI runner, which
+// then commits the rendered mp4 back to the branch).
 import "./index.css";
 import { Composition } from "remotion";
 import { YarniaDemo } from "./yarnia/YarniaDemo";

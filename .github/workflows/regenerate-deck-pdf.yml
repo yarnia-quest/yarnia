@@ -1,0 +1,60 @@
+name: Regenerate deck PDF
+
+# Rebuilds ideation/results/deck.pdf from the source deck.html using the Google Chrome
+# that ships on the GitHub-hosted runner (headless print-to-pdf), then commits the result.
+# We can't render the PDF in the Claude Code web sandbox (no Chrome, downloads blocked), so
+# this runner is the source of truth for re-exporting the deck after an HTML edit.
+on:
+  workflow_dispatch:
+  push:
+    paths: ["ideation/results/deck.html"]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: regenerate-deck-pdf-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  pdf:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show Chrome version
+        run: google-chrome --version
+
+      - name: Render deck.html -> deck.pdf
+        working-directory: ideation/results
+        run: |
+          google-chrome \
+            --headless=new \
+            --disable-gpu \
+            --no-sandbox \
+            --hide-scrollbars \
+            --no-pdf-header-footer \
+            --run-all-compositor-stages-before-draw \
+            --virtual-time-budget=15000 \
+            --print-to-pdf="deck.pdf" \
+            "file://$PWD/deck.html"
+          ls -la deck.pdf
+
+      - name: Commit regenerated PDF
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add ideation/results/deck.pdf
+          if git diff --staged --quiet; then
+            echo "deck.pdf unchanged, nothing to commit."
+            exit 0
+          fi
+          git commit -m "chore(deck): regenerate deck.pdf from deck.html [skip ci]"
+          for i in 1 2 3 4 5; do
+            git push && exit 0
+            echo "push rejected, rebasing onto latest ${GITHUB_REF_NAME}..."
+            git pull --rebase --autostash origin "${GITHUB_REF_NAME}" || true
+            sleep $((i * 3))
+          done
+          echo "push failed after retries" >&2
+          exit 1

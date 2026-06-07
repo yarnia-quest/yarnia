@@ -1,0 +1,106 @@
+name: Render real-app demo
+
+# Re-renders the REAL-APP demo (video/out/yarnia-realapp-demo.mp4, also served at
+# marketing/public/video.mp4) by actually driving the live app with a browser, then assembling the
+# dub. The Claude Code web sandbox can't do this (no browser, browser downloads + the app host are
+# both off its egress allowlist), so it runs here, where the runner has open internet + a real
+# headless Chromium + ffmpeg:
+#   1. Playwright (bundled Chromium, fake-media flags) drives app.yarnia.quest through onboarding ->
+#      greeting -> the ElevenLabs voice agent, recording a silent webm (capture/record-realapp.mjs).
+#   2. scripts/build-realapp-demo.mjs upscales it and lays the committed dub clips over the matching
+#      orb states (greeting/story over gold, the kid over cream) -> the 49.6s mp4.
+#
+# Audio: the three dub clips (video/public/realapp-*.mp3) are committed and reused as-is. If the
+# live agent's greeting wording has drifted from realapp-greeting.mp3, regenerate the clips locally
+# (video/scripts/gen-realapp-audio.mjs, needs ELEVENLABS_API_KEY) and commit them first. The job
+# prints the captured greeting so drift is visible in the logs.
+#
+# Manual only (workflow_dispatch): it hits the live app and depends on it being deployed and healthy,
+# and uses an ElevenLabs session, so it should not run on every push. Trigger it from the Actions tab.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: render-realapp-demo-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install ffmpeg + xvfb
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg xvfb
+
+      - name: Install dependencies
+        working-directory: video
+        run: |
+          npm ci
+          npm i --no-save playwright@1
+          npx playwright install --with-deps chromium
+
+      - name: Capture the live app
+        working-directory: video
+        # Headed full Chromium under a virtual display: Flutter web (CanvasKit/WebGL canvas) is
+        # unreliable in headless-shell, so we give it a real GPU-less X server via xvfb-run.
+        run: |
+          xvfb-run -a --server-args="-screen 0 800x1800x24" node capture/record-realapp.mjs
+          echo "--- marks.json ---"
+          cat /tmp/ywcap/marks.json
+          test -n "$(ls /tmp/ywcap/videos/*.webm 2>/dev/null)" || { echo "no webm captured" >&2; exit 1; }
+
+      - name: Assemble the demo
+        working-directory: video
+        run: |
+          node scripts/build-realapp-demo.mjs
+          ls -la out/yarnia-realapp-demo.mp4
+
+      - name: Sync the marketing copy
+        run: cp video/out/yarnia-realapp-demo.mp4 marketing/public/video.mp4
+
+      - name: Commit the rendered demo
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add video/out/yarnia-realapp-demo.mp4 marketing/public/video.mp4
+          if git diff --staged --quiet; then
+            echo "real-app demo unchanged, nothing to commit."
+            exit 0
+          fi
+          git commit -m "chore(video): re-render real-app demo from the live app [skip ci]"
+          for i in 1 2 3 4 5; do
+            git push && exit 0
+            echo "push rejected, rebasing onto latest ${GITHUB_REF_NAME}..."
+            git pull --rebase --autostash origin "${GITHUB_REF_NAME}" || true
+            sleep $((i * 3))
+          done
+          echo "push failed after retries" >&2
+          exit 1
+
+      - name: Commit capture screenshots on failure (for coordinate tuning)
+        if: failure()
+        run: |
+          mkdir -p video/out/_capture-debug
+          cp /tmp/ywcap/shots/*.png video/out/_capture-debug/ 2>/dev/null || true
+          if [ -z "$(ls video/out/_capture-debug/*.png 2>/dev/null)" ]; then
+            echo "no screenshots captured"; exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add video/out/_capture-debug/*.png
+          git commit -m "chore(video): capture debug screenshots [skip ci]" || exit 0
+          for i in 1 2 3 4 5; do
+            git push && exit 0
+            git pull --rebase --autostash origin "${GITHUB_REF_NAME}" || true
+            sleep $((i * 3))
+          done
