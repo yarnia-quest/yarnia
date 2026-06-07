@@ -15,7 +15,8 @@
 //  - The taps use fixed coordinates for the CURRENT Flutter layout (it renders to <canvas>, so
 //    there are no DOM selectors). If the UI moves, re-screenshot and update the coordinates.
 //
-// Setup:  npm i playwright   (uses the system Google Chrome; no browser download needed)
+// Setup (local):  npm i playwright   then set PW_CHANNEL=chrome to use the system Google Chrome.
+// Setup (CI):      npm i playwright && npx playwright install chromium   (bundled Chromium, default).
 // Run:    node capture/record-realapp.mjs
 // Output: /tmp/ywcap/videos/*.webm  +  /tmp/ywcap/marks.json (timings + greeting text)
 import { chromium } from "playwright";
@@ -26,8 +27,11 @@ mkdirSync(`${OUT}/videos`, { recursive: true });
 const t0 = Date.now();
 const el = () => ((Date.now() - t0) / 1000).toFixed(2);
 
+// PW_CHANNEL=chrome drives the installed Google Chrome; unset uses Playwright's bundled Chromium
+// (so this runs in CI with no system browser). The fake-media flags auto-grant the mic and let the
+// ElevenLabs voice agent connect either way.
 const browser = await chromium.launch({
-  channel: "chrome",
+  channel: process.env.PW_CHANNEL || undefined,
   headless: true,
   args: [
     "--use-fake-ui-for-media-stream",

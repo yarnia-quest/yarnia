@@ -5,9 +5,8 @@ name: Render demo video
 # this (no Chrome, browser downloads blocked), so the render runs here.
 #
 # Note: this re-renders the deterministic Remotion *recreation* (yarnia-demo.mp4). The real-app
-# capture (out/yarnia-realapp-demo.mp4, also served at marketing/public/video.mp4) is NOT rendered
-# here: it drives the live app via Playwright + a manual ffmpeg dub and needs the ElevenLabs key,
-# so it stays a manual step (see video/README.md).
+# capture (out/yarnia-realapp-demo.mp4, also served at marketing/public/video.mp4) has its own
+# workflow, render-realapp-demo.yml, which drives the live app with Playwright and assembles the dub.
 on:
   workflow_dispatch:
   push:
