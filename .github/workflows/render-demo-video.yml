@@ -11,7 +11,6 @@ name: Render demo video
 on:
   workflow_dispatch:
   push:
-    branches: [main]
     paths:
       - "video/src/**"
       - "video/public/**"

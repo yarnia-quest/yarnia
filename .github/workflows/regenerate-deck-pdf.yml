@@ -7,7 +7,6 @@ name: Regenerate deck PDF
 on:
   workflow_dispatch:
   push:
-    branches: [main]
     paths: ["ideation/results/deck.html"]
 
 permissions:
