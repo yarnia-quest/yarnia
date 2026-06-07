@@ -22,6 +22,7 @@ on:
 
 permissions:
   contents: write
+  actions: write # to dispatch the marketing deploy after committing the new video
 
 concurrency:
   group: render-realapp-demo-${{ github.ref }}
@@ -86,6 +87,14 @@ jobs:
           done
           echo "push failed after retries" >&2
           exit 1
+
+      # A commit pushed with GITHUB_TOKEN does not trigger other workflows (deploy.yml on
+      # marketing/**), so dispatch the marketing deploy explicitly. workflow_dispatch via the API is
+      # the documented exception that DOES run under GITHUB_TOKEN.
+      - name: Deploy the marketing site with the new video
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run deploy.yml --ref main
 
       - name: Commit capture screenshots on failure (for coordinate tuning)
         if: failure()
