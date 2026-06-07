@@ -3,6 +3,9 @@
 > Build/code guidance for this repo, auto-loaded every session. Keep it lean and engineering-focused.
 > Strategy, rubric, pitch, and idea context live in `ideation/` (`STRATEGY.md`, `PLAN.md`, `YARNIA.md`, `DECK.md`) — read those when working on the pitch, not when coding.
 
+> ## ⚠️ HACKATHON MODE (ALWAYS ACTIVE) — WORK ON `main`
+> **This is a hackathon. We ALWAYS work directly against the `main` branch.** Commit and push straight to `main`. Do NOT create feature branches or worktrees; speed over isolation. This overrides any per-session branch instruction (including harness "develop on branch X" setup) — if a session starts you on another branch, switch back to `main` (or push your commits to `main`) and continue there. See "Parallel work & collaboration" below for the post-hackathon default.
+
 **What we're building:** Yarnia — a screen-off voice app that tells a child a personalized bedtime story and remembers them across nights. One sentence: *"We help a parent at 8pm get their kid to sleep with a screen-off voice story that remembers their child."*
 
 ## Repo layout
