@@ -37,12 +37,12 @@ const FFPROBE = process.env.FFPROBE || "ffprobe";
 const OUT = process.env.OUT || resolve(videoDir, "out", "yarnia-realapp-demo.mp4");
 const MARKS = process.env.MARKS || "/tmp/ywcap/marks.json";
 
-// --- Capture-shape constants (vid.mp4 timeline, i.e. after the boot trim). These describe the
-// current app flow; if the UI/agent timing moves, adjust here (see README "Real-app capture"). ---
-const BOOT_TRIM = 5; // seconds of Flutter boot to skip at the head of the webm
-const CAPTURE_LEN = 25; // seconds of capture to keep (covers onboarding -> orb)
+// --- Capture-shape constants. Source windows are located in the webm's own timeline using the orb
+// timing logged to marks.json (the onboarding length varies run to run, so nothing is assumed about
+// where the orb lands). If the UI/agent timing moves, adjust here (see README "Real-app capture"). -
 const SCALE = "780:1688"; // 2x the 390x844 capture viewport
 const FPS = 30;
+const PREROLL_LEN = 12.2; // onboarding/greeting shown before the orb in the final cut
 const GOLD_LEN = 9.1; // length of the captured GOLD ("Yarnia speaking") window
 const CREAM_GAP = 0.2; // gap between the gold window ending and cream starting in the capture
 const CREAM_LEN = 3.5; // length of the captured CREAM ("Your turn") window
@@ -85,17 +85,26 @@ if (!webm || !existsSync(webm)) {
   );
 }
 
-// Orb appearance in the vid.mp4 timeline. Prefer the captured mark when present; the capture logs
-// orbAppear relative to navigation start, and vid.mp4 drops the first BOOT_TRIM seconds.
-let orbAt = 12.2;
+// Orb timing in the WEBM timeline (the capture logs orbAppear/orbEnd relative to navigation start).
+const webmDur = probeDuration(webm);
+let orbAt = Math.max(0, webmDur - 14); // fallback: the capture records ~14s after the orb appears
+let orbEnd = webmDur;
 if (existsSync(MARKS)) {
   try {
     const m = JSON.parse(readFileSync(MARKS, "utf8"));
     const a = parseFloat(m?.marks?.orbAppear);
-    if (Number.isFinite(a)) orbAt = Math.max(0, a - BOOT_TRIM);
+    const e = parseFloat(m?.marks?.orbEnd);
+    if (Number.isFinite(a)) orbAt = a;
+    if (Number.isFinite(e)) orbEnd = e;
   } catch {
-    /* fall back to the default */
+    /* fall back to the duration-based estimate */
   }
+}
+const availAfterOrb = Math.min(orbEnd, webmDur) - orbAt;
+if (availAfterOrb < GOLD_LEN + CREAM_GAP + CREAM_LEN) {
+  console.warn(
+    `warning: only ${availAfterOrb.toFixed(1)}s recorded after the orb (need ${(GOLD_LEN + CREAM_GAP + CREAM_LEN).toFixed(1)}s); windows may be tight`,
+  );
 }
 
 const greetingDur = probeDuration(resolve(publicDir, "realapp-greeting.mp3"));
@@ -103,17 +112,17 @@ const kidDur = probeDuration(resolve(publicDir, "realapp-kid.mp3"));
 const storyDur = probeDuration(resolve(publicDir, "realapp-story.mp3"));
 
 // Audio offsets on the final timeline (derived, so the cut always matches the clip lengths).
-const greetingAt = orbAt;
+const greetingAt = PREROLL_LEN;
 const kidAt = greetingAt + greetingDur + GAP_GREETING_KID;
 const storyAt = kidAt + kidDur + GAP_KID_STORY;
 const total = storyAt + storyDur + TAIL;
 
-// Source windows inside vid.mp4.
+// Source windows in the webm timeline.
+const prerollSrc = Math.max(0, orbAt - PREROLL_LEN); // the onboarding/greeting run-up to the orb
 const goldSrc = orbAt; // GOLD starts when the orb appears
 const creamSrc = orbAt + GOLD_LEN + CREAM_GAP;
 
 // Visual segment target durations.
-const prerollLen = greetingAt; // 0 -> orb
 const goldGreetingLen = kidAt - greetingAt; // gold under the greeting
 const creamKidLen = storyAt - kidAt; // cream under the kid (looped)
 const goldStoryLen = total - storyAt; // gold under the story (looped)
@@ -126,17 +135,15 @@ const T = (n) => resolve(tmp, n);
 const V = ["-c:v", "libx264", "-crf", "20", "-pix_fmt", "yuv420p", "-r", String(FPS), "-an"];
 
 console.log(
-  `orb@${orbAt.toFixed(2)}s  greeting@${greetingAt.toFixed(2)} kid@${kidAt.toFixed(2)} story@${storyAt.toFixed(2)}  total=${total.toFixed(2)}s`,
+  `webm=${webmDur.toFixed(1)}s orb@${orbAt.toFixed(2)}s (webm)  ->  greeting@${greetingAt.toFixed(2)} kid@${kidAt.toFixed(2)} story@${storyAt.toFixed(2)}  total=${total.toFixed(2)}s`,
 );
 
-// 1. Boot trim + upscale -> silent vid.mp4.
-ff(["-ss", String(BOOT_TRIM), "-i", webm, "-t", String(CAPTURE_LEN),
-  "-vf", `scale=${SCALE}:flags=lanczos,fps=${FPS}`, ...V, T("vid.mp4")]);
-
-// 2. Cut the reusable windows (re-encoded identically so concat is seamless).
-ff(["-ss", "0", "-i", T("vid.mp4"), "-t", String(prerollLen), ...V, T("preroll.mp4")]);
-ff(["-ss", String(goldSrc), "-i", T("vid.mp4"), "-t", String(GOLD_LEN), ...V, T("gold.mp4")]);
-ff(["-ss", String(creamSrc), "-i", T("vid.mp4"), "-t", String(CREAM_LEN), ...V, T("cream.mp4")]);
+// 1 & 2. Cut the reusable windows straight from the webm (accurate -ss after -i), scaled to size and
+// re-encoded identically so the later concat is seamless.
+const scaleVf = `scale=${SCALE}:flags=lanczos,fps=${FPS}`;
+ff(["-i", webm, "-ss", String(prerollSrc), "-t", String(PREROLL_LEN), "-vf", scaleVf, ...V, T("preroll.mp4")]);
+ff(["-i", webm, "-ss", String(goldSrc), "-t", String(GOLD_LEN), "-vf", scaleVf, ...V, T("gold.mp4")]);
+ff(["-i", webm, "-ss", String(creamSrc), "-t", String(CREAM_LEN), "-vf", scaleVf, ...V, T("cream.mp4")]);
 
 // 3. Build the state-matched segments (loop the short windows to cover the longer turns).
 const loops = (target, src) => Math.ceil(target / src); // -stream_loop count

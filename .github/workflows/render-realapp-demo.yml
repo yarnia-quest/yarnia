@@ -69,24 +69,6 @@ jobs:
           cat /tmp/ywcap/marks.json
           test -n "$(ls /tmp/ywcap/videos/*.webm 2>/dev/null)" || { echo "no webm captured" >&2; exit 1; }
 
-      - name: Commit capture screenshots on failure (for coordinate tuning)
-        if: failure()
-        run: |
-          mkdir -p video/out/_capture-debug
-          cp /tmp/ywcap/shots/*.png video/out/_capture-debug/ 2>/dev/null || true
-          if [ -z "$(ls video/out/_capture-debug/*.png 2>/dev/null)" ]; then
-            echo "no screenshots captured"; exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add video/out/_capture-debug/*.png
-          git commit -m "chore(video): capture debug screenshots [skip ci]" || exit 0
-          for i in 1 2 3 4 5; do
-            git push && exit 0
-            git pull --rebase --autostash origin "${GITHUB_REF_NAME}" || true
-            sleep $((i * 3))
-          done
-
       - name: Assemble the demo
         working-directory: video
         run: |
@@ -114,3 +96,21 @@ jobs:
           done
           echo "push failed after retries" >&2
           exit 1
+
+      - name: Commit capture screenshots on failure (for coordinate tuning)
+        if: failure()
+        run: |
+          mkdir -p video/out/_capture-debug
+          cp /tmp/ywcap/shots/*.png video/out/_capture-debug/ 2>/dev/null || true
+          if [ -z "$(ls video/out/_capture-debug/*.png 2>/dev/null)" ]; then
+            echo "no screenshots captured"; exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add video/out/_capture-debug/*.png
+          git commit -m "chore(video): capture debug screenshots [skip ci]" || exit 0
+          for i in 1 2 3 4 5; do
+            git push && exit 0
+            git pull --rebase --autostash origin "${GITHUB_REF_NAME}" || true
+            sleep $((i * 3))
+          done
