@@ -91,16 +91,28 @@ await shot("02-name");
 await page.mouse.click(252, 481); // age "5"
 await page.waitForTimeout(1200);
 await shot("03-age");
+
+// The onboarding form is a long scrollable (name -> age -> favorite characters -> loves stories
+// about -> ...); the Continue button is below the fold. Scroll to the bottom to reveal it. Flutter
+// clamps overscroll, so a big wheel delta reliably lands at the end regardless of content height.
+await page.mouse.move(195, 450);
+await page.mouse.wheel(0, 4000);
+await page.waitForTimeout(1500);
+await shot("03b-scrolled");
+
+const CONTINUE_X = Number(process.env.CONTINUE_X || 195);
+const CONTINUE_Y = Number(process.env.CONTINUE_Y || 795);
 const childResp = page.waitForResponse(
   (r) => r.url().includes("/child") && r.request().method() === "POST",
   { timeout: 30000 },
 );
-await page.mouse.click(195, 634); // Continue
+await page.mouse.click(CONTINUE_X, CONTINUE_Y); // Continue (at the bottom of the scrolled form)
 await childResp.catch(async (e) => {
   await shot("04-continue-failed");
   throw e;
 });
 marks.childCreated = el();
+await shot("04-child-created");
 
 // Greeting screen ("Good night, Mira") -> Begin -> the voice agent connects and speaks.
 await page.waitForTimeout(2800);
