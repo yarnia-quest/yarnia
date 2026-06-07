@@ -15,20 +15,10 @@ name: Render real-app demo
 # (video/scripts/gen-realapp-audio.mjs, needs ELEVENLABS_API_KEY) and commit them first. The job
 # prints the captured greeting so drift is visible in the logs.
 #
-# Manual only: it hits the live app and depends on it being deployed and healthy.
+# Manual only (workflow_dispatch): it hits the live app and depends on it being deployed and healthy,
+# and uses an ElevenLabs session, so it should not run on every push. Trigger it from the Actions tab.
 on:
   workflow_dispatch:
-  # TEMPORARY: branch-scoped push trigger so the pipeline can be proven in CI from the feature
-  # branch (workflow_dispatch via API needs the workflow on the default branch). Paths are scoped to
-  # the source so the bot's own result commits (video/out/**, debug shots) can't retrigger it.
-  # Revert to dispatch-only before merge.
-  push:
-    branches:
-      - claude/update-deck-demo-video-QCGwx
-    paths:
-      - "video/capture/**"
-      - "video/scripts/build-realapp-demo.mjs"
-      - ".github/workflows/render-realapp-demo.yml"
 
 permissions:
   contents: write
