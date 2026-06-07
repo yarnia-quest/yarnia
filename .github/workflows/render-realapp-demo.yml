@@ -18,6 +18,12 @@ name: Render real-app demo
 # Manual only: it hits the live app and depends on it being deployed and healthy.
 on:
   workflow_dispatch:
+  # TEMPORARY: branch-scoped push trigger so the pipeline can be proven in CI from the feature
+  # branch (workflow_dispatch via API needs the workflow on the default branch). Revert to
+  # dispatch-only before merge.
+  push:
+    branches:
+      - claude/update-deck-demo-video-QCGwx
 
 permissions:
   contents: write
