@@ -24,15 +24,18 @@ import { writeFileSync, mkdirSync } from "node:fs";
 
 const OUT = "/tmp/ywcap";
 mkdirSync(`${OUT}/videos`, { recursive: true });
+mkdirSync(`${OUT}/shots`, { recursive: true });
 const t0 = Date.now();
 const el = () => ((Date.now() - t0) / 1000).toFixed(2);
 
-// PW_CHANNEL=chrome drives the installed Google Chrome; unset uses Playwright's bundled Chromium
-// (so this runs in CI with no system browser). The fake-media flags auto-grant the mic and let the
-// ElevenLabs voice agent connect either way.
+// PW_CHANNEL=chrome drives the installed Google Chrome; unset uses Playwright's bundled Chromium.
+// We run HEADED (headless:false) because the app is Flutter web (CanvasKit/WebGL to <canvas>), which
+// is unreliable in chrome-headless-shell; in CI this script is wrapped in xvfb-run for a display.
+// The fake-media flags auto-grant the mic and let the ElevenLabs voice agent connect.
+const HEADLESS = process.env.PW_HEADLESS === "1";
 const browser = await chromium.launch({
   channel: process.env.PW_CHANNEL || undefined,
-  headless: true,
+  headless: HEADLESS,
   args: [
     "--use-fake-ui-for-media-stream",
     "--use-fake-device-for-media-stream",
@@ -63,35 +66,54 @@ page.on("response", async (r) => {
   }
 });
 
+const shot = async (name) => {
+  try {
+    await page.screenshot({ path: `${OUT}/shots/${name}.png` });
+  } catch {
+    /* best-effort diagnostics */
+  }
+};
+
 const marks = {};
 await page.goto("https://app.yarnia.quest/", { waitUntil: "load", timeout: 60000 });
-await page.waitForTimeout(6500); // Flutter boot
+// CanvasKit downloads + initializes on first paint; CI runners are slower than a dev laptop, so
+// wait generously for the canvas to become interactive before the blind coordinate taps.
+await page.waitForTimeout(Number(process.env.BOOT_WAIT_MS || 12000));
 marks.onboardReady = el();
+await shot("01-onboard");
 
 // Onboarding: name -> age 5 -> Continue (await the real POST /child so timing is deterministic).
 await page.mouse.click(195, 367);
 await page.waitForTimeout(450);
 await page.keyboard.type("Mira", { delay: 210 });
 await page.waitForTimeout(1000);
+await shot("02-name");
 await page.mouse.click(252, 481); // age "5"
 await page.waitForTimeout(1200);
+await shot("03-age");
 const childResp = page.waitForResponse(
   (r) => r.url().includes("/child") && r.request().method() === "POST",
   { timeout: 30000 },
 );
 await page.mouse.click(195, 634); // Continue
-await childResp;
+await childResp.catch(async (e) => {
+  await shot("04-continue-failed");
+  throw e;
+});
 marks.childCreated = el();
 
 // Greeting screen ("Good night, Mira") -> Begin -> the voice agent connects and speaks.
 await page.waitForTimeout(2800);
 marks.greetingShown = el();
+await shot("05-greeting");
 await page.mouse.click(195, 566); // Begin
 marks.beginClicked = el();
 await page.waitForTimeout(2200);
 marks.orbAppear = el();
+await shot("06-orb");
 await page.waitForTimeout(14000); // capture the orb while Yarnia speaks
 marks.orbEnd = el();
+await shot("07-orb-end");
 
 await ctx.close(); // finalizes the webm
 await browser.close();

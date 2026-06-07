@@ -19,11 +19,16 @@ name: Render real-app demo
 on:
   workflow_dispatch:
   # TEMPORARY: branch-scoped push trigger so the pipeline can be proven in CI from the feature
-  # branch (workflow_dispatch via API needs the workflow on the default branch). Revert to
-  # dispatch-only before merge.
+  # branch (workflow_dispatch via API needs the workflow on the default branch). Paths are scoped to
+  # the source so the bot's own result commits (video/out/**, debug shots) can't retrigger it.
+  # Revert to dispatch-only before merge.
   push:
     branches:
       - claude/update-deck-demo-video-QCGwx
+    paths:
+      - "video/capture/**"
+      - "video/scripts/build-realapp-demo.mjs"
+      - ".github/workflows/render-realapp-demo.yml"
 
 permissions:
   contents: write
@@ -42,10 +47,10 @@ jobs:
         with:
           node-version: 24
 
-      - name: Install ffmpeg
+      - name: Install ffmpeg + xvfb
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg
+          sudo apt-get install -y ffmpeg xvfb
 
       - name: Install dependencies
         working-directory: video
@@ -56,11 +61,31 @@ jobs:
 
       - name: Capture the live app
         working-directory: video
+        # Headed full Chromium under a virtual display: Flutter web (CanvasKit/WebGL canvas) is
+        # unreliable in headless-shell, so we give it a real GPU-less X server via xvfb-run.
         run: |
-          node capture/record-realapp.mjs
+          xvfb-run -a --server-args="-screen 0 800x1800x24" node capture/record-realapp.mjs
           echo "--- marks.json ---"
           cat /tmp/ywcap/marks.json
           test -n "$(ls /tmp/ywcap/videos/*.webm 2>/dev/null)" || { echo "no webm captured" >&2; exit 1; }
+
+      - name: Commit capture screenshots on failure (for coordinate tuning)
+        if: failure()
+        run: |
+          mkdir -p video/out/_capture-debug
+          cp /tmp/ywcap/shots/*.png video/out/_capture-debug/ 2>/dev/null || true
+          if [ -z "$(ls video/out/_capture-debug/*.png 2>/dev/null)" ]; then
+            echo "no screenshots captured"; exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add video/out/_capture-debug/*.png
+          git commit -m "chore(video): capture debug screenshots [skip ci]" || exit 0
+          for i in 1 2 3 4 5; do
+            git push && exit 0
+            git pull --rebase --autostash origin "${GITHUB_REF_NAME}" || true
+            sleep $((i * 3))
+          done
 
       - name: Assemble the demo
         working-directory: video
