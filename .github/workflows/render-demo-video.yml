@@ -1,0 +1,67 @@
+name: Render demo video
+
+# Re-renders the Remotion demo (video/out/yarnia-demo.mp4) from source on a runner that has a
+# real headless browser + ffmpeg, then commits the result. The Claude Code web sandbox can't do
+# this (no Chrome, browser downloads blocked), so the render runs here.
+#
+# Note: this re-renders the deterministic Remotion *recreation* (yarnia-demo.mp4). The real-app
+# capture (out/yarnia-realapp-demo.mp4, also served at marketing/public/video.mp4) is NOT rendered
+# here: it drives the live app via Playwright + a manual ffmpeg dub and needs the ElevenLabs key,
+# so it stays a manual step (see video/README.md).
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "video/src/**"
+      - "video/public/**"
+      - "video/package.json"
+      - "video/package-lock.json"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: render-demo-video-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      # Libraries Remotion's headless Chromium needs on Ubuntu.
+      - name: Install Chromium runtime libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libnss3 libdbus-1-3 libatk1.0-0 libatk-bridge2.0-0 libcups2 \
+            libdrm2 libgbm1 libasound2t64 libpango-1.0-0 libcairo2 \
+            libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libxkbcommon0
+
+      - name: Install dependencies
+        working-directory: video
+        run: npm ci
+
+      - name: Render YarniaDemo -> out/yarnia-demo.mp4
+        working-directory: video
+        run: |
+          npx remotion render YarniaDemo out/yarnia-demo.mp4 --log=verbose
+          ls -la out/yarnia-demo.mp4
+
+      - name: Commit rendered video
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add video/out/yarnia-demo.mp4
+          if git diff --staged --quiet; then
+            echo "yarnia-demo.mp4 unchanged, nothing to commit."
+          else
+            git commit -m "chore(video): re-render yarnia-demo.mp4 from source [skip ci]"
+            git push
+          fi
