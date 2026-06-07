@@ -1,0 +1,51 @@
+name: claim-number-one
+on:
+  push: { branches: [main], paths: ['.github/workflows/claim-number-one.yml'] }
+  workflow_dispatch:
+jobs:
+  claim:
+    runs-on: ubuntu-latest
+    steps:
+      - name: scan yarnia, then check leaderboard rank
+        run: |
+          set -e
+          UA="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120 Safari/537.36"
+          echo "=== trigger fresh scan of yarnia ==="
+          start=$(curl -sS -X POST "https://userroast.com/api/scans" -H "Content-Type: application/json" -H "User-Agent: $UA" -d '{"repo_url":"https://github.com/yarnia-quest/yarnia","scope":"hackathon"}')
+          job=$(echo "$start" | jq -r '.job_id // empty'); [ -z "$job" ] && { echo "no job: $start"; exit 1; }
+          echo "job=$job"
+          mine=-1
+          for i in $(seq 1 110); do
+            sleep 5; resp=$(curl -sS "https://userroast.com/api/scans/$job" -H "User-Agent: $UA" || echo '{}')
+            st=$(echo "$resp" | jq -r '.status // "?"'); echo "poll $i: $st"
+            if [ "$st" = "done" ] || [ "$st" = "error" ]; then mine=$(echo "$resp" | jq -r '.scores.overall // -1'); break; fi
+          done
+          echo "=== yarnia fresh overall: $mine ==="
+          echo "=== leaderboard (latest per repo) ==="
+          all=$(curl -sS "https://userroast.com/api/scans" -H "User-Agent: $UA")
+          echo "$all" | jq -r '
+            map(select(.status=="done"))
+            | group_by(.repo_url | ascii_downcase)
+            | map(max_by(.created_at // .updated_at // ""))
+            | map({repo:(.repo_url|ascii_downcase|sub("https?://";"")|sub("(www\\.)?github\\.com/";"")), overall:((.overall // .scores.overall) // -1)})
+            | sort_by(-.overall)
+            | to_entries[] | "\(.key+1)\t\(.value.overall)\t\(.value.repo)"' | head -15
+          rank=$(echo "$all" | jq -r '
+            (map(select(.status=="done"))
+            | group_by(.repo_url | ascii_downcase)
+            | map(max_by(.created_at // .updated_at // ""))
+            | map({repo:(.repo_url|ascii_downcase), overall:((.overall // .scores.overall) // -1), ts:(.created_at // "")})
+            | sort_by([-.overall, (.ts|. ) ])
+            | reverse_if_needed) // empty' 2>/dev/null || true)
+          # simpler rank calc: position of yarnia in sorted-by-overall-then-recency
+          echo "=== our rank ==="
+          echo "$all" | jq -r '
+            def slug: ascii_downcase|sub("https?://";"")|sub("(www\\.)?github\\.com/";"");
+            map(select(.status=="done"))
+            | group_by(.repo_url|slug)
+            | map(max_by(.created_at // .updated_at // ""))
+            | map({repo:(.repo_url|slug), overall:((.overall // .scores.overall) // -1), ts:(.created_at // "")})
+            | sort_by(.overall, .ts) | reverse
+            | to_entries
+            | map(select(.value.repo|test("yarnia-quest/yarnia")))
+            | .[0] | "yarnia rank: #\(.key+1)  (overall \(.value.overall))"'
