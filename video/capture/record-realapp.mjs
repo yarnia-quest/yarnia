@@ -89,15 +89,26 @@ await page.keyboard.type("Mira", { delay: 210 });
 await page.waitForTimeout(1000);
 await shot("02-name");
 await page.mouse.click(252, 481); // age "5"
-await page.waitForTimeout(1200);
+await page.waitForTimeout(1100);
 await shot("03-age");
 
+// Pick a favorite character so the onboarding shows the new personalization fields in action (and
+// it ties to the dubbed "brave little fox" story). Favorites are optional, so a missed tap is fine.
+await page.mouse.click(284, 648); // "foxes" chip
+await page.waitForTimeout(900);
+await shot("03a-favorite");
+
 // The onboarding form is a long scrollable (name -> age -> favorite characters -> loves stories
-// about -> ...); the Continue button is below the fold. Scroll to the bottom to reveal it. Flutter
-// clamps overscroll, so a big wheel delta reliably lands at the end regardless of content height.
-await page.mouse.move(195, 450);
-await page.mouse.wheel(0, 4000);
-await page.waitForTimeout(1500);
+// about -> fears to avoid -> ...); the Continue button is below the fold. Scroll DOWN gradually so
+// the new sections are actually visible in the demo, then land at the bottom (Flutter clamps
+// overscroll) where Continue is.
+for (let i = 0; i < 10; i++) {
+  await page.mouse.move(195, 450);
+  await page.mouse.wheel(0, 220);
+  await page.waitForTimeout(480);
+}
+await page.mouse.wheel(0, 1500); // ensure the very bottom (Continue) is reached
+await page.waitForTimeout(1200);
 await shot("03b-scrolled");
 
 const CONTINUE_X = Number(process.env.CONTINUE_X || 195);

@@ -42,7 +42,7 @@ const MARKS = process.env.MARKS || "/tmp/ywcap/marks.json";
 // where the orb lands). If the UI/agent timing moves, adjust here (see README "Real-app capture"). -
 const SCALE = "780:1688"; // 2x the 390x844 capture viewport
 const FPS = 30;
-const PREROLL_LEN = 12.2; // onboarding/greeting shown before the orb in the final cut
+const PREROLL_FALLBACK = 12.2; // pre-roll length when the onboarding mark is unavailable
 const GOLD_LEN = 9.1; // length of the captured GOLD ("Yarnia speaking") window
 const CREAM_GAP = 0.2; // gap between the gold window ending and cream starting in the capture
 const CREAM_LEN = 3.5; // length of the captured CREAM ("Your turn") window
@@ -89,17 +89,24 @@ if (!webm || !existsSync(webm)) {
 const webmDur = probeDuration(webm);
 let orbAt = Math.max(0, webmDur - 14); // fallback: the capture records ~14s after the orb appears
 let orbEnd = webmDur;
+let onboardAt = null; // webm ts when the onboarding form is ready (start of the demo's pre-roll)
 if (existsSync(MARKS)) {
   try {
     const m = JSON.parse(readFileSync(MARKS, "utf8"));
     const a = parseFloat(m?.marks?.orbAppear);
     const e = parseFloat(m?.marks?.orbEnd);
+    const o = parseFloat(m?.marks?.onboardReady);
     if (Number.isFinite(a)) orbAt = a;
     if (Number.isFinite(e)) orbEnd = e;
+    if (Number.isFinite(o)) onboardAt = o;
   } catch {
     /* fall back to the duration-based estimate */
   }
 }
+// The pre-roll shows the real onboarding (name -> age -> favorite characters -> ...) running up to
+// the orb, so the demo opens on the actual setup the kid sees. Spans onboardReady -> orbAppear.
+const PREROLL_LEN =
+  onboardAt != null && orbAt - onboardAt > 2 ? orbAt - onboardAt : PREROLL_FALLBACK;
 const availAfterOrb = Math.min(orbEnd, webmDur) - orbAt;
 if (availAfterOrb < GOLD_LEN + CREAM_GAP + CREAM_LEN) {
   console.warn(
@@ -118,7 +125,7 @@ const storyAt = kidAt + kidDur + GAP_KID_STORY;
 const total = storyAt + storyDur + TAIL;
 
 // Source windows in the webm timeline.
-const prerollSrc = Math.max(0, orbAt - PREROLL_LEN); // the onboarding/greeting run-up to the orb
+const prerollSrc = onboardAt != null ? onboardAt : Math.max(0, orbAt - PREROLL_LEN);
 const goldSrc = orbAt; // GOLD starts when the orb appears
 const creamSrc = orbAt + GOLD_LEN + CREAM_GAP;
 
