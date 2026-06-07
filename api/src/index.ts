@@ -6,7 +6,7 @@ import { generateStory } from "./generate";
 import { synthesizeStory } from "./synthesize";
 import { createStory, type StoryDeps } from "./story";
 import { createAgentSession, getSignedUrl, type ConversationTurn } from "./agent";
-import { persistSession, persistAgentSession, type SaveSessionInput } from "./session";
+import { persistSession, persistAgentSession, enrichSessionRecap, agentStoryText, type SaveSessionInput } from "./session";
 import { verifyWebhookSignature } from "./webhook";
 import { createCheckout, getPaymentStatus, type CheckoutResult } from "./payments";
 import { generateChildToken, hashToken, verifyChildToken } from "./auth";
@@ -77,6 +77,10 @@ type AppDeps = StoryDeps & {
   getSignedUrl: (agentId: string) => Promise<string>;
   saveSession: (childId: string, input: SaveSessionInput) => Promise<string>;
   updateSessionAudio: (sessionId: string, audioKey: string) => Promise<void>;
+  updateSessionRecap?: (
+    sessionId: string,
+    fields: { title: string; summary: string; charactersUsed: string[]; continuityNotes: string[] },
+  ) => Promise<void>;
   storeAudio: (key: string, base64: string) => Promise<string>;
   getAudioUrl: (key: string) => Promise<string | null>;
   createChild: (input: NewChild) => Promise<string>;
@@ -179,6 +183,17 @@ function defaultDeps(env: Bindings): AppDeps {
     // after the row is written so the story shows up in history without waiting on TTS).
     updateSessionAudio: async (sessionId, audioKey) => {
       await db.transact(db.tx.sessions[sessionId].update({ audioKey }));
+    },
+    // Patches the LLM recall layer onto a row written earlier with a quick recap.
+    updateSessionRecap: async (sessionId, fields) => {
+      await db.transact(
+        db.tx.sessions[sessionId].update({
+          title: fields.title,
+          summary: fields.summary,
+          charactersUsed: fields.charactersUsed,
+          continuityNotes: fields.continuityNotes,
+        }),
+      );
     },
     storeAudio: async (key, base64) => {
       const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
@@ -517,18 +532,20 @@ export function createApp(makeDeps: (env: Bindings) => AppDeps = defaultDeps) {
 
     const deps = makeDeps(c.env);
     const persist = async () => {
-      // 1) Write the session row FIRST (recap + memory). This is fast, so the story shows up
-      //    in history almost immediately instead of waiting on mp3 synthesis.
+      // 1) Write the session row FIRST with a quick (no-LLM) recap. This is a single DB write,
+      //    so the story shows up in history almost as soon as the webhook fires — the client's
+      //    "saving" poll resolves on its first tick instead of waiting ~4s for the LLM recap.
       const sessionId = await persistAgentSession(childId, transcript, deps);
       if (!sessionId) return;
 
-      // 2) Then the slow part — synthesize + store the narration mp3 — and attach it to the
-      //    saved row. If TTS fails, the story is already saved (just without replay audio).
-      const storyText = transcript
-        .filter((t) => t.role === "agent" && t.message)
-        .map((t) => t.message!)
-        .join("\n\n");
-      if (storyText) {
+      const storyText = agentStoryText(transcript);
+
+      // 2) The two slow parts run AFTER the row exists, IN PARALLEL, and patch onto the row:
+      //    (a) the LLM recall-layer recap, (b) the mp3 narration. Neither blocks the save the
+      //    user sees, and they no longer run one-after-another.
+      const enrich = enrichSessionRecap(sessionId, storyText, deps);
+      const attachAudio = (async () => {
+        if (!storyText) return;
         try {
           const audioBase64 = await deps.synthesize(storyText.slice(0, 4500));
           if (audioBase64) {
@@ -539,7 +556,8 @@ export function createApp(makeDeps: (env: Bindings) => AppDeps = defaultDeps) {
         } catch (err) {
           console.error("webhook audio synthesis/storage failed, story saved without audio:", err);
         }
-      }
+      })();
+      await Promise.all([enrich, attachAudio]);
     };
 
     try {

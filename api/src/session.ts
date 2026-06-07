@@ -86,8 +86,54 @@ export type PersistDeps = {
   generate: (prompt: StoryPrompt) => Promise<string>;
   // Returns the id of the created session row, so callers can attach audio to it later.
   saveSession: (childId: string, input: SaveSessionInput) => Promise<string>;
+  // Patches the recall layer (title/summary/characters/continuityNotes) onto an already-saved
+  // row. Optional: when absent (some tests), recap enrichment is skipped entirely.
+  updateSessionRecap?: (
+    sessionId: string,
+    fields: { title: string; summary: string; charactersUsed: string[]; continuityNotes: string[] },
+  ) => Promise<void>;
 };
 
+// A cheap, no-LLM recap derived straight from the story text, so the session row can be
+// written IMMEDIATELY (a single DB write) instead of waiting on a ~4s Qwen recap call. The
+// rich recall layer is filled in asynchronously afterward by enrichSessionRecap.
+export function quickRecap(text: string, choice?: string): Recap {
+  const clean = text.trim().replace(/\s+/g, " ");
+  const firstSentence = (clean.split(/(?<=[.!?])\s/)[0] ?? clean).trim();
+  const title = (firstSentence || "A bedtime story").slice(0, 48);
+  const summary = (firstSentence || "A bedtime story").slice(0, 80);
+  return { title, summary, characters: choice ? [choice] : [], continuityNotes: [] };
+}
+
+// The slow part, run AFTER the row already exists: ask the LLM for the rich recall layer and
+// patch it onto the row. Best-effort — if it fails the row keeps its quick recap. This is what
+// makes the recap cost invisible to the "saving" spinner.
+export async function enrichSessionRecap(
+  sessionId: string,
+  storyText: string,
+  deps: PersistDeps,
+  fallbackCharacter?: string,
+): Promise<void> {
+  if (!deps.updateSessionRecap) return;
+  try {
+    const recap = parseRecap(await deps.generate(buildRecapPrompt(storyText)));
+    await deps.updateSessionRecap(sessionId, {
+      title: recap.title,
+      summary: recap.summary,
+      charactersUsed: recap.characters.length
+        ? recap.characters
+        : fallbackCharacter
+          ? [fallbackCharacter]
+          : [],
+      continuityNotes: recap.continuityNotes,
+    });
+  } catch (err) {
+    console.error("recap enrichment failed (row kept its quick recap):", err);
+  }
+}
+
+// /story write-back. Writes the row IMMEDIATELY with a quick recap (no LLM on the critical
+// path), then enriches the recall layer. Returns the new session id.
 export async function persistSession(
   childId: string,
   choice: string,
@@ -95,30 +141,32 @@ export async function persistSession(
   storyText: string,
   deps: PersistDeps,
   audioKey?: string,
-): Promise<void> {
+): Promise<string | null> {
   try {
-    const recap = parseRecap(await deps.generate(buildRecapPrompt(storyText)));
-    await deps.saveSession(childId, {
-      title: recap.title,
-      summary: recap.summary,
+    const quick = quickRecap(storyText, choice);
+    const sessionId = await deps.saveSession(childId, {
+      title: quick.title,
+      summary: quick.summary,
       messages: toMessages(prompt, storyText),
-      charactersUsed: recap.characters.length ? recap.characters : [choice],
-      continuityNotes: recap.continuityNotes,
+      charactersUsed: quick.characters.length ? quick.characters : [choice],
+      continuityNotes: quick.continuityNotes,
       storyText,
       audioKey,
     });
+    await enrichSessionRecap(sessionId, storyText, deps, choice);
+    return sessionId;
   } catch (err) {
     console.error("session write-back failed:", err);
+    return null;
   }
 }
 
-// Persists an agent (ElevenLabs voice) conversation as a session. The transcript
-// is already available from the ElevenLabs API; we extract the agent's story turns,
-// run the same recap pass as the /story flow, and save to InstantDB.
-// Returns the new session id (so the caller can attach audio afterward), or null if there
-// was nothing to save / it failed. Audio is intentionally NOT done here: the row is written
-// fast (recap + DB write) and the slow mp3 synthesis is attached separately, so a story shows
-// up in history quickly instead of waiting on TTS.
+// Persists an agent (ElevenLabs voice) conversation as a session, written FAST: the row is
+// saved immediately with a quick (no-LLM) recap, so it shows up in history almost as soon as
+// the webhook fires. The slow parts — the LLM recall-layer recap (enrichSessionRecap) and the
+// mp3 narration (synthesize) — are run AFTER, in parallel, by the caller, and patched onto the
+// row. Returns the new session id (so the caller can enrich + attach audio), or null if there
+// was nothing to save / it failed.
 export async function persistAgentSession(
   childId: string,
   transcript: ConversationTurn[],
@@ -135,17 +183,17 @@ export async function persistAgentSession(
       return null;
     }
 
-    const recap = parseRecap(await deps.generate(buildRecapPrompt(agentText)));
+    const quick = quickRecap(agentText);
     const messages: Message[] = transcript
       .filter((t) => t.message)
       .map((t) => ({ role: t.role === "agent" ? "assistant" : "user", content: t.message! }));
 
     return await deps.saveSession(childId, {
-      title: recap.title,
-      summary: recap.summary,
+      title: quick.title,
+      summary: quick.summary,
       messages,
-      charactersUsed: recap.characters,
-      continuityNotes: recap.continuityNotes,
+      charactersUsed: quick.characters,
+      continuityNotes: quick.continuityNotes,
       storyText: agentText,
       audioKey,
     });
@@ -153,4 +201,13 @@ export async function persistAgentSession(
     console.error("agent session write-back failed:", err);
     return null;
   }
+}
+
+// Convenience: extract the agent's narration text from a transcript (for enrichment/audio
+// after persistAgentSession has written the row).
+export function agentStoryText(transcript: ConversationTurn[]): string {
+  return transcript
+    .filter((t) => t.role === "agent" && t.message)
+    .map((t) => t.message!)
+    .join("\n\n");
 }

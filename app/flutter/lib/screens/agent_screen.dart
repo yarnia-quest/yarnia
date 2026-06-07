@@ -110,14 +110,15 @@ class _AgentScreenState extends State<AgentScreen> with TickerProviderStateMixin
     // (a returning child already has sessions; we must not treat those as "saved").
     final previousCount = getCachedSessions()?.length ?? 0;
     invalidateHistoryCache();
-    // The webhook fires after ElevenLabs assembles the transcript, which can take a little
-    // while. Poll with exponential backoff (2s, 3s, 5s, 8s, 12s, 12s...) up to a ~45s budget
-    // instead of a flat 3s every tick — far fewer API calls when the webhook is quick, same
-    // worst-case wait. The data is safe regardless; it just appears in history next open.
+    // The server now writes the session row immediately (quick recap, no LLM on the critical
+    // path), so it usually lands within a second of the webhook firing. Start polling fast
+    // (600ms) and back off gently up to a ~45s budget: the common case resolves almost at once,
+    // while a slow webhook still completes within the same worst-case window. Data is safe
+    // regardless; it just appears in history next open.
     var elapsedMs = 0;
-    var delayMs = 2000;
+    var delayMs = 600;
     const budgetMs = 45000;
-    const maxDelayMs = 12000;
+    const maxDelayMs = 8000;
     while (elapsedMs < budgetMs) {
       await Future.delayed(Duration(milliseconds: delayMs));
       elapsedMs += delayMs;
