@@ -1,6 +1,7 @@
 // ElevenLabs text-to-speech: turn a story into narration audio (base64 mp3).
 // Docs: https://elevenlabs.io/docs/api-reference/text-to-speech/convert
 // `fetch` is injectable so the client is unit-testable with no key and no API spend.
+import { withTimeout } from "./timeout";
 
 const DEFAULT_BASE_URL = "https://api.elevenlabs.io";
 // "Clara" (Relaxing/Calm) — the same voice as the conversational agent, so the child hears
@@ -18,6 +19,8 @@ export type SynthesizeOpts = {
   maxRetries?: number;
   // Base backoff between retries; grows linearly per attempt. Default 300ms (0 in tests).
   retryDelayMs?: number;
+  // Per-attempt timeout; a hung TTS call rejects (and is retried) rather than stalling.
+  timeoutMs?: number;
 };
 
 const sleep = (ms: number) => (ms > 0 ? new Promise((r) => setTimeout(r, ms)) : Promise.resolve());
@@ -32,21 +35,26 @@ export async function synthesizeStory(text: string, opts: SynthesizeOpts): Promi
   const modelId = opts.modelId ?? DEFAULT_MODEL;
   const maxRetries = opts.maxRetries ?? 2;
   const retryDelayMs = opts.retryDelayMs ?? 300;
+  const timeoutMs = opts.timeoutMs ?? 20_000;
 
   for (let attempt = 0; ; attempt++) {
     let res: Response;
     try {
-      res = await doFetch(`${baseUrl}/v1/text-to-speech/${voiceId}`, {
-        method: "POST",
-        headers: {
-          "xi-api-key": opts.apiKey,
-          "content-type": "application/json",
-          accept: "audio/mpeg",
-        },
-        body: JSON.stringify({ text, model_id: modelId }),
-      });
+      res = await withTimeout(
+        () =>
+          doFetch(`${baseUrl}/v1/text-to-speech/${voiceId}`, {
+            method: "POST",
+            headers: {
+              "xi-api-key": opts.apiKey,
+              "content-type": "application/json",
+              accept: "audio/mpeg",
+            },
+            body: JSON.stringify({ text, model_id: modelId }),
+          }),
+        timeoutMs,
+      );
     } catch (networkErr) {
-      // Network-level failure (DNS, dropped connection): transient, retry if budget remains.
+      // Network failure or per-attempt timeout: transient, retry if budget remains.
       if (attempt < maxRetries) {
         await sleep(retryDelayMs * (attempt + 1));
         continue;

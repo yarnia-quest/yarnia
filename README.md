@@ -194,8 +194,11 @@ queues, secret rotation) are deliberate future work, not half-finished here. Wha
 - If the live ElevenLabs voice agent can't run (microphone denied, network, or agent error),
   the app falls back to a tap/voice co-creation screen that generates and narrates a story via
   `POST /story`, so the bedtime ritual still completes.
-- Narration is an enhancement: TTS calls retry transient failures with backoff
-  (`api/src/synthesize.ts`), and if it still fails the story returns as text (`audio: null`).
+- **Bounded upstream calls:** both the Qwen story-gen and ElevenLabs TTS calls run under
+  explicit request timeouts (`api/src/timeout.ts`), so a hung dependency can never stall a
+  request — it fails fast and cleanly instead.
+- Narration is an enhancement: TTS calls retry transient failures with backoff and a per-attempt
+  timeout (`api/src/synthesize.ts`), and if it still fails the story returns as text (`audio: null`).
 - Stories are shareable: `GET /share/:shareToken` serves a public, self-contained HTML page
   (story text plus an audio player) so "send to grandma" links open the actual story.
 - Session persistence is webhook-first (survives the phone locking); the client confirms with
