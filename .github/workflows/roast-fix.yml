@@ -1,54 +1,35 @@
 name: roast-fix
-# Temporary. Root cause (from userroast's own backend/modal_app.py): it does
-#   git clone --depth 1 <repo> /workspace/repo
-# into a HARDCODED path with NO cleanup, on Modal serverless. A warm/reused container still has
-# /workspace/repo from a prior scan, so the clone fails with "destination path already exists". It
-# only succeeds on a COLD container. Nothing in our repo causes this. Rapid retries reuse the same
-# warm container and keep failing, so we space attempts out (> Modal's ~60s scaledown) to catch a
-# cold start, and stop on the first real score. Dispatch-only.
+# Temporary, READ-ONLY diagnostic (no POST / no new scans). Dumps userroast scan recency to judge
+# whether ANY repo is being scored successfully lately (i.e. whether cold containers ever happen),
+# plus yarnia's full scan history (the 73 -> errors timeline).
 on:
   workflow_dispatch:
 jobs:
-  fix:
+  diag:
     runs-on: ubuntu-latest
     steps:
-      - name: History + patient resubmit until a cold-container scan scores
+      - name: Recency + yarnia history (read-only)
         run: |
           set -e
           UA="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120 Safari/537.36"
-          api="https://userroast.com/api/scans"
+          all=$(curl -sS "https://userroast.com/api/scans" -H "User-Agent: $UA")
+          echo "total scan records: $(echo "$all" | jq 'length')"
 
-          echo "=== yarnia scan history (oldest -> newest) ==="
-          curl -sS "$api" -H "User-Agent: $UA" | jq -r '
+          echo "=== 25 most RECENT scans (any repo): created_at | status | overall | repo ==="
+          echo "$all" | jq -r '
+            def slug: ascii_downcase|sub("https?://";"")|sub("(www\\.)?github\\.com/";"");
+            sort_by(.created_at // "") | reverse | .[0:25][]
+            | "\(.created_at // "?")  \(.status)  \((.overall // .scores.overall))  \(.repo_url|slug)"'
+
+          echo "=== most recent DONE-with-score scan across ALL repos ==="
+          echo "$all" | jq -r '
+            def slug: ascii_downcase|sub("https?://";"")|sub("(www\\.)?github\\.com/";"");
+            map(select(.status=="done" and ((.overall // .scores.overall) != null)))
+            | sort_by(.created_at // "") | reverse | .[0:5][]
+            | "\(.created_at)  \((.overall // .scores.overall))  \(.repo_url|slug)"'
+
+          echo "=== yarnia full history (oldest -> newest) ==="
+          echo "$all" | jq -r '
             map(select(.repo_url|ascii_downcase|test("yarnia-quest/yarnia")))
             | sort_by(.created_at // "")
-            | .[] | "\(.created_at // "?")  status=\(.status)  overall=\((.overall // .scores.overall))  job=\(.job_id)  err=\((.error // "")[0:50])"'
-
-          ov="null"; result='{}'
-          for attempt in 1 2 3 4; do
-            echo "=== attempt $attempt: waiting 200s for any warm container to scale down ==="
-            sleep 200
-            start=$(curl -sS -X POST "$api" -H "Content-Type: application/json" -H "User-Agent: $UA" \
-              -d '{"repo_url":"https://github.com/yarnia-quest/yarnia","scope":"hackathon"}')
-            echo "$start"
-            job=$(echo "$start" | jq -r '.job_id // empty')
-            [ -z "$job" ] && { echo "no job id"; continue; }
-            echo "job=$job  -> https://userroast.com/roast/$job"
-            st="?"
-            for i in $(seq 1 240); do
-              sleep 5
-              resp=$(curl -sS "$api/$job" -H "User-Agent: $UA" || echo '{}')
-              st=$(echo "$resp" | jq -r '.status // "?"')
-              echo "  poll $i: $st"
-              if [ "$st" = "done" ] || [ "$st" = "error" ]; then result="$resp"; break; fi
-            done
-            ov=$(echo "$result" | jq -r '.scores.overall // "null"')
-            err=$(echo "$result" | jq -r '.error // ""')
-            echo "  -> status=$st overall=$ov err=${err:0:90}"
-            [ "$st" = "done" ] && [ "$ov" != "null" ] && { echo "REAL SCORE on attempt $attempt"; break; }
-          done
-
-          echo "=== final ==="
-          echo "$result" | jq '{job_id, status, error, scores}' || echo "$result"
-          echo "overall: $ov"
-          echo "roast page: https://userroast.com/roast/$(echo "$result" | jq -r '.job_id // "?"')"
+            | .[] | "\(.created_at // "?")  status=\(.status)  overall=\((.overall // .scores.overall))  job=\(.job_id)  err=\((.error // "")[0:55])"'
