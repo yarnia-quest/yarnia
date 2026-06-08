@@ -1,0 +1,56 @@
+name: auto-rescore
+# Yarnia's userroast score reads --/100 only because userroast's analyzer has returned null for
+# EVERY repo since ~2026-06-07 (proven with a control scan of octocat/Hello-World, which also came
+# back overall=null). Our repo is unchanged and scored 67-77 before. There is no Yarnia-side fix;
+# the analyzer outage must recover on userroast's end.
+#
+# This workflow resubmits Yarnia at a low cadence and self-skips once a real score lands, so the
+# score is restored automatically the moment userroast's analyzer is healthy again. It makes at most
+# one scan per run. Safe to delete once the score is back. Manual run: Actions tab -> auto-rescore.
+on:
+  schedule:
+    - cron: "17 */6 * * *" # every 6 hours
+  workflow_dispatch:
+jobs:
+  rescore:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resubmit if needed; skip once scored
+        run: |
+          set -e
+          UA="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120 Safari/537.36"
+          api="https://userroast.com/api/scans"
+
+          all=$(curl -sS "$api" -H "User-Agent: $UA")
+          latest=$(echo "$all" | jq -c '
+            map(select(.repo_url|ascii_downcase|test("yarnia-quest/yarnia")))
+            | sort_by(.created_at // "") | (last // {})')
+          lov=$(echo "$latest" | jq -r '(.overall // .scores.overall) // "null"')
+          lstat=$(echo "$latest" | jq -r '.status // "?"')
+          echo "yarnia latest: status=$lstat overall=$lov"
+          if [ "$lstat" = "done" ] && [ "$lov" != "null" ]; then
+            echo "Score already restored ($lov/100). Nothing to do - this workflow can be deleted."
+            exit 0
+          fi
+
+          echo "Resubmitting yarnia once..."
+          start=$(curl -sS -X POST "$api" -H "Content-Type: application/json" -H "User-Agent: $UA" \
+            -d '{"repo_url":"https://github.com/yarnia-quest/yarnia","scope":"hackathon"}')
+          job=$(echo "$start" | jq -r '.job_id // empty')
+          echo "job=$job"
+          [ -z "$job" ] && { echo "no job id; will retry next schedule"; exit 0; }
+
+          st="?"; resp='{}'
+          for i in $(seq 1 180); do
+            sleep 5
+            resp=$(curl -sS "$api/$job" -H "User-Agent: $UA" || echo '{}')
+            st=$(echo "$resp" | jq -r '.status // "?"')
+            if [ "$st" = "done" ] || [ "$st" = "error" ]; then break; fi
+          done
+          ov=$(echo "$resp" | jq -r '.scores.overall // "null"')
+          echo "result: status=$st overall=$ov  roast=https://userroast.com/roast/$job"
+          if [ "$st" = "done" ] && [ "$ov" != "null" ]; then
+            echo "RESTORED: Yarnia scored $ov/100. Delete this workflow when convenient."
+          else
+            echo "Analyzer still down (status=$st, overall=$ov). Will retry on the next schedule."
+          fi
