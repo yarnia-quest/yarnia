@@ -1,35 +1,54 @@
 name: roast-fix
-# Temporary, READ-ONLY diagnostic (no POST / no new scans). Dumps userroast scan recency to judge
-# whether ANY repo is being scored successfully lately (i.e. whether cold containers ever happen),
-# plus yarnia's full scan history (the 73 -> errors timeline).
+# Temporary diagnostic: scans a tiny UNRELATED control repo (octocat/Hello-World) to decide whether
+# userroast's analyzer is broken globally (control also comes back null/error) or whether something
+# in OUR repo breaks it (control scores fine). Prints stages + timing so we can see if the analyzer
+# actually runs or no-ops. Dispatch-only.
 on:
   workflow_dispatch:
 jobs:
-  diag:
+  control:
     runs-on: ubuntu-latest
     steps:
-      - name: Recency + yarnia history (read-only)
+      - name: Scan a control repo and inspect the analyzer
         run: |
           set -e
           UA="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120 Safari/537.36"
-          all=$(curl -sS "https://userroast.com/api/scans" -H "User-Agent: $UA")
-          echo "total scan records: $(echo "$all" | jq 'length')"
+          api="https://userroast.com/api/scans"
+          CONTROL="https://github.com/octocat/Hello-World"
 
-          echo "=== 25 most RECENT scans (any repo): created_at | status | overall | repo ==="
-          echo "$all" | jq -r '
-            def slug: ascii_downcase|sub("https?://";"")|sub("(www\\.)?github\\.com/";"");
-            sort_by(.created_at // "") | reverse | .[0:25][]
-            | "\(.created_at // "?")  \(.status)  \((.overall // .scores.overall))  \(.repo_url|slug)"'
+          result='{}'; ov="null"
+          for attempt in 1 2 3; do
+            echo "=== control attempt $attempt: $CONTROL ==="
+            start=$(curl -sS -X POST "$api" -H "Content-Type: application/json" -H "User-Agent: $UA" \
+              -d "{\"repo_url\":\"$CONTROL\",\"scope\":\"hackathon\"}")
+            echo "$start"
+            job=$(echo "$start" | jq -r '.job_id // empty')
+            [ -z "$job" ] && { sleep 60; continue; }
+            echo "job=$job"
+            st="?"
+            for i in $(seq 1 200); do
+              sleep 5
+              resp=$(curl -sS "$api/$job" -H "User-Agent: $UA" || echo '{}')
+              st=$(echo "$resp" | jq -r '.status // "?"')
+              echo "  poll $i: $st"
+              if [ "$st" = "done" ] || [ "$st" = "error" ]; then result="$resp"; break; fi
+            done
+            ov=$(echo "$result" | jq -r '.scores.overall // "null"')
+            echo "  -> status=$st overall=$ov"
+            echo "  stages:"; echo "$result" | jq -r '.stages[]? | "    \(.ts)  \(.stage)  \(.message)"'
+            # If we got past the clone (done, even null), that's the informative case; stop.
+            [ "$st" = "done" ] && break
+            echo "  (clone error; waiting 90s for a cold container, then retrying control)"
+            sleep 90
+          done
 
-          echo "=== most recent DONE-with-score scan across ALL repos ==="
-          echo "$all" | jq -r '
-            def slug: ascii_downcase|sub("https?://";"")|sub("(www\\.)?github\\.com/";"");
-            map(select(.status=="done" and ((.overall // .scores.overall) != null)))
-            | sort_by(.created_at // "") | reverse | .[0:5][]
-            | "\(.created_at)  \((.overall // .scores.overall))  \(.repo_url|slug)"'
-
-          echo "=== yarnia full history (oldest -> newest) ==="
-          echo "$all" | jq -r '
-            map(select(.repo_url|ascii_downcase|test("yarnia-quest/yarnia")))
-            | sort_by(.created_at // "")
-            | .[] | "\(.created_at // "?")  status=\(.status)  overall=\((.overall // .scores.overall))  job=\(.job_id)  err=\((.error // "")[0:55])"'
+          echo "=== CONTROL final ==="
+          echo "$result" | jq '{repo_url, job_id, status, error, scores:{overall:.scores.overall}}'
+          echo "control overall: $ov"
+          echo
+          echo "INTERPRETATION:"
+          if [ "$ov" != "null" ]; then
+            echo "  control SCORED ($ov) -> analyzer works; the null on yarnia is likely OUR repo content."
+          else
+            echo "  control ALSO null/blocked -> userroast analyzer is broken for everyone (not our repo)."
+          fi
