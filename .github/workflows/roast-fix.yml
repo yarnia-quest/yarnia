@@ -1,39 +1,41 @@
 name: roast-fix
-# Temporary: (1) dumps yarnia's userroast scan history so we can see when the 73 happened vs the
-# broken scans, then (2) patiently re-submits until a scan lands with a real (non-null) score, so the
-# repo's latest scan -- which is what the roast page / leaderboard shows -- is a real score again.
-# Dispatch-only: never run two scans of the same repo at once (they collide on userroast's workspace).
+# Temporary. Root cause (from userroast's own backend/modal_app.py): it does
+#   git clone --depth 1 <repo> /workspace/repo
+# into a HARDCODED path with NO cleanup, on Modal serverless. A warm/reused container still has
+# /workspace/repo from a prior scan, so the clone fails with "destination path already exists". It
+# only succeeds on a COLD container. Nothing in our repo causes this. Rapid retries reuse the same
+# warm container and keep failing, so we space attempts out (> Modal's ~60s scaledown) to catch a
+# cold start, and stop on the first real score. Dispatch-only.
 on:
   workflow_dispatch:
 jobs:
   fix:
     runs-on: ubuntu-latest
     steps:
-      - name: History + resubmit until scored
+      - name: History + patient resubmit until a cold-container scan scores
         run: |
           set -e
           UA="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120 Safari/537.36"
           api="https://userroast.com/api/scans"
 
           echo "=== yarnia scan history (oldest -> newest) ==="
-          all=$(curl -sS "$api" -H "User-Agent: $UA")
-          echo "$all" | jq -r '
+          curl -sS "$api" -H "User-Agent: $UA" | jq -r '
             map(select(.repo_url|ascii_downcase|test("yarnia-quest/yarnia")))
             | sort_by(.created_at // "")
-            | .[] | "\(.created_at // "?")  status=\(.status)  overall=\((.overall // .scores.overall))  job=\(.job_id)  err=\((.error // "") | .[0:60])"'
+            | .[] | "\(.created_at // "?")  status=\(.status)  overall=\((.overall // .scores.overall))  job=\(.job_id)  err=\((.error // "")[0:50])"'
 
-          echo "=== resubmit until a real score lands ==="
           ov="null"; result='{}'
-          for attempt in $(seq 1 10); do
-            echo "--- attempt $attempt ---"
+          for attempt in 1 2 3 4; do
+            echo "=== attempt $attempt: waiting 200s for any warm container to scale down ==="
+            sleep 200
             start=$(curl -sS -X POST "$api" -H "Content-Type: application/json" -H "User-Agent: $UA" \
               -d '{"repo_url":"https://github.com/yarnia-quest/yarnia","scope":"hackathon"}')
             echo "$start"
             job=$(echo "$start" | jq -r '.job_id // empty')
-            [ -z "$job" ] && { echo "no job id; wait+retry"; sleep 45; continue; }
+            [ -z "$job" ] && { echo "no job id"; continue; }
             echo "job=$job  -> https://userroast.com/roast/$job"
             st="?"
-            for i in $(seq 1 120); do
+            for i in $(seq 1 240); do
               sleep 5
               resp=$(curl -sS "$api/$job" -H "User-Agent: $UA" || echo '{}')
               st=$(echo "$resp" | jq -r '.status // "?"')
@@ -42,26 +44,11 @@ jobs:
             done
             ov=$(echo "$result" | jq -r '.scores.overall // "null"')
             err=$(echo "$result" | jq -r '.error // ""')
-            echo "  status=$st overall=$ov err=${err:0:80}"
-            if [ "$st" = "done" ] && [ "$ov" != "null" ]; then
-              echo "GOT A REAL SCORE on attempt $attempt"; break
-            fi
-            # Back off long enough for a wedged/busy userroast worker to recycle.
-            sleep 60
+            echo "  -> status=$st overall=$ov err=${err:0:90}"
+            [ "$st" = "done" ] && [ "$ov" != "null" ] && { echo "REAL SCORE on attempt $attempt"; break; }
           done
 
-          echo "=== final result ==="
+          echo "=== final ==="
           echo "$result" | jq '{job_id, status, error, scores}' || echo "$result"
           echo "overall: $ov"
           echo "roast page: https://userroast.com/roast/$(echo "$result" | jq -r '.job_id // "?"')"
-
-          echo "=== leaderboard (latest done per repo) ==="
-          all=$(curl -sS "$api" -H "User-Agent: $UA")
-          echo "$all" | jq -r '
-            def slug: ascii_downcase|sub("https?://";"")|sub("(www\\.)?github\\.com/";"");
-            map(select(.status=="done"))
-            | group_by(.repo_url|slug)
-            | map(max_by(.created_at // .updated_at // ""))
-            | map({repo:(.repo_url|slug), overall:((.overall // .scores.overall) // -1)})
-            | sort_by(-.overall) | .[0:15] | to_entries[]
-            | "#\(.key+1)\t\(.value.overall)\t\(.value.repo)"'
