@@ -1,13 +1,17 @@
 // Spike 1a (plans/post-hackathon-soul-and-direction.md): can this phone tell a
-// story fully offline? Loads a Piper VITS voice via sherpa_onnx, synthesizes a
-// bedtime paragraph on-device, plays it, and reports timing (init, synth, RTF).
+// story fully offline? Loads a local TTS engine via sherpa_onnx (Piper VITS or
+// Kokoro), synthesizes a bedtime paragraph on-device, plays it, and reports
+// timing (init, synth, RTF). An engine switcher allows A/B-ing quality vs cost
+// on the actual phone speaker.
 //
 // Not part of the product flow. Reached only when built with
-// --dart-define=TTS_SPIKE=true. The model is NOT bundled; push it once with:
+// --dart-define=TTS_SPIKE=true. Models are NOT bundled; push them once with:
 //
 //   adb push vits-piper-en_US-libritts_r-medium /data/local/tmp/
-//   adb shell run-as quest.yarnia.yarnia cp -r \
-//       /data/local/tmp/vits-piper-en_US-libritts_r-medium files/
+//   adb push kokoro-en-v0_19 /data/local/tmp/
+//   adb shell run-as quest.yarnia.yarnia sh -c \
+//       'cp -r /data/local/tmp/vits-piper-en_US-libritts_r-medium files/ && \
+//        cp -r /data/local/tmp/kokoro-en-v0_19 files/'
 
 import 'dart:io';
 
@@ -19,14 +23,21 @@ import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa_onnx;
 
 import '../theme.dart';
 
-const _modelDir = 'vits-piper-en_US-libritts_r-medium';
-const _modelName = 'en_US-libritts_r-medium.onnx';
-
 const _sampleText =
     'Once upon a time, in a quiet town by the sea, a little fox named Lumi '
     'could not fall asleep. The moon was full, the waves were soft, and '
     'somewhere far away an owl was telling the night its favorite secret. '
     'So Lumi closed her eyes and listened, and the secret slowly became a dream.';
+
+enum _Engine {
+  piper('Piper', 'vits-piper-en_US-libritts_r-medium'),
+  kokoro('Kokoro', 'kokoro-en-v0_19');
+
+  const _Engine(this.label, this.dir);
+
+  final String label;
+  final String dir;
+}
 
 class TtsSpikeScreen extends StatefulWidget {
   const TtsSpikeScreen({super.key});
@@ -40,6 +51,7 @@ class _TtsSpikeScreenState extends State<TtsSpikeScreen> {
   final _player = AudioPlayer();
 
   sherpa_onnx.OfflineTts? _tts;
+  _Engine _engine = _Engine.piper;
   String _status = 'Initializing...';
   String _metrics = '';
   int _sid = 0;
@@ -49,7 +61,7 @@ class _TtsSpikeScreenState extends State<TtsSpikeScreen> {
   @override
   void initState() {
     super.initState();
-    _init();
+    _load(_engine);
   }
 
   @override
@@ -60,13 +72,22 @@ class _TtsSpikeScreenState extends State<TtsSpikeScreen> {
     super.dispose();
   }
 
-  Future<void> _init() async {
+  Future<void> _load(_Engine engine) async {
+    setState(() {
+      _busy = true;
+      _engine = engine;
+      _status = 'Loading ${engine.label}...';
+      _metrics = '';
+    });
     try {
+      _tts?.free();
+      _tts = null;
+
       final support = await getApplicationSupportDirectory();
-      final modelPath = p.join(support.path, _modelDir, _modelName);
-      if (!File(modelPath).existsSync()) {
+      final modelDir = p.join(support.path, engine.dir);
+      if (!Directory(modelDir).existsSync()) {
         setState(() {
-          _status = 'Model not found:\n$modelPath\n\n'
+          _status = '${engine.label} model not found:\n$modelDir\n\n'
               'Push it via adb (see comment at the top of '
               'tts_spike_screen.dart).';
         });
@@ -75,29 +96,45 @@ class _TtsSpikeScreenState extends State<TtsSpikeScreen> {
 
       sherpa_onnx.initBindings();
       final sw = Stopwatch()..start();
-      final config = sherpa_onnx.OfflineTtsConfig(
-        model: sherpa_onnx.OfflineTtsModelConfig(
-          vits: sherpa_onnx.OfflineTtsVitsModelConfig(
-            model: modelPath,
-            tokens: p.join(support.path, _modelDir, 'tokens.txt'),
-            dataDir: p.join(support.path, _modelDir, 'espeak-ng-data'),
+      final modelConfig = switch (engine) {
+        _Engine.piper => sherpa_onnx.OfflineTtsModelConfig(
+            vits: sherpa_onnx.OfflineTtsVitsModelConfig(
+              model: p.join(modelDir, 'en_US-libritts_r-medium.onnx'),
+              tokens: p.join(modelDir, 'tokens.txt'),
+              dataDir: p.join(modelDir, 'espeak-ng-data'),
+            ),
+            numThreads: 2,
+            debug: false,
+            provider: 'cpu',
           ),
-          numThreads: 2,
-          debug: false,
-          provider: 'cpu',
-        ),
+        _Engine.kokoro => sherpa_onnx.OfflineTtsModelConfig(
+            kokoro: sherpa_onnx.OfflineTtsKokoroModelConfig(
+              model: p.join(modelDir, 'model.onnx'),
+              voices: p.join(modelDir, 'voices.bin'),
+              tokens: p.join(modelDir, 'tokens.txt'),
+              dataDir: p.join(modelDir, 'espeak-ng-data'),
+            ),
+            numThreads: 2,
+            debug: false,
+            provider: 'cpu',
+          ),
+      };
+      final tts = sherpa_onnx.OfflineTts(sherpa_onnx.OfflineTtsConfig(
+        model: modelConfig,
         maxNumSenetences: 1,
-      );
-      final tts = sherpa_onnx.OfflineTts(config);
+      ));
       sw.stop();
       setState(() {
         _tts = tts;
-        _status = 'Model loaded in ${sw.elapsedMilliseconds} ms '
-            '(${tts.numSpeakers} speakers). Pick a voice and speak.';
+        _sid = 0;
+        _status = '${engine.label} loaded in ${sw.elapsedMilliseconds} ms '
+            '(${tts.numSpeakers} voices). Pick a voice and speak.';
       });
     } catch (e) {
       debugPrint('tts spike init failed: $e');
       setState(() => _status = 'Init failed: $e');
+    } finally {
+      setState(() => _busy = false);
     }
   }
 
@@ -121,7 +158,7 @@ class _TtsSpikeScreenState extends State<TtsSpikeScreen> {
       final rtf = synthSec / audioSec;
 
       final dir = await getApplicationSupportDirectory();
-      final wav = p.join(dir.path, 'spike-sid$_sid.wav');
+      final wav = p.join(dir.path, 'spike-${_engine.name}-sid$_sid.wav');
       final ok = sherpa_onnx.writeWave(
         filename: wav,
         samples: audio.samples,
@@ -130,7 +167,8 @@ class _TtsSpikeScreenState extends State<TtsSpikeScreen> {
       if (!ok) throw Exception('writeWave failed');
 
       setState(() {
-        _status = 'Playing (sid $_sid, speed $_speed).';
+        _status = 'Playing ${_engine.label} (sid $_sid, speed '
+            '${_speed.toStringAsFixed(2)}).';
         _metrics = 'synth: ${synthSec.toStringAsFixed(2)} s\n'
             'audio: ${audioSec.toStringAsFixed(2)} s @ ${audio.sampleRate} Hz\n'
             'RTF: ${rtf.toStringAsFixed(3)} '
@@ -160,6 +198,16 @@ class _TtsSpikeScreenState extends State<TtsSpikeScreen> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
+            SegmentedButton<_Engine>(
+              segments: [
+                for (final e in _Engine.values)
+                  ButtonSegment(value: e, label: Text(e.label)),
+              ],
+              selected: {_engine},
+              onSelectionChanged:
+                  _busy ? null : (s) => _load(s.first),
+            ),
+            const SizedBox(height: 16),
             Text(_status, style: const TextStyle(color: Colors.white)),
             if (_metrics.isNotEmpty) ...[
               const SizedBox(height: 8),
@@ -188,7 +236,9 @@ class _TtsSpikeScreenState extends State<TtsSpikeScreen> {
                 const Text('Voice (sid)', style: label),
                 Expanded(
                   child: Slider(
-                    value: _sid.toDouble(),
+                    value: _sid
+                        .toDouble()
+                        .clamp(0, ((_tts?.numSpeakers ?? 1) - 1).toDouble()),
                     min: 0,
                     max: ((_tts?.numSpeakers ?? 1) - 1).toDouble(),
                     onChanged: _tts == null
