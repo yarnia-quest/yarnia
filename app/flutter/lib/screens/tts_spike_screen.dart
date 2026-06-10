@@ -5,13 +5,10 @@
 // on the actual phone speaker.
 //
 // Not part of the product flow. Reached only when built with
-// --dart-define=TTS_SPIKE=true. Models are NOT bundled; push them once with:
-//
-//   adb push vits-piper-en_US-libritts_r-medium /data/local/tmp/
-//   adb push kokoro-en-v0_19 /data/local/tmp/
-//   adb shell run-as quest.yarnia.yarnia sh -c \
-//       'cp -r /data/local/tmp/vits-piper-en_US-libritts_r-medium files/ && \
-//        cp -r /data/local/tmp/kokoro-en-v0_19 files/'
+// --dart-define=TTS_SPIKE=true. Models are NOT bundled; push each model dir
+// once to /data/local/tmp via adb, then copy it into the app's files/ with
+// `adb shell run-as quest.yarnia.yarnia cp -r /data/local/tmp/<dir> files/`.
+// Engines whose model dir is missing show up disabled in the dropdown.
 
 import 'dart:io';
 
@@ -29,9 +26,18 @@ const _sampleText =
     'somewhere far away an owl was telling the night its favorite secret. '
     'So Lumi closed her eyes and listened, and the secret slowly became a dream.';
 
+const _sampleTextDe =
+    'Es war einmal ein kleiner Fuchs namens Lumi, der in einer stillen Stadt '
+    'am Meer nicht einschlafen konnte. Der Mond war voll, die Wellen waren '
+    'sanft, und irgendwo weit weg erzaehlte eine Eule der Nacht ihr liebstes '
+    'Geheimnis. Also schloss Lumi die Augen und lauschte, und das Geheimnis '
+    'wurde langsam zu einem Traum.';
+
 enum _Engine {
-  piper('Piper', 'vits-piper-en_US-libritts_r-medium'),
-  kokoro('Kokoro', 'kokoro-en-v0_19');
+  piperEn('Piper EN (94 MB, 904 voices)', 'vits-piper-en_US-libritts_r-medium'),
+  piperDe('Piper DE Thorsten (76 MB)', 'vits-piper-de_DE-thorsten-medium'),
+  kokoro('Kokoro EN (354 MB, best quality)', 'kokoro-en-v0_19'),
+  kitten('Kitten nano EN (25 MB, tiny)', 'kitten-nano-en-v0_8-fp32');
 
   const _Engine(this.label, this.dir);
 
@@ -51,7 +57,8 @@ class _TtsSpikeScreenState extends State<TtsSpikeScreen> {
   final _player = AudioPlayer();
 
   sherpa_onnx.OfflineTts? _tts;
-  _Engine _engine = _Engine.piper;
+  _Engine _engine = _Engine.piperEn;
+  final Set<_Engine> _available = {};
   String _status = 'Initializing...';
   String _metrics = '';
   int _sid = 0;
@@ -61,7 +68,18 @@ class _TtsSpikeScreenState extends State<TtsSpikeScreen> {
   @override
   void initState() {
     super.initState();
-    _load(_engine);
+    _scanAndLoad();
+  }
+
+  Future<void> _scanAndLoad() async {
+    final support = await getApplicationSupportDirectory();
+    setState(() {
+      _available.addAll(_Engine.values
+          .where((e) => Directory(p.join(support.path, e.dir)).existsSync()));
+    });
+    await _load(_available.contains(_engine)
+        ? _engine
+        : (_available.firstOrNull ?? _engine));
   }
 
   @override
@@ -96,12 +114,24 @@ class _TtsSpikeScreenState extends State<TtsSpikeScreen> {
 
       sherpa_onnx.initBindings();
       final sw = Stopwatch()..start();
+      final tokens = p.join(modelDir, 'tokens.txt');
+      final dataDir = p.join(modelDir, 'espeak-ng-data');
       final modelConfig = switch (engine) {
-        _Engine.piper => sherpa_onnx.OfflineTtsModelConfig(
+        _Engine.piperEn => sherpa_onnx.OfflineTtsModelConfig(
             vits: sherpa_onnx.OfflineTtsVitsModelConfig(
               model: p.join(modelDir, 'en_US-libritts_r-medium.onnx'),
-              tokens: p.join(modelDir, 'tokens.txt'),
-              dataDir: p.join(modelDir, 'espeak-ng-data'),
+              tokens: tokens,
+              dataDir: dataDir,
+            ),
+            numThreads: 2,
+            debug: false,
+            provider: 'cpu',
+          ),
+        _Engine.piperDe => sherpa_onnx.OfflineTtsModelConfig(
+            vits: sherpa_onnx.OfflineTtsVitsModelConfig(
+              model: p.join(modelDir, 'de_DE-thorsten-medium.onnx'),
+              tokens: tokens,
+              dataDir: dataDir,
             ),
             numThreads: 2,
             debug: false,
@@ -111,8 +141,19 @@ class _TtsSpikeScreenState extends State<TtsSpikeScreen> {
             kokoro: sherpa_onnx.OfflineTtsKokoroModelConfig(
               model: p.join(modelDir, 'model.onnx'),
               voices: p.join(modelDir, 'voices.bin'),
-              tokens: p.join(modelDir, 'tokens.txt'),
-              dataDir: p.join(modelDir, 'espeak-ng-data'),
+              tokens: tokens,
+              dataDir: dataDir,
+            ),
+            numThreads: 2,
+            debug: false,
+            provider: 'cpu',
+          ),
+        _Engine.kitten => sherpa_onnx.OfflineTtsModelConfig(
+            kitten: sherpa_onnx.OfflineTtsKittenModelConfig(
+              model: p.join(modelDir, 'model.fp32.onnx'),
+              voices: p.join(modelDir, 'voices.bin'),
+              tokens: tokens,
+              dataDir: dataDir,
             ),
             numThreads: 2,
             debug: false,
@@ -127,6 +168,13 @@ class _TtsSpikeScreenState extends State<TtsSpikeScreen> {
       setState(() {
         _tts = tts;
         _sid = 0;
+        // Give the German engine German text to read (and vice versa), unless
+        // the user already typed their own.
+        if (_textController.text == _sampleText ||
+            _textController.text == _sampleTextDe) {
+          _textController.text =
+              engine == _Engine.piperDe ? _sampleTextDe : _sampleText;
+        }
         _status = '${engine.label} loaded in ${sw.elapsedMilliseconds} ms '
             '(${tts.numSpeakers} voices). Pick a voice and speak.';
       });
@@ -184,6 +232,8 @@ class _TtsSpikeScreenState extends State<TtsSpikeScreen> {
     }
   }
 
+  double get _maxSid => ((_tts?.numSpeakers ?? 1) - 1).toDouble();
+
   @override
   Widget build(BuildContext context) {
     const label = TextStyle(color: Colors.white70, fontSize: 13);
@@ -198,14 +248,40 @@ class _TtsSpikeScreenState extends State<TtsSpikeScreen> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            SegmentedButton<_Engine>(
-              segments: [
+            DropdownButtonFormField<_Engine>(
+              initialValue: _engine,
+              dropdownColor: const Color(0xFF1B2A4A),
+              style: const TextStyle(color: Colors.white, fontSize: 15),
+              iconEnabledColor: Colors.white70,
+              decoration: const InputDecoration(
+                labelText: 'Engine',
+                labelStyle: label,
+                enabledBorder: OutlineInputBorder(
+                    borderSide: BorderSide(color: Colors.white24)),
+                focusedBorder: OutlineInputBorder(
+                    borderSide: BorderSide(color: Colors.white54)),
+              ),
+              items: [
                 for (final e in _Engine.values)
-                  ButtonSegment(value: e, label: Text(e.label)),
+                  DropdownMenuItem(
+                    value: e,
+                    enabled: _available.contains(e),
+                    child: Text(
+                      _available.contains(e)
+                          ? e.label
+                          : '${e.label} - not pushed',
+                      style: TextStyle(
+                          color: _available.contains(e)
+                              ? Colors.white
+                              : Colors.white38),
+                    ),
+                  ),
               ],
-              selected: {_engine},
-              onSelectionChanged:
-                  _busy ? null : (s) => _load(s.first),
+              onChanged: _busy
+                  ? null
+                  : (e) {
+                      if (e != null && e != _engine) _load(e);
+                    },
             ),
             const SizedBox(height: 16),
             Text(_status, style: const TextStyle(color: Colors.white)),
@@ -238,10 +314,11 @@ class _TtsSpikeScreenState extends State<TtsSpikeScreen> {
                   child: Slider(
                     value: _sid
                         .toDouble()
-                        .clamp(0, ((_tts?.numSpeakers ?? 1) - 1).toDouble()),
+                        .clamp(0, _maxSid)
+                        .toDouble(),
                     min: 0,
-                    max: ((_tts?.numSpeakers ?? 1) - 1).toDouble(),
-                    onChanged: _tts == null
+                    max: _maxSid,
+                    onChanged: (_tts == null || _maxSid == 0)
                         ? null
                         : (v) => setState(() => _sid = v.round()),
                   ),
