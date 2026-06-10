@@ -38,6 +38,12 @@ flutter-prod:
 flutter-release:
     cd app/flutter && flutter build apk --dart-define-from-file=dart_defines/prod.json
 
+# Run the on-device voice spike (Speak/Listen test screens) instead of the app.
+# Same package, different home screen via the TTS_SPIKE dart-define. Models are
+# pushed separately via adb run-as (see lib/screens/tts_spike_screen.dart).
+flutter-spike:
+    cd app/flutter && flutter run --dart-define-from-file=dart_defines/prod.json --dart-define=TTS_SPIKE=true
+
 # ── Flutter web (app.yarnia.quest) ────────────────────────────────────────────
 
 # Run Flutter web (Chrome) against LOCAL API (requires: just api)
