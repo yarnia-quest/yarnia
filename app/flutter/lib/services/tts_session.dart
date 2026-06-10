@@ -200,6 +200,17 @@ sherpa_onnx.OfflineTtsModelConfig _modelConfig(String kind, String dir) {
         debug: false,
         provider: 'cpu',
       );
+    case 'piperTr':
+      return sherpa_onnx.OfflineTtsModelConfig(
+        vits: sherpa_onnx.OfflineTtsVitsModelConfig(
+          model: p.join(dir, 'tr_TR-fahrettin-medium.onnx'),
+          tokens: p.join(dir, 'tokens.txt'),
+          dataDir: p.join(dir, 'espeak-ng-data'),
+        ),
+        numThreads: 2,
+        debug: false,
+        provider: 'cpu',
+      );
     case 'kokoro':
       return sherpa_onnx.OfflineTtsModelConfig(
         kokoro: sherpa_onnx.OfflineTtsKokoroModelConfig(
