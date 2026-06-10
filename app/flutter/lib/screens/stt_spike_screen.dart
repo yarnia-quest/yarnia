@@ -1,20 +1,21 @@
 // Spike 2 (plans/post-hackathon-soul-and-direction.md): realtime on-device
-// STT, "the key" piece. Two engines, selectable:
+// STT, "the key" piece. All decoding runs in a worker isolate
+// (lib/services/asr_session.dart) so slow segments can never freeze the UI
+// (Whisper small took 11s/segment on a Kirin 970 and ANRed when decoded on
+// the main thread). Engines:
 //
-// - Zipformer EN: streaming transducer, instant partials, English only,
-//   small-model accuracy.
-// - Whisper base (VAD): Silero VAD segments speech at pauses, multilingual
-//   Whisper transcribes each segment (German works, language auto-detected).
-//   No live partials, but much better accuracy. This matches the bedtime
-//   turn-taking shape anyway.
+// - Zipformer EN: streaming transducer, instant partials, English only.
+// - Whisper base/small (VAD): multilingual, language auto-detected.
+// - Canary 180M (VAD): EN/DE toggle; outputs in the SELECTED language (it is
+//   a translating ASR, speech in the other language gets translated).
+// - Parakeet 0.6B v3 (VAD): 25 languages, auto-detect (can be moody on
+//   short segments).
+// - Hybrid: Zipformer partials live, Whisper base rewrites each segment.
 //
-// The child's voice never leaves the device in either mode.
+// The child's voice never leaves the device in any mode.
 //
-// Models (push once, like the TTS ones):
-//   adb push sherpa-onnx-streaming-zipformer-en-2023-06-26 /data/local/tmp/
-//   adb push sherpa-onnx-whisper-base /data/local/tmp/
-//   adb push silero_vad.onnx /data/local/tmp/
-//   adb shell run-as quest.yarnia.yarnia sh -c 'cp -r /data/local/tmp/<each> files/'
+// Models (push once, like the TTS ones): push each dir to /data/local/tmp,
+// then `adb shell run-as quest.yarnia.yarnia cp -r /data/local/tmp/<dir> files/`.
 
 import 'dart:async';
 import 'dart:io';
@@ -24,7 +25,8 @@ import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
-import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa_onnx;
+
+import '../services/asr_session.dart';
 
 const _zipformerDir = 'sherpa-onnx-streaming-zipformer-en-2023-06-26';
 const _whisperDir = 'sherpa-onnx-whisper-base';
@@ -39,15 +41,12 @@ enum _Asr {
   whisperBase('Whisper base (VAD, multilingual)'),
   whisperSmall('Whisper small (VAD, better, slower)'),
   canary('Canary 180M (VAD, EN/DE, punctuation)'),
-  parakeet('Parakeet 0.6B v3 (VAD, 25 langs, auto-detect)'),
+  parakeet('Parakeet 0.6B v3 (VAD, 25 langs, auto)'),
   hybrid('Hybrid: live partials + Whisper final');
 
   const _Asr(this.label);
 
   final String label;
-
-  bool get usesOnline => this == _Asr.zipformer || this == _Asr.hybrid;
-  bool get usesOffline => this != _Asr.zipformer;
 }
 
 // The record stream hands out chunks at arbitrary byte offsets, so an
@@ -74,20 +73,11 @@ class _SttSpikeScreenState extends State<SttSpikeScreen>
     with AutomaticKeepAliveClientMixin {
   final _recorder = AudioRecorder();
 
-  // Streaming engine (zipformer)
-  sherpa_onnx.OnlineRecognizer? _onlineRecognizer;
-  sherpa_onnx.OnlineStream? _onlineStream;
-
-  // VAD + offline engine (whisper)
-  sherpa_onnx.OfflineRecognizer? _offlineRecognizer;
-  sherpa_onnx.VoiceActivityDetector? _vad;
-  sherpa_onnx.CircularBuffer? _vadBuffer;
-  int _vadWindowSize = 512;
-
+  AsrSession? _session;
+  StreamSubscription<AsrEvent>? _eventSub;
   StreamSubscription<Uint8List>? _audioSub;
 
   _Asr _asr = _Asr.hybrid;
-  _Asr? _loadedOffline;
   String _canaryLang = 'en';
   String _status = 'Initializing...';
   String _partial = '';
@@ -109,13 +99,42 @@ class _SttSpikeScreenState extends State<SttSpikeScreen>
   @override
   void dispose() {
     _audioSub?.cancel();
+    _eventSub?.cancel();
     _recorder.dispose();
-    _onlineStream?.free();
-    _onlineRecognizer?.free();
-    _offlineRecognizer?.free();
-    _vad?.free();
-    _vadBuffer?.free();
+    _session?.dispose();
     super.dispose();
+  }
+
+  // Model dirs per engine; null means a required dir is missing on device.
+  Future<Map<String, String>?> _dirsFor(_Asr asr) async {
+    final support = (await getApplicationSupportDirectory()).path;
+    String dir(String d) => p.join(support, d);
+    bool has(String path) =>
+        Directory(path).existsSync() || File(path).existsSync();
+
+    final vad = dir(_vadFile);
+    final result = <String, String>{};
+    switch (asr) {
+      case _Asr.zipformer:
+        result['zipformer'] = dir(_zipformerDir);
+      case _Asr.whisperBase:
+        result['model'] = dir(_whisperDir);
+        result['vad'] = vad;
+      case _Asr.whisperSmall:
+        result['model'] = dir(_whisperSmallDir);
+        result['vad'] = vad;
+      case _Asr.canary:
+        result['model'] = dir(_canaryDir);
+        result['vad'] = vad;
+      case _Asr.parakeet:
+        result['model'] = dir(_parakeetDir);
+        result['vad'] = vad;
+      case _Asr.hybrid:
+        result['zipformer'] = dir(_zipformerDir);
+        result['model'] = dir(_whisperDir);
+        result['vad'] = vad;
+    }
+    return result.values.every(has) ? result : null;
   }
 
   Future<void> _load(_Asr asr) async {
@@ -123,82 +142,32 @@ class _SttSpikeScreenState extends State<SttSpikeScreen>
     setState(() {
       _busy = true;
       _asr = asr;
-      _status = 'Loading ${asr.label}...';
+      _status = 'Loading ${asr.label} (in background)...';
       _partial = '';
       _metrics = '';
     });
     try {
-      final support = await getApplicationSupportDirectory();
-      sherpa_onnx.initBindings();
-      final sw = Stopwatch()..start();
+      _eventSub?.cancel();
+      _session?.dispose();
+      _session = null;
 
-      if (asr.usesOnline && _onlineRecognizer == null) {
-        final dir = p.join(support.path, _zipformerDir);
-        if (!Directory(dir).existsSync()) {
-          setState(() => _status = 'Zipformer model not found:\n$dir');
-          return;
-        }
-        _onlineRecognizer = sherpa_onnx.OnlineRecognizer(
-          sherpa_onnx.OnlineRecognizerConfig(
-            model: sherpa_onnx.OnlineModelConfig(
-              transducer: sherpa_onnx.OnlineTransducerModelConfig(
-                encoder: p.join(dir,
-                    'encoder-epoch-99-avg-1-chunk-16-left-128.int8.onnx'),
-                decoder: p.join(
-                    dir, 'decoder-epoch-99-avg-1-chunk-16-left-128.onnx'),
-                joiner: p.join(
-                    dir, 'joiner-epoch-99-avg-1-chunk-16-left-128.onnx'),
-              ),
-              tokens: p.join(dir, 'tokens.txt'),
-              modelType: 'zipformer2',
-            ),
-            ruleFsts: '',
-          ),
-        );
+      final dirs = await _dirsFor(asr);
+      if (dirs == null) {
+        setState(() => _status =
+            '${asr.label}: model files missing on device. Push them via '
+            'adb (see comment at the top of stt_spike_screen.dart).');
+        return;
       }
-
-      if (asr.usesOffline) {
-        // The hybrid's offline half is Whisper base.
-        final offlineKind =
-            asr == _Asr.hybrid ? _Asr.whisperBase : asr;
-        if (_loadedOffline != offlineKind) {
-          final config = _offlineConfig(offlineKind, support.path);
-          if (config == null) {
-            setState(() => _status =
-                '${offlineKind.label} model not found. Push it via adb '
-                '(see comment at the top of stt_spike_screen.dart).');
-            return;
-          }
-          _offlineRecognizer?.free();
-          _offlineRecognizer = null;
-          _offlineRecognizer = sherpa_onnx.OfflineRecognizer(config);
-          _loadedOffline = offlineKind;
-        }
-        if (_vad == null) {
-          final vadPath = p.join(support.path, _vadFile);
-          if (!File(vadPath).existsSync()) {
-            setState(() => _status = 'VAD model not found:\n$vadPath');
-            return;
-          }
-          final vadConfig = sherpa_onnx.VadModelConfig(
-            sileroVad: sherpa_onnx.SileroVadModelConfig(
-              model: vadPath,
-              minSilenceDuration: 0.4,
-              minSpeechDuration: 0.25,
-              maxSpeechDuration: 12.0,
-            ),
-            numThreads: 1,
-            debug: false,
-          );
-          _vadWindowSize = vadConfig.sileroVad.windowSize;
-          _vad = sherpa_onnx.VoiceActivityDetector(
-              config: vadConfig, bufferSizeInSeconds: 30);
-          _vadBuffer = sherpa_onnx.CircularBuffer(capacity: 30 * _sampleRate);
-        }
+      final session = await AsrSession.spawn(
+          kind: asr.name, dirs: dirs, canaryLang: _canaryLang);
+      if (!mounted) {
+        session.dispose();
+        return;
       }
-      sw.stop();
+      _eventSub = session.events.listen(_onEvent);
       setState(() {
-        _status = '${asr.label} ready in ${sw.elapsedMilliseconds} ms. '
+        _session = session;
+        _status = '${asr.label} ready in ${session.initMs} ms. '
             'Tap the mic and talk; everything stays on this phone.';
       });
     } catch (e) {
@@ -209,66 +178,21 @@ class _SttSpikeScreenState extends State<SttSpikeScreen>
     }
   }
 
-  // Returns null if the model files are not on the device.
-  sherpa_onnx.OfflineRecognizerConfig? _offlineConfig(
-      _Asr kind, String supportPath) {
-    switch (kind) {
-      case _Asr.whisperBase:
-      case _Asr.whisperSmall:
-        final dir = p.join(supportPath,
-            kind == _Asr.whisperBase ? _whisperDir : _whisperSmallDir);
-        final prefix = kind == _Asr.whisperBase ? 'base' : 'small';
-        if (!Directory(dir).existsSync()) return null;
-        return sherpa_onnx.OfflineRecognizerConfig(
-          model: sherpa_onnx.OfflineModelConfig(
-            whisper: sherpa_onnx.OfflineWhisperModelConfig(
-              encoder: p.join(dir, '$prefix-encoder.int8.onnx'),
-              decoder: p.join(dir, '$prefix-decoder.int8.onnx'),
-              // empty language = per-segment auto-detect (EN and DE both
-              // work); set 'de' to pin German.
-              language: '',
-              task: 'transcribe',
-            ),
-            tokens: p.join(dir, '$prefix-tokens.txt'),
-            modelType: 'whisper',
-            numThreads: 2,
-          ),
-        );
-      case _Asr.canary:
-        final dir = p.join(supportPath, _canaryDir);
-        if (!Directory(dir).existsSync()) return null;
-        return sherpa_onnx.OfflineRecognizerConfig(
-          model: sherpa_onnx.OfflineModelConfig(
-            canary: sherpa_onnx.OfflineCanaryModelConfig(
-              encoder: p.join(dir, 'encoder.int8.onnx'),
-              decoder: p.join(dir, 'decoder.int8.onnx'),
-              srcLang: _canaryLang,
-              tgtLang: _canaryLang,
-              usePnc: true,
-            ),
-            tokens: p.join(dir, 'tokens.txt'),
-            numThreads: 2,
-          ),
-        );
-      case _Asr.parakeet:
-        final dir = p.join(supportPath, _parakeetDir);
-        if (!Directory(dir).existsSync()) return null;
-        return sherpa_onnx.OfflineRecognizerConfig(
-          model: sherpa_onnx.OfflineModelConfig(
-            transducer: sherpa_onnx.OfflineTransducerModelConfig(
-              encoder: p.join(dir, 'encoder.int8.onnx'),
-              decoder: p.join(dir, 'decoder.int8.onnx'),
-              joiner: p.join(dir, 'joiner.int8.onnx'),
-            ),
-            tokens: p.join(dir, 'tokens.txt'),
-            modelType: 'nemo_transducer',
-            numThreads: 2,
-          ),
-        );
-      case _Asr.zipformer:
-      case _Asr.hybrid:
-        return null; // not offline kinds
-    }
+  void _onEvent(AsrEvent event) {
+    if (!mounted) return;
+    setState(() {
+      switch (event) {
+        case AsrPartial(:final text):
+          _partial = text;
+        case AsrSegment(:final text, :final segSec, :final decodeMs):
+          _segments.insert(0, text);
+          if (segSec > 0) {
+            _metrics = 'last segment: ${segSec.toStringAsFixed(1)} s speech, '
+                'decoded in ${(decodeMs / 1000).toStringAsFixed(2)} s '
+                '(RTF ${(decodeMs / 1000 / segSec).toStringAsFixed(2)})';
+          }
+      }
+    });
   }
 
   Future<void> _toggle() async {
@@ -279,22 +203,14 @@ class _SttSpikeScreenState extends State<SttSpikeScreen>
     }
   }
 
-  bool get _engineReady =>
-      (!_asr.usesOnline || _onlineRecognizer != null) &&
-      (!_asr.usesOffline || (_offlineRecognizer != null && _vad != null));
-
   Future<void> _start() async {
-    if (!_engineReady) return;
+    final session = _session;
+    if (session == null) return;
     try {
       if (!await _recorder.hasPermission()) {
         setState(() => _status = 'Microphone permission denied.');
         return;
       }
-      if (_asr.usesOnline) {
-        _onlineStream?.free();
-        _onlineStream = _onlineRecognizer!.createStream();
-      }
-
       _carry = Uint8List(0);
       final audio = await _recorder.startStream(const RecordConfig(
         encoder: AudioEncoder.pcm16bits,
@@ -313,14 +229,7 @@ class _SttSpikeScreenState extends State<SttSpikeScreen>
         final usable = bytes.length & ~1;
         _carry = Uint8List.fromList(bytes.sublist(usable));
         if (usable == 0) return;
-        final samples =
-            _bytesToFloat32(Uint8List.sublistView(bytes, 0, usable));
-        if (_asr.usesOnline) {
-          _feedZipformer(samples, insertFinal: _asr == _Asr.zipformer);
-        }
-        if (_asr.usesOffline) {
-          _feedOffline(samples);
-        }
+        session.feed(_bytesToFloat32(Uint8List.sublistView(bytes, 0, usable)));
       });
       setState(() {
         _listening = true;
@@ -337,77 +246,12 @@ class _SttSpikeScreenState extends State<SttSpikeScreen>
     }
   }
 
-  void _feedZipformer(Float32List samples, {required bool insertFinal}) {
-    final recognizer = _onlineRecognizer;
-    final stream = _onlineStream;
-    if (recognizer == null || stream == null) return;
-    stream.acceptWaveform(samples: samples, sampleRate: _sampleRate);
-    while (recognizer.isReady(stream)) {
-      recognizer.decode(stream);
-    }
-    final text = recognizer.getResult(stream).text;
-    var finalized = false;
-    if (recognizer.isEndpoint(stream)) {
-      recognizer.reset(stream);
-      if (text.trim().isNotEmpty) {
-        if (insertFinal) _segments.insert(0, text.trim());
-        finalized = true;
-      }
-    }
-    setState(() => _partial = finalized ? '' : text);
-  }
-
-  void _feedOffline(Float32List samples) {
-    final vad = _vad;
-    final buffer = _vadBuffer;
-    final recognizer = _offlineRecognizer;
-    if (vad == null || buffer == null || recognizer == null) return;
-
-    buffer.push(samples);
-    while (buffer.size >= _vadWindowSize) {
-      final window = buffer.get(startIndex: buffer.head, n: _vadWindowSize);
-      buffer.pop(_vadWindowSize);
-      vad.acceptWaveform(window);
-    }
-
-    while (!vad.isEmpty()) {
-      final segment = vad.front();
-      vad.pop();
-      final segSec = segment.samples.length / _sampleRate;
-      final sw = Stopwatch()..start();
-      final stream = recognizer.createStream();
-      stream.acceptWaveform(samples: segment.samples, sampleRate: _sampleRate);
-      recognizer.decode(stream);
-      final text = recognizer.getResult(stream).text.trim();
-      stream.free();
-      sw.stop();
-      final decodeSec = sw.elapsedMilliseconds / 1000.0;
-      if (text.isNotEmpty) {
-        _segments.insert(0, text);
-      }
-      _metrics = 'last segment: ${segSec.toStringAsFixed(1)} s speech, '
-          'decoded in ${decodeSec.toStringAsFixed(2)} s '
-          '(RTF ${(decodeSec / segSec).toStringAsFixed(2)})';
-    }
-    // In hybrid mode the live partial line belongs to the streaming engine.
-    if (_asr != _Asr.hybrid) {
-      setState(() =>
-          _partial = vad.isDetected() ? '(listening...)' : '');
-    } else {
-      setState(() {});
-    }
-  }
-
   Future<void> _stop() async {
     try {
       await _audioSub?.cancel();
       _audioSub = null;
       await _recorder.stop();
-      if (_asr.usesOffline) {
-        // Flush a trailing segment the VAD has not closed yet.
-        _vad?.flush();
-        _feedOffline(Float32List(0));
-      }
+      _session?.flush();
     } catch (e) {
       debugPrint('stt spike stop failed: $e');
     }
@@ -430,6 +274,7 @@ class _SttSpikeScreenState extends State<SttSpikeScreen>
           children: [
             DropdownButtonFormField<_Asr>(
               initialValue: _asr,
+              isExpanded: true,
               dropdownColor: const Color(0xFF1B2A4A),
               style: const TextStyle(color: Colors.white, fontSize: 15),
               iconEnabledColor: Colors.white70,
@@ -443,7 +288,10 @@ class _SttSpikeScreenState extends State<SttSpikeScreen>
               ),
               items: [
                 for (final a in _Asr.values)
-                  DropdownMenuItem(value: a, child: Text(a.label)),
+                  DropdownMenuItem(
+                    value: a,
+                    child: Text(a.label, overflow: TextOverflow.ellipsis),
+                  ),
               ],
               onChanged: _busy
                   ? null
@@ -470,7 +318,6 @@ class _SttSpikeScreenState extends State<SttSpikeScreen>
                                   _canaryLang = lang;
                                   // Canary bakes the language into the
                                   // recognizer config; rebuild it.
-                                  _loadedOffline = null;
                                   _load(_Asr.canary);
                                 }
                               },
@@ -509,7 +356,7 @@ class _SttSpikeScreenState extends State<SttSpikeScreen>
               ),
             ),
             FilledButton.icon(
-              onPressed: (!_engineReady || _busy) ? null : _toggle,
+              onPressed: (_session == null || _busy) ? null : _toggle,
               icon: Icon(_listening ? Icons.stop : Icons.mic),
               label: Text(_listening ? 'Stop' : 'Listen'),
             ),
