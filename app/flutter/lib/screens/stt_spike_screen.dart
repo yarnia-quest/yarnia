@@ -1,21 +1,22 @@
-// Spike 2 (plans/post-hackathon-soul-and-direction.md): realtime on-device
-// STT, "the key" piece. All decoding runs in a worker isolate
-// (lib/services/asr_session.dart) so slow segments can never freeze the UI
-// (Whisper small took 11s/segment on a Kirin 970 and ANRed when decoded on
-// the main thread). Engines:
+// Spike 2 (plans/post-hackathon-soul-and-direction.md): on-device STT.
+// Trimmed to the engines that can do German (EN-only Zipformer/hybrid and the
+// too-slow-on-old-phones Whisper small are dropped from the UI; the code for
+// them remains in services/asr_session.dart):
 //
-// - Zipformer EN: streaming transducer, instant partials, English only.
-// - Whisper base/small (VAD): multilingual, language auto-detected.
+// - Whisper base (VAD): multilingual auto-detect incl. DE and TR.
 // - Canary 180M (VAD): EN/DE toggle; outputs in the SELECTED language (it is
-//   a translating ASR, speech in the other language gets translated).
-// - Parakeet 0.6B v3 (VAD): 25 languages, auto-detect (can be moody on
-//   short segments).
-// - Hybrid: Zipformer partials live, Whisper base rewrites each segment.
+//   a translating ASR). No Turkish.
+// - Parakeet 0.6B v3 (VAD): 25 European languages, auto-detect. No Turkish.
+// - System STT: the platform recognizer (Google speech services / Apple
+//   SFSpeechRecognizer) via speech_to_text - the comparison fallback the plan
+//   doc describes. Needs the OS speech service to be present (the Duolingo
+//   failure mode); EN/DE/TR selectable.
 //
-// The child's voice never leaves the device in any mode.
+// Local decoding runs in a worker isolate so slow segments can never freeze
+// the UI. The child's voice never leaves the device in the local modes.
 //
-// Models (push once, like the TTS ones): push each dir to /data/local/tmp,
-// then `adb shell run-as quest.yarnia.yarnia cp -r /data/local/tmp/<dir> files/`.
+// Models (push once): push each dir to /data/local/tmp, then
+// `adb shell run-as quest.yarnia.yarnia cp -r /data/local/tmp/<dir> files/`.
 
 import 'dart:async';
 import 'dart:io';
@@ -25,24 +26,21 @@ import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
+import 'package:speech_to_text/speech_to_text.dart';
 
 import '../services/asr_session.dart';
 
-const _zipformerDir = 'sherpa-onnx-streaming-zipformer-en-2023-06-26';
 const _whisperDir = 'sherpa-onnx-whisper-base';
-const _whisperSmallDir = 'sherpa-onnx-whisper-small';
 const _canaryDir = 'sherpa-onnx-nemo-canary-180m-flash-en-es-de-fr-int8';
 const _parakeetDir = 'sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8';
 const _vadFile = 'silero_vad.onnx';
 const _sampleRate = 16000;
 
 enum _Asr {
-  zipformer('Zipformer EN (streaming, fast)'),
-  whisperBase('Whisper base (VAD, multilingual)'),
-  whisperSmall('Whisper small (VAD, better, slower)'),
-  canary('Canary 180M (VAD, EN/DE, punctuation)'),
-  parakeet('Parakeet 0.6B v3 (VAD, 25 langs, auto)'),
-  hybrid('Hybrid: live partials + Whisper final');
+  whisperBase('Whisper base (local, EN/DE/TR auto)'),
+  canary('Canary 180M (local, EN/DE toggle)'),
+  parakeet('Parakeet 0.6B v3 (local, 25 langs auto)'),
+  device('System STT (Google / Apple speech)');
 
   const _Asr(this.label);
 
@@ -72,13 +70,16 @@ class SttSpikeScreen extends StatefulWidget {
 class _SttSpikeScreenState extends State<SttSpikeScreen>
     with AutomaticKeepAliveClientMixin {
   final _recorder = AudioRecorder();
+  final _deviceStt = SpeechToText();
 
   AsrSession? _session;
   StreamSubscription<AsrEvent>? _eventSub;
   StreamSubscription<Uint8List>? _audioSub;
+  bool _deviceReady = false;
 
-  _Asr _asr = _Asr.hybrid;
+  _Asr _asr = _Asr.whisperBase;
   String _canaryLang = 'en';
+  String _deviceLang = 'en_US';
   String _status = 'Initializing...';
   String _partial = '';
   String _metrics = '';
@@ -101,38 +102,27 @@ class _SttSpikeScreenState extends State<SttSpikeScreen>
     _audioSub?.cancel();
     _eventSub?.cancel();
     _recorder.dispose();
+    _deviceStt.stop();
     _session?.dispose();
     super.dispose();
   }
 
-  // Model dirs per engine; null means a required dir is missing on device.
   Future<Map<String, String>?> _dirsFor(_Asr asr) async {
     final support = (await getApplicationSupportDirectory()).path;
     String dir(String d) => p.join(support, d);
     bool has(String path) =>
         Directory(path).existsSync() || File(path).existsSync();
 
-    final vad = dir(_vadFile);
-    final result = <String, String>{};
+    final result = <String, String>{'vad': dir(_vadFile)};
     switch (asr) {
-      case _Asr.zipformer:
-        result['zipformer'] = dir(_zipformerDir);
       case _Asr.whisperBase:
         result['model'] = dir(_whisperDir);
-        result['vad'] = vad;
-      case _Asr.whisperSmall:
-        result['model'] = dir(_whisperSmallDir);
-        result['vad'] = vad;
       case _Asr.canary:
         result['model'] = dir(_canaryDir);
-        result['vad'] = vad;
       case _Asr.parakeet:
         result['model'] = dir(_parakeetDir);
-        result['vad'] = vad;
-      case _Asr.hybrid:
-        result['zipformer'] = dir(_zipformerDir);
-        result['model'] = dir(_whisperDir);
-        result['vad'] = vad;
+      case _Asr.device:
+        return null; // not a local engine
     }
     return result.values.every(has) ? result : null;
   }
@@ -142,7 +132,7 @@ class _SttSpikeScreenState extends State<SttSpikeScreen>
     setState(() {
       _busy = true;
       _asr = asr;
-      _status = 'Loading ${asr.label} (in background)...';
+      _status = 'Loading ${asr.label}...';
       _partial = '';
       _metrics = '';
     });
@@ -150,6 +140,31 @@ class _SttSpikeScreenState extends State<SttSpikeScreen>
       _eventSub?.cancel();
       _session?.dispose();
       _session = null;
+
+      if (asr == _Asr.device) {
+        _deviceReady = await _deviceStt.initialize(
+          onError: (e) {
+            debugPrint('device stt error: $e');
+            if (mounted) {
+              setState(() => _status = 'System STT error: ${e.errorMsg}. '
+                  'Is the OS speech service installed?');
+            }
+          },
+          onStatus: (s) {
+            // The platform recognizer stops itself after a pause; restart to
+            // keep a continuous session while the user has it switched on.
+            if (s == 'done' && _listening && _asr == _Asr.device) {
+              _deviceListen();
+            }
+          },
+        );
+        setState(() => _status = _deviceReady
+            ? 'System STT ready (OS speech service found). Tap the mic. '
+                'Audio is handled by Google/Apple, not locally.'
+            : 'System STT unavailable: the OS speech service is missing on '
+                'this device (the Duolingo failure mode).');
+        return;
+      }
 
       final dirs = await _dirsFor(asr);
       if (dirs == null) {
@@ -203,7 +218,40 @@ class _SttSpikeScreenState extends State<SttSpikeScreen>
     }
   }
 
+  void _deviceListen() {
+    _deviceStt.listen(
+      onResult: (r) {
+        if (!mounted) return;
+        setState(() {
+          if (r.finalResult) {
+            if (r.recognizedWords.trim().isNotEmpty) {
+              _segments.insert(0, r.recognizedWords.trim());
+            }
+            _partial = '';
+          } else {
+            _partial = r.recognizedWords;
+          }
+        });
+      },
+      listenOptions: SpeechListenOptions(
+        partialResults: true,
+        listenMode: ListenMode.dictation,
+        localeId: _deviceLang,
+      ),
+    );
+  }
+
   Future<void> _start() async {
+    if (_asr == _Asr.device) {
+      if (!_deviceReady) return;
+      _deviceListen();
+      setState(() {
+        _listening = true;
+        _status = 'Listening via the OS recognizer ($_deviceLang)...';
+      });
+      return;
+    }
+
     final session = _session;
     if (session == null) return;
     try {
@@ -233,12 +281,8 @@ class _SttSpikeScreenState extends State<SttSpikeScreen>
       });
       setState(() {
         _listening = true;
-        _status = switch (_asr) {
-          _Asr.zipformer => 'Listening (streaming, on-device)...',
-          _Asr.hybrid =>
-            'Listening (live partials, Whisper rewrites at each pause)...',
-          _ => 'Listening (VAD-segmented, on-device). Pause to transcribe.',
-        };
+        _status =
+            'Listening (VAD-segmented, on-device). Pause to transcribe.';
       });
     } catch (e) {
       debugPrint('stt spike start failed: $e');
@@ -248,10 +292,14 @@ class _SttSpikeScreenState extends State<SttSpikeScreen>
 
   Future<void> _stop() async {
     try {
-      await _audioSub?.cancel();
-      _audioSub = null;
-      await _recorder.stop();
-      _session?.flush();
+      if (_asr == _Asr.device) {
+        await _deviceStt.stop();
+      } else {
+        await _audioSub?.cancel();
+        _audioSub = null;
+        await _recorder.stop();
+        _session?.flush();
+      }
     } catch (e) {
       debugPrint('stt spike stop failed: $e');
     }
@@ -266,6 +314,11 @@ class _SttSpikeScreenState extends State<SttSpikeScreen>
   Widget build(BuildContext context) {
     super.build(context);
     const label = TextStyle(color: Colors.white70, fontSize: 13);
+    final langChips = switch (_asr) {
+      _Asr.canary => ['en', 'de'],
+      _Asr.device => ['en_US', 'de_DE', 'tr_TR'],
+      _ => const <String>[],
+    };
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -278,6 +331,10 @@ class _SttSpikeScreenState extends State<SttSpikeScreen>
               dropdownColor: const Color(0xFF1B2A4A),
               style: const TextStyle(color: Colors.white, fontSize: 15),
               iconEnabledColor: Colors.white70,
+              // Keep the selected label readable while disabled during load.
+              disabledHint: Text(_asr.label,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: Colors.white70, fontSize: 15)),
               decoration: const InputDecoration(
                 labelText: 'Recognizer',
                 labelStyle: label,
@@ -299,26 +356,36 @@ class _SttSpikeScreenState extends State<SttSpikeScreen>
                       if (a != null && a != _asr) _load(a);
                     },
             ),
-            if (_asr == _Asr.canary) ...[
+            if (_busy) ...[
+              const SizedBox(height: 8),
+              const LinearProgressIndicator(minHeight: 2),
+            ],
+            if (langChips.isNotEmpty) ...[
               const SizedBox(height: 8),
               Row(
                 children: [
                   const Text('Language', style: label),
                   const SizedBox(width: 12),
-                  for (final lang in ['en', 'de'])
+                  for (final lang in langChips)
                     Padding(
                       padding: const EdgeInsets.only(right: 8),
                       child: ChoiceChip(
-                        label: Text(lang.toUpperCase()),
-                        selected: _canaryLang == lang,
+                        label: Text(lang.substring(0, 2).toUpperCase()),
+                        selected: _asr == _Asr.canary
+                            ? _canaryLang == lang
+                            : _deviceLang == lang,
                         onSelected: _busy
                             ? null
                             : (sel) {
-                                if (sel && _canaryLang != lang) {
+                                if (!sel) return;
+                                if (_asr == _Asr.canary &&
+                                    _canaryLang != lang) {
                                   _canaryLang = lang;
                                   // Canary bakes the language into the
                                   // recognizer config; rebuild it.
                                   _load(_Asr.canary);
+                                } else if (_asr == _Asr.device) {
+                                  setState(() => _deviceLang = lang);
                                 }
                               },
                       ),
@@ -356,7 +423,12 @@ class _SttSpikeScreenState extends State<SttSpikeScreen>
               ),
             ),
             FilledButton.icon(
-              onPressed: (_session == null || _busy) ? null : _toggle,
+              onPressed: (_busy ||
+                      (_asr == _Asr.device
+                          ? !_deviceReady
+                          : _session == null))
+                  ? null
+                  : _toggle,
               icon: Icon(_listening ? Icons.stop : Icons.mic),
               label: Text(_listening ? 'Stop' : 'Listen'),
             ),
