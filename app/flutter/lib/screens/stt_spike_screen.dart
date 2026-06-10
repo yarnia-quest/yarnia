@@ -30,6 +30,7 @@ const _zipformerDir = 'sherpa-onnx-streaming-zipformer-en-2023-06-26';
 const _whisperDir = 'sherpa-onnx-whisper-base';
 const _whisperSmallDir = 'sherpa-onnx-whisper-small';
 const _canaryDir = 'sherpa-onnx-nemo-canary-180m-flash-en-es-de-fr-int8';
+const _parakeetDir = 'sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8';
 const _vadFile = 'silero_vad.onnx';
 const _sampleRate = 16000;
 
@@ -38,6 +39,7 @@ enum _Asr {
   whisperBase('Whisper base (VAD, multilingual)'),
   whisperSmall('Whisper small (VAD, better, slower)'),
   canary('Canary 180M (VAD, EN/DE, punctuation)'),
+  parakeet('Parakeet 0.6B v3 (VAD, 25 langs, auto-detect)'),
   hybrid('Hybrid: live partials + Whisper final');
 
   const _Asr(this.label);
@@ -245,6 +247,21 @@ class _SttSpikeScreenState extends State<SttSpikeScreen>
               usePnc: true,
             ),
             tokens: p.join(dir, 'tokens.txt'),
+            numThreads: 2,
+          ),
+        );
+      case _Asr.parakeet:
+        final dir = p.join(supportPath, _parakeetDir);
+        if (!Directory(dir).existsSync()) return null;
+        return sherpa_onnx.OfflineRecognizerConfig(
+          model: sherpa_onnx.OfflineModelConfig(
+            transducer: sherpa_onnx.OfflineTransducerModelConfig(
+              encoder: p.join(dir, 'encoder.int8.onnx'),
+              decoder: p.join(dir, 'decoder.int8.onnx'),
+              joiner: p.join(dir, 'joiner.int8.onnx'),
+            ),
+            tokens: p.join(dir, 'tokens.txt'),
+            modelType: 'nemo_transducer',
             numThreads: 2,
           ),
         );
