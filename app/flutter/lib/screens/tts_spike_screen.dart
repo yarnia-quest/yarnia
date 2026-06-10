@@ -18,8 +18,6 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa_onnx;
 
-import '../theme.dart';
-
 const _sampleText =
     'Once upon a time, in a quiet town by the sea, a little fox named Lumi '
     'could not fall asleep. The moon was full, the waves were soft, and '
@@ -52,7 +50,8 @@ class TtsSpikeScreen extends StatefulWidget {
   State<TtsSpikeScreen> createState() => _TtsSpikeScreenState();
 }
 
-class _TtsSpikeScreenState extends State<TtsSpikeScreen> {
+class _TtsSpikeScreenState extends State<TtsSpikeScreen>
+    with AutomaticKeepAliveClientMixin {
   final _textController = TextEditingController(text: _sampleText);
   final _player = AudioPlayer();
 
@@ -235,16 +234,13 @@ class _TtsSpikeScreenState extends State<TtsSpikeScreen> {
   double get _maxSid => ((_tts?.numSpeakers ?? 1) - 1).toDouble();
 
   @override
+  bool get wantKeepAlive => true;
+
+  @override
   Widget build(BuildContext context) {
+    super.build(context);
     const label = TextStyle(color: Colors.white70, fontSize: 13);
-    return Scaffold(
-      backgroundColor: navy,
-      appBar: AppBar(
-        backgroundColor: navy,
-        foregroundColor: Colors.white,
-        title: const Text('TTS spike: on-device voice'),
-      ),
-      body: SafeArea(
+    return SafeArea(
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
@@ -349,8 +345,6 @@ class _TtsSpikeScreenState extends State<TtsSpikeScreen> {
               label: Text(_busy ? 'Working...' : 'Synthesize and play'),
             ),
           ],
-        ),
-      ),
-    );
+        ));
   }
 }

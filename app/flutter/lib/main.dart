@@ -7,8 +7,8 @@ import 'screens/greeting_screen.dart';
 import 'screens/agent_screen.dart';
 import 'screens/cocreation_screen.dart';
 import 'screens/playback_screen.dart';
-import 'screens/tts_spike_screen_stub.dart'
-    if (dart.library.io) 'screens/tts_spike_screen.dart';
+import 'screens/spike_home_screen_stub.dart'
+    if (dart.library.io) 'screens/spike_home_screen.dart';
 import 'services/child_store.dart';
 import 'widgets/history_panel.dart';
 import 'widgets/profile_picker.dart';
@@ -41,7 +41,7 @@ class YarniaApp extends StatelessWidget {
       // Material-default text inherits it; screens opt into Fraunces for headlines.
       theme: ThemeData(scaffoldBackgroundColor: navy, fontFamily: 'Lora'),
       builder: (context, child) => _PhoneFrame(child: child!),
-      home: _ttsSpike ? const TtsSpikeScreen() : const YarniaRoot(),
+      home: _ttsSpike ? const SpikeHomeScreen() : const YarniaRoot(),
     );
   }
 }
