@@ -21,12 +21,15 @@ import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa_onnx;
 const _asrDir = 'sherpa-onnx-streaming-zipformer-en-2023-06-26';
 const _sampleRate = 16000;
 
+// The record stream hands out chunks at arbitrary byte offsets, so an
+// Int16List.view is not allowed (2-byte alignment) and a chunk may even split
+// a 16-bit sample. Read via ByteData (alignment-safe) instead.
 Float32List _bytesToFloat32(Uint8List bytes) {
-  final values = Int16List.view(bytes.buffer, bytes.offsetInBytes,
-      bytes.lengthInBytes ~/ 2);
-  final out = Float32List(values.length);
-  for (var i = 0; i < values.length; i++) {
-    out[i] = values[i] / 32768.0;
+  final data = ByteData.sublistView(bytes);
+  final n = bytes.lengthInBytes ~/ 2;
+  final out = Float32List(n);
+  for (var i = 0; i < n; i++) {
+    out[i] = data.getInt16(i * 2, Endian.little) / 32768.0;
   }
   return out;
 }
@@ -50,6 +53,7 @@ class _SttSpikeScreenState extends State<SttSpikeScreen>
   String _partial = '';
   final List<String> _segments = [];
   bool _listening = false;
+  Uint8List _carry = Uint8List(0);
 
   @override
   bool get wantKeepAlive => true;
@@ -137,11 +141,24 @@ class _SttSpikeScreenState extends State<SttSpikeScreen>
         sampleRate: _sampleRate,
         numChannels: 1,
       ));
+      _carry = Uint8List(0);
       _audioSub = audio.listen((data) {
         final stream = _stream;
         if (stream == null) return;
+        // Re-join the carry byte from the previous chunk so 16-bit samples
+        // split across chunk boundaries are not corrupted.
+        var bytes = data;
+        if (_carry.isNotEmpty) {
+          bytes = Uint8List(_carry.length + data.length)
+            ..setAll(0, _carry)
+            ..setAll(_carry.length, data);
+        }
+        final usable = bytes.length & ~1;
+        _carry = Uint8List.fromList(bytes.sublist(usable));
+        if (usable == 0) return;
         stream.acceptWaveform(
-            samples: _bytesToFloat32(data), sampleRate: _sampleRate);
+            samples: _bytesToFloat32(Uint8List.sublistView(bytes, 0, usable)),
+            sampleRate: _sampleRate);
         while (recognizer.isReady(stream)) {
           recognizer.decode(stream);
         }
