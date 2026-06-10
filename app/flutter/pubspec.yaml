@@ -18,6 +18,8 @@ dependencies:
   elevenlabs_agents: ^0.6.1
   permission_handler: ^11.3.1
   shared_preferences: ^2.2.0
+  sherpa_onnx: ^1.13.2
+  path: ^1.9.1
 
 dev_dependencies:
   flutter_test:

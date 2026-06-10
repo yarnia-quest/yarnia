@@ -7,6 +7,8 @@ import 'screens/greeting_screen.dart';
 import 'screens/agent_screen.dart';
 import 'screens/cocreation_screen.dart';
 import 'screens/playback_screen.dart';
+import 'screens/tts_spike_screen_stub.dart'
+    if (dart.library.io) 'screens/tts_spike_screen.dart';
 import 'services/child_store.dart';
 import 'widgets/history_panel.dart';
 import 'widgets/profile_picker.dart';
@@ -18,6 +20,10 @@ import 'theme.dart';
 // still hits api.yarnia.quest and never localhost. Opt into a local dev server explicitly
 // with --dart-define-from-file=dart_defines/local.json (see README).
 const _apiBase = String.fromEnvironment('API_BASE', defaultValue: 'https://api.yarnia.quest');
+
+// Spike 1a: build with --dart-define=TTS_SPIKE=true to boot straight into the
+// on-device TTS experiment instead of the product (see tts_spike_screen.dart).
+const _ttsSpike = bool.fromEnvironment('TTS_SPIKE');
 
 void main() {
   runApp(const YarniaApp());
@@ -35,7 +41,7 @@ class YarniaApp extends StatelessWidget {
       // Material-default text inherits it; screens opt into Fraunces for headlines.
       theme: ThemeData(scaffoldBackgroundColor: navy, fontFamily: 'Lora'),
       builder: (context, child) => _PhoneFrame(child: child!),
-      home: const YarniaRoot(),
+      home: _ttsSpike ? const TtsSpikeScreen() : const YarniaRoot(),
     );
   }
 }
