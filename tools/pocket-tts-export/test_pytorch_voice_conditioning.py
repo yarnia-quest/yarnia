@@ -109,7 +109,13 @@ def main():
                 frames_after_eos=2,
                 copy_state=True,
             ))
-            y = np.concatenate([np.array(c, dtype=np.float32) for c in audio_chunks])
+            pieces = []
+            for c in audio_chunks:
+                arr = np.array(c, dtype=np.float32)
+                if arr.ndim == 0:
+                    arr = arr.reshape(1)
+                pieces.append(arr.flatten())
+            y = np.concatenate(pieces) if pieces else np.zeros(1, dtype=np.float32)
 
             out_path = OUT_DIR / f"pytorch_{name}.wav"
             sf.write(str(out_path), y, sr)

@@ -1,18 +1,21 @@
 #!/usr/bin/env python3
 """
-Reproduce what the Flutter app does: synthesize N German sentences with the
-pocket-tts-de model (via sherpa-onnx runtime) and measure whether the voice
-is consistent across sentences.
+Quality test for exported Pocket TTS models (via sherpa-onnx runtime).
 
-Voice similarity is measured with speaker-embedding cosine similarity using
-the same SpeakerEmbeddingExtractor that sherpa-onnx ships. A score >= 0.85
-between any two sentences is considered "same speaker"; < 0.70 is clearly
-different voice.
+Synthesizes language-appropriate sentences and checks three quality dimensions:
+  1. Voice consistency  — F0 spread across sentences < 35Hz, each sentence
+                          within 50Hz of the reference speaker's pitch.
+  2. Audio completeness — each sentence lasts at least 0.12 s/word (a very
+                          lenient minimum; a sentence cut off mid-way will fail).
+  3. Spectral cleanliness — per-sentence spectral flatness < 0.08; higher
+                            values indicate broadband noise / decoder artifacts.
 
 Usage:
-    uv run python test_voice_consistency.py [--model-dir models/german] [--seed 0]
+    uv run python test_voice_consistency.py [--model-dir models/german_24l]
+    uv run python test_voice_consistency.py --model-dir /tmp/sherpa-onnx-pocket-tts-int8-2026-01-26 \\
+        --ref /tmp/sherpa-onnx-pocket-tts-int8-2026-01-26/test_wavs/bria.wav --language en
 
-Exit code: 0 if all sentence pairs are consistent, 1 otherwise.
+Exit code: 0 = all checks PASS, 1 = any check FAIL.
 """
 import argparse
 import sys
@@ -23,17 +26,37 @@ import numpy as np
 import sherpa_onnx
 import soundfile as sf
 
-# ─── config ──────────────────────────────────────────────────────────────────
+# ─── language-appropriate sentence sets ──────────────────────────────────────
 
-SENTENCES = [
-    "Es war einmal ein kleiner Fuchs namens Lumi, der in einer stillen Stadt am Meer nicht einschlafen konnte.",
-    "Der Mond war voll, die Wellen waren sanft und irgendwo weit weg erzählte eine Eule der Nacht ihr liebstes Geheimnis.",
-    "Lumi rollte sich unter seinem Baum zusammen und schloss langsam die Augen.",
-]
+SENTENCES: dict[str, list[str]] = {
+    "de": [
+        "Es war einmal ein kleiner Fuchs namens Lumi, der in einer stillen Stadt am Meer nicht einschlafen konnte.",
+        "Der Mond war voll, die Wellen waren sanft und irgendwo weit weg erzählte eine Eule der Nacht ihr liebstes Geheimnis.",
+        "Lumi rollte sich unter seinem Baum zusammen und schloss langsam die Augen.",
+    ],
+    "en": [
+        "Once upon a time there was a little fox named Lumi who could not fall asleep in a quiet town by the sea.",
+        "The moon was full, the waves were gentle, and somewhere far away an owl whispered its dearest secret to the night.",
+        "Lumi curled up beneath his tree and slowly closed his eyes.",
+    ],
+    "fr": [
+        "Il était une fois un petit renard nommé Lumi qui n'arrivait pas à s'endormir dans une ville tranquille au bord de la mer.",
+        "La lune était pleine, les vagues étaient douces et quelque part au loin un hibou murmurait son secret préféré à la nuit.",
+        "Lumi se blottit sous son arbre et ferma lentement les yeux.",
+    ],
+    "es": [
+        "Había una vez un pequeño zorro llamado Lumi que no podía dormirse en una tranquila ciudad junto al mar.",
+        "La luna estaba llena, las olas eran suaves y en algún lugar lejano un búho susurraba su secreto favorito a la noche.",
+        "Lumi se acurrucó bajo su árbol y cerró lentamente los ojos.",
+    ],
+}
 
-# cosine similarity thresholds for pass/warn/fail
-PASS_THRESHOLD = 0.80
-WARN_THRESHOLD = 0.65
+# ─── quality thresholds ───────────────────────────────────────────────────────
+
+F0_SPREAD_THRESHOLD = 35      # Hz — audible pitch shift above this
+F0_REF_ERROR_THRESHOLD = 50   # Hz — each sentence vs reference speaker
+FLATNESS_THRESHOLD = 0.08     # higher = broadband noise; clean TTS ~0.02-0.05
+MIN_SECS_PER_WORD = 0.12      # very lenient; catches severely cut-off audio
 
 # ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -70,13 +93,11 @@ def synth_sentence(
     speed: float,
     temperature: float = 0.25,
 ) -> tuple[np.ndarray, int]:
-    """Exactly mirrors OfflineTtsGenerationConfig in tts_session.dart."""
     g = sherpa_onnx.GenerationConfig()
     g.reference_audio = ref_samples
     g.reference_sample_rate = ref_sr
     g.num_steps = num_steps
     g.speed = speed
-    # extra params — same as in tts_session.dart
     g.extra = {
         "max_reference_audio_len": "20",
         "seed": str(seed),
@@ -88,25 +109,143 @@ def synth_sentence(
     return np.array(audio.samples, dtype=np.float32), audio.sample_rate
 
 
-def mfcc_embedding(y: np.ndarray, sr: int) -> np.ndarray:
-    """
-    Speaker-proxy embedding: mean + std of MFCC + delta features.
-    Not a real speaker model but cheap and good enough to detect voice shifts.
-    """
-    mfcc = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=20)
-    delta = librosa.feature.delta(mfcc)
-    feats = np.concatenate([mfcc, delta], axis=0)
-    emb = np.concatenate([feats.mean(axis=1), feats.std(axis=1)])
-    return emb / (np.linalg.norm(emb) + 1e-9)
-
-
-def cosine(a: np.ndarray, b: np.ndarray) -> float:
-    return float(np.dot(a, b))
-
-
 def spectral_flatness(y: np.ndarray) -> float:
     S = np.abs(librosa.stft(y, n_fft=1024)) + 1e-9
     return float(np.mean(librosa.feature.spectral_flatness(S=S)[0]))
+
+
+def get_f0(y: np.ndarray, sr: int) -> float:
+    f0, vf, _ = librosa.pyin(y, fmin=50, fmax=400, sr=sr)
+    f0v = f0[vf & ~np.isnan(f0)] if vf is not None else np.array([])
+    return float(np.mean(f0v)) if len(f0v) > 0 else 0.0
+
+
+def detect_language(model_dir: str) -> str:
+    d = model_dir.lower()
+    if "french" in d or "_fr" in d or "/fr" in d:
+        return "fr"
+    if "spanish" in d or "_es" in d or "/es" in d:
+        return "es"
+    if "english" in d or "_en" in d or "/en" in d or "pocket-tts-int8" in d:
+        return "en"
+    return "de"  # default
+
+
+def run_model(
+    model_dir: str,
+    ref_path: str,
+    language: str,
+    seed: int,
+    steps: int,
+    speed: float,
+    temperature: float,
+    out_dir: Path,
+) -> bool:
+    """
+    Synthesize sentences and check all three quality dimensions.
+    Returns True if all checks pass.
+    """
+    sentences = SENTENCES.get(language, SENTENCES["de"])
+
+    print(f"model    : {model_dir}")
+    print(f"language : {language}")
+    print(f"ref      : {ref_path}")
+    print(f"seed     : {seed}  steps={steps}  speed={speed}  temperature={temperature}")
+    print()
+
+    tts = make_tts(model_dir)
+    ref_y, ref_sr = librosa.load(ref_path, sr=tts.sample_rate)
+
+    ref_f0_mean = get_f0(ref_y, ref_sr)
+    print(f"ref F0: {ref_f0_mean:.0f}Hz (male ~80-180Hz, female ~160-260Hz)")
+    print()
+
+    f0_means: list[float] = []
+    flatnesses: list[float] = []
+    durations: list[float] = []
+    word_counts: list[int] = []
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    for i, text in enumerate(sentences):
+        y, sr = synth_sentence(tts, ref_y, ref_sr, text, steps, seed, speed,
+                               temperature=temperature)
+        wav_path = out_dir / f"sentence_{i}.wav"
+        sf.write(str(wav_path), y, sr)
+
+        f0 = get_f0(y, sr)
+        flat = spectral_flatness(y)
+        dur = len(y) / sr
+        wc = len(text.split())
+
+        f0_means.append(f0)
+        flatnesses.append(flat)
+        durations.append(dur)
+        word_counts.append(wc)
+
+        min_dur = wc * MIN_SECS_PER_WORD
+        dur_ok = dur >= min_dur
+        flat_ok = flat < FLATNESS_THRESHOLD
+
+        dur_flag = "OK" if dur_ok else f"SHORT(min={min_dur:.1f}s)"
+        flat_flag = "OK" if flat_ok else f"NOISY(>={FLATNESS_THRESHOLD:.2f})"
+
+        print(f"[{i}] F0={f0:.0f}Hz  flatness={flat:.4f}  dur={dur:.1f}s  words={wc}")
+        print(f"     {dur_flag}  {flat_flag}")
+        print(f"     text: {text[:70]}...")
+
+    # ── check 1: voice consistency (F0 spread) ────────────────────────────────
+    print()
+    f0_spread = max(f0_means) - min(f0_means)
+    print(f"Check 1 — Voice consistency (F0 spread across sentences):")
+    print(f"  spread={f0_spread:.0f}Hz  threshold=<{F0_SPREAD_THRESHOLD}Hz")
+    spread_ok = f0_spread < F0_SPREAD_THRESHOLD
+    ref_errors_ok = True
+    for i, f0m in enumerate(f0_means):
+        err = abs(f0m - ref_f0_mean)
+        ok = err < F0_REF_ERROR_THRESHOLD
+        print(f"  [{i}] F0={f0m:.0f}Hz  error_vs_ref={err:.0f}Hz  {'OK' if ok else 'OFF'}")
+        if not ok:
+            ref_errors_ok = False
+    consistency_pass = spread_ok and ref_errors_ok
+
+    # ── check 2: audio completeness (cut-off) ────────────────────────────────
+    print()
+    print(f"Check 2 — Audio completeness (min {MIN_SECS_PER_WORD:.2f}s/word):")
+    completeness_pass = True
+    for i, (dur, wc) in enumerate(zip(durations, word_counts)):
+        min_dur = wc * MIN_SECS_PER_WORD
+        ok = dur >= min_dur
+        rate = dur / wc
+        print(f"  [{i}] dur={dur:.1f}s  words={wc}  rate={rate:.2f}s/word  min={min_dur:.1f}s  {'OK' if ok else 'CUT-OFF'}")
+        if not ok:
+            completeness_pass = False
+
+    # ── check 3: spectral cleanliness (noise) ────────────────────────────────
+    print()
+    print(f"Check 3 — Spectral cleanliness (flatness < {FLATNESS_THRESHOLD:.2f}):")
+    cleanliness_pass = True
+    for i, flat in enumerate(flatnesses):
+        ok = flat < FLATNESS_THRESHOLD
+        print(f"  [{i}] flatness={flat:.4f}  {'OK' if ok else 'NOISY'}")
+        if not ok:
+            cleanliness_pass = False
+
+    # ── overall result ────────────────────────────────────────────────────────
+    print()
+    all_pass = consistency_pass and completeness_pass and cleanliness_pass
+    if all_pass:
+        print("RESULT: PASS — all three quality checks passed")
+    else:
+        fails = []
+        if not consistency_pass:
+            fails.append(f"voice inconsistency (spread={f0_spread:.0f}Hz)")
+        if not completeness_pass:
+            fails.append("audio cut-off")
+        if not cleanliness_pass:
+            fails.append("background noise")
+        print(f"RESULT: FAIL — {'; '.join(fails)}")
+    return all_pass
 
 
 # ─── main ────────────────────────────────────────────────────────────────────
@@ -115,85 +254,68 @@ def spectral_flatness(y: np.ndarray) -> float:
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--model-dir", default="models/german_24l")
-    ap.add_argument("--ref", default=None, help="reference wav (default: <model-dir>/test_wavs/juergen.wav)")
-    ap.add_argument("--seed", type=int, default=0, help="flow-matching noise seed (0=deterministic, -1=random)")
-    ap.add_argument("--temperature", type=float, default=0.25, help="flow-matching noise temperature (lower=more consistent voice)")
+    ap.add_argument("--ref", default=None,
+                    help="reference wav (default: <model-dir>/test_wavs/juergen.wav)")
+    ap.add_argument("--language", default=None,
+                    help="sentence language: de|en|fr|es (auto-detected from model-dir if omitted)")
+    ap.add_argument("--seed", type=int, default=1)
+    ap.add_argument("--temperature", type=float, default=0.25)
     ap.add_argument("--steps", type=int, default=8)
     ap.add_argument("--speed", type=float, default=0.9)
     ap.add_argument("--out-dir", default="/tmp/voice_consistency")
+    ap.add_argument("--en-baseline", action="store_true",
+                    help="also run the official EN model as a sanity baseline "
+                         "(expects /tmp/sherpa-onnx-pocket-tts-int8-2026-01-26)")
     args = ap.parse_args()
 
+    language = args.language or detect_language(args.model_dir)
     ref_path = args.ref or f"{args.model_dir}/test_wavs/juergen.wav"
+
     if not Path(ref_path).exists():
         sys.exit(f"reference wav not found: {ref_path}")
 
-    out = Path(args.out_dir)
-    out.mkdir(parents=True, exist_ok=True)
+    overall_pass = True
 
-    print(f"model : {args.model_dir}")
-    print(f"ref   : {ref_path}")
-    print(f"seed  : {args.seed}  steps={args.steps}  speed={args.speed}  temperature={args.temperature}")
-    print()
+    # ── primary model ─────────────────────────────────────────────────────────
+    out_dir = Path(args.out_dir) / Path(args.model_dir).name
+    ok = run_model(
+        model_dir=args.model_dir,
+        ref_path=ref_path,
+        language=language,
+        seed=args.seed,
+        steps=args.steps,
+        speed=args.speed,
+        temperature=args.temperature,
+        out_dir=out_dir,
+    )
+    overall_pass = overall_pass and ok
 
-    tts = make_tts(args.model_dir)
-    ref_y, ref_sr = librosa.load(ref_path, sr=tts.sample_rate)
+    # ── EN baseline (optional sanity check) ───────────────────────────────────
+    if args.en_baseline:
+        en_dir = "/tmp/sherpa-onnx-pocket-tts-int8-2026-01-26"
+        en_ref = f"{en_dir}/test_wavs/bria.wav"
+        if not Path(en_dir).exists():
+            print(f"\n[EN baseline] SKIP — model not found at {en_dir}")
+        else:
+            print(f"\n{'='*60}")
+            print("EN BASELINE (should PASS on all checks)")
+            print("="*60)
+            en_out = Path(args.out_dir) / "en_baseline"
+            en_ok = run_model(
+                model_dir=en_dir,
+                ref_path=en_ref,
+                language="en",
+                seed=args.seed,
+                steps=args.steps,
+                speed=args.speed,
+                temperature=args.temperature,
+                out_dir=en_out,
+            )
+            if not en_ok:
+                print("  WARNING: EN baseline FAILED — something is wrong with the test itself")
+            overall_pass = overall_pass and en_ok
 
-    # Measure reference pitch so we can compare synthesis F0
-    ref_f0, ref_vf, _ = librosa.pyin(ref_y, fmin=50, fmax=400, sr=ref_sr)
-    ref_f0_mean = float(np.mean(ref_f0[ref_vf & ~np.isnan(ref_f0)]))
-    print(f"ref F0: {ref_f0_mean:.0f}Hz (male ~80-180Hz, female ~160-260Hz)")
-    print()
-
-    wavs: list[np.ndarray] = []
-    embs: list[np.ndarray] = []
-    f0_means: list[float] = []
-
-    for i, text in enumerate(SENTENCES):
-        y, sr = synth_sentence(tts, ref_y, ref_sr, text, args.steps, args.seed, args.speed,
-                               temperature=args.temperature)
-        wav_path = out / f"sentence_{i}.wav"
-        sf.write(str(wav_path), y, sr)
-        flat = spectral_flatness(y)
-        emb = mfcc_embedding(y, sr)
-        # Fundamental frequency (pitch) — the most audible marker of voice identity
-        f0, vf, _ = librosa.pyin(y, fmin=50, fmax=400, sr=sr)
-        f0v = f0[vf & ~np.isnan(f0)]
-        f0_mean = float(np.mean(f0v)) if len(f0v) > 0 else 0.0
-        f0_means.append(f0_mean)
-        wavs.append(y)
-        embs.append(emb)
-        print(f"[{i}] F0={f0_mean:.0f}Hz  flatness={flat:.4f}  dur={len(y)/sr:.1f}s  → {wav_path}")
-        print(f"     text: {text[:60]}...")
-
-    f0_spread = max(f0_means) - min(f0_means)
-    # F0 check: spread <= 30Hz is good; reference error <= 40Hz per sentence
-    F0_SPREAD_THRESHOLD = 35  # Hz — audible shift above this
-    F0_REF_ERROR_THRESHOLD = 50  # Hz — too far from reference pitch
-
-    print()
-    print(f"F0 spread across sentences: {f0_spread:.0f}Hz (target <{F0_SPREAD_THRESHOLD}Hz)")
-    f0_ok = True
-    for i, f0m in enumerate(f0_means):
-        err = abs(f0m - ref_f0_mean)
-        status = "OK" if err < F0_REF_ERROR_THRESHOLD else "OFF"
-        print(f"  [{i}] F0={f0m:.0f}Hz  error_vs_ref={err:.0f}Hz  {status}")
-        if err >= F0_REF_ERROR_THRESHOLD:
-            f0_ok = False
-    spread_ok = f0_spread < F0_SPREAD_THRESHOLD
-
-    print()
-    if f0_ok and spread_ok:
-        print(f"RESULT: PASS — voice is consistent (spread={f0_spread:.0f}Hz < {F0_SPREAD_THRESHOLD}Hz)")
-        return 0
-    else:
-        reasons = []
-        if not spread_ok:
-            reasons.append(f"F0 spread {f0_spread:.0f}Hz >= {F0_SPREAD_THRESHOLD}Hz")
-        if not f0_ok:
-            reasons.append("one or more sentences deviate > 50Hz from reference pitch")
-        print(f"RESULT: FAIL — {'; '.join(reasons)}")
-        print("  Fix: use 24-layer model + temperature=0.25 + seed=0")
-        return 1
+    return 0 if overall_pass else 1
 
 
 if __name__ == "__main__":

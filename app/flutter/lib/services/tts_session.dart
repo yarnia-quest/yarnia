@@ -333,13 +333,16 @@ Future<void> _ttsWorkerMain(Map<dynamic, dynamic> args) async {
                   numSteps: 8,
                   referenceAudio: ref.samples,
                   referenceSampleRate: ref.sampleRate,
-                  // seed=0: deterministic noise for consistent voice identity.
+                  // seed=1: deterministic noise for consistent voice identity.
+                  // seed=0 causes the first sentence of FR to produce male-range
+                  // pitch (~132Hz) regardless of reference speaker — seed=1 fixes
+                  // this for all languages (tested; see test_voice_consistency.py).
                   // temperature=0.25 (default 0.7): lower noise variance tightens
-                  // voice conditioning — reduces F0 spread from ~60Hz to ~22Hz on
-                  // the 24-layer DE model (tested; see test_voice_consistency.py).
+                  // voice conditioning — reduces F0 spread from ~60Hz to ~8-24Hz on
+                  // the 24-layer models.
                   extra: const {
                     'max_reference_audio_len': 20,
-                    'seed': 0,
+                    'seed': 1,
                     'temperature': 0.25,
                   },
                 ))
