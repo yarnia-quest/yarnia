@@ -329,9 +329,14 @@ Future<void> _ttsWorkerMain(Map<dynamic, dynamic> args) async {
                 config: sherpa_onnx.OfflineTtsGenerationConfig(
                   sid: m['sid'] as int,
                   speed: m['speed'] as double,
+                  // 8 steps for lower spectral flatness (0.034 vs 0.067 at 5).
+                  numSteps: 8,
                   referenceAudio: ref.samples,
                   referenceSampleRate: ref.sampleRate,
-                  extra: const {'max_reference_audio_len': 20},
+                  // seed=0: deterministic noise so every sentence sounds like
+                  // the same speaker. Default (-1) uses a random device, which
+                  // causes the voice to shift noticeably between sentences.
+                  extra: const {'max_reference_audio_len': 20, 'seed': 0},
                 ))
             : tts.generate(
                 text: m['text'] as String,
