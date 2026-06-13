@@ -31,6 +31,7 @@ import shutil
 import sys
 from pathlib import Path
 
+import onnx
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -342,7 +343,7 @@ def _export(wrapper, args, out_path: Path, input_names, output_names, dynamic_ax
             input_names=input_names,
             output_names=output_names,
             dynamic_axes=dynamic_axes,
-            opset_version=18,
+            opset_version=14,
             do_constant_folding=True,
             dynamo=False,
         )
@@ -352,8 +353,22 @@ def _export(wrapper, args, out_path: Path, input_names, output_names, dynamic_ax
 
 
 def _quantize(src: Path, dst: Path):
-    quantize_dynamic(str(src), str(dst), weight_type=QuantType.QUInt8)
-    log.info("  quantised → %s  (%.1f MB)", dst.name, dst.stat().st_size / 1e6)
+    # MatMul-only dynamic quantisation, matching the official sherpa-onnx
+    # exporter (scripts/quantize.py). Quantising Conv ops (the Mimi decoder
+    # vocoder) to int8 produces speech-shaped background noise, so they MUST
+    # stay float. Shape inference first stabilises quantisation.
+    tmp = dst.with_suffix(".shapeinf.onnx")
+    model = onnx.shape_inference.infer_shapes(onnx.load(str(src)))
+    onnx.save(model, str(tmp))
+    quantize_dynamic(
+        model_input=str(tmp),
+        model_output=str(dst),
+        weight_type=QuantType.QInt8,
+        op_types_to_quantize=["MatMul"],
+        extra_options={"ForceQuantizeNoType": True, "DefaultTensorType": 1},
+    )
+    tmp.unlink(missing_ok=True)
+    log.info("  quantised (MatMul-only) → %s  (%.1f MB)", dst.name, dst.stat().st_size / 1e6)
 
 
 # ---------------------------------------------------------------------------
@@ -376,6 +391,83 @@ def export_tokenizer(tokenizer_model_path: str, out_dir: Path):
     (out_dir / "vocab.json").write_text(json.dumps(vocab, ensure_ascii=False, indent=2))
     (out_dir / "token_scores.json").write_text(json.dumps(scores, ensure_ascii=False, indent=2))
     log.info("  wrote vocab.json + token_scores.json  (%d tokens)", n)
+
+
+# ---------------------------------------------------------------------------
+# Reference wav management
+# ---------------------------------------------------------------------------
+
+# Native-language reference files ship with the package or are cached by HuggingFace.
+# Each entry maps language prefix → (source_path, dest_filename).
+# dest_filename must match _defaultRefFilename in tts_spike_screen.dart.
+_LANG_REFS: dict[str, tuple[str, str]] = {
+    "german": (
+        "/home/o/.cache/huggingface/hub/models--kyutai--pocket-tts"
+        "/snapshots/64ab7d24c479d736a83b8cc666c4a776fca30fda/de-DE-juergen.mp3",
+        "juergen.wav",
+    ),
+    "french": (
+        "/home/o/.cache/huggingface/hub/models--kyutai--tts-voices"
+        "/snapshots/1fc7395b7e012e2bbebfca14b942a4ef62ccc899"
+        "/unmute-prod-website/developpeuse-3.wav",
+        "developpeuse.wav",
+    ),
+}
+
+_EN_BRIA = (
+    "/tmp/sherpa-onnx-pocket-tts-int8-2026-01-26/test_wavs/bria.wav",
+    "bria.wav",
+)
+
+
+def _prepare_reference_wav(y: np.ndarray, sr: int) -> np.ndarray:
+    """Trim leading silence and ensure the reference starts with speech.
+
+    The Mimi encoder only processes the first ~1 second of reference audio
+    (fixed window from the ONNX export dummy). If the reference starts with
+    silence, the voice embedding captures only silence and all voices look
+    identical. trimming ensures the encoder window contains actual speech.
+
+    Uses a 40dB silence threshold (top_db=40) — quiet speech is kept.
+    """
+    import librosa
+    yt, _ = librosa.effects.trim(y, top_db=40)
+    if len(yt) < sr * 0.1:  # less than 100ms of speech — use original to avoid empty
+        log.warning("  ref trim: very short after trimming (%.2fs), keeping original", len(yt) / sr)
+        return y
+    log.info("  ref trim: %.2fs → %.2fs (removed %.0fms leading silence)",
+             len(y) / sr, len(yt) / sr, (len(y) - len(yt)) / sr * 1000)
+    return yt
+
+
+def _copy_reference_wavs(language: str, out_dir: Path):
+    """Copy reference speaker wavs into <out_dir>/test_wavs/."""
+    import numpy as np
+    import librosa
+    import soundfile as sf
+
+    wav_dir = out_dir / "test_wavs"
+    wav_dir.mkdir(exist_ok=True)
+
+    # Always copy the EN reference as a generic fallback.
+    bria_src, bria_dst = _EN_BRIA
+    if Path(bria_src).exists() and not (wav_dir / bria_dst).exists():
+        y, _ = librosa.load(bria_src, sr=24000, mono=True)
+        y = _prepare_reference_wav(y, 24000)
+        sf.write(str(wav_dir / bria_dst), y, 24000, subtype="PCM_16")
+        log.info("  ref: %s", bria_dst)
+
+    # Language-specific native reference.
+    lang_prefix = language.split("_")[0]  # "german_24l" → "german"
+    if lang_prefix in _LANG_REFS:
+        src, dst = _LANG_REFS[lang_prefix]
+        if Path(src).exists():
+            y, _ = librosa.load(src, sr=24000, mono=True)
+            y = _prepare_reference_wav(y, 24000)
+            sf.write(str(wav_dir / dst), y, 24000, subtype="PCM_16")
+            log.info("  ref (native): %s", dst)
+        else:
+            log.warning("  native ref not found: %s — skipping", src)
 
 
 # ---------------------------------------------------------------------------
@@ -503,6 +595,12 @@ def export_language(language: str, out_dir: Path):
     from pocket_tts.utils.utils import download_if_necessary
     tokenizer_path = str(download_if_necessary(cfg.flow_lm.lookup_table.tokenizer_path))
     export_tokenizer(tokenizer_path, out_dir)
+
+    # ---- reference wavs (voice-cloning seed) ---------------------------------
+    # Always include the official EN bria.wav so the app has a fallback. For
+    # languages that have a native-speaker reference, include that too; it
+    # produces noticeably more natural prosody than using an EN reference.
+    _copy_reference_wavs(language, out_dir)
 
     log.info("=== Done: %s ===\n%s", language,
              "\n".join(f"  {p.name}" for p in sorted(out_dir.iterdir())))
