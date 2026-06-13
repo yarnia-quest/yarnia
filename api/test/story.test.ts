@@ -312,3 +312,109 @@ describe("POST /agent/webhook (ElevenLabs post-call)", () => {
     expect(saveSession).not.toHaveBeenCalled();
   });
 });
+
+describe("POST /story/turn", () => {
+  const sentences = [
+    "Once upon a time there was a dragon.",
+    "The dragon loved to fly.",
+    "One day the dragon met a rabbit.",
+    "They became the best of friends.",
+  ];
+
+  it("400s when childId is missing", async () => {
+    const res = await post(createApp(), "/story/turn", {});
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "childId required" });
+  });
+
+  it("400s when sentences is missing", async () => {
+    const res = await post(createApp(), "/story/turn", { childId: "lisa-1" });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "sentences required" });
+  });
+
+  it("400s when sentences is an empty array", async () => {
+    const res = await post(createApp(), "/story/turn", { childId: "lisa-1", sentences: [] });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "sentences required" });
+  });
+
+  it("404s when the child is not found", async () => {
+    const res = await post(
+      appWith({ loadChild: async () => null }),
+      "/story/turn",
+      { childId: "ghost", sentences, cursor: 2, utterance: "keep going" },
+    );
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: "child_not_found" });
+  });
+
+  it("returns a continue decision when generate returns continue JSON", async () => {
+    const generate = vi.fn(async () => JSON.stringify({ intent: "continue", resumeAt: 2 }));
+    const res = await post(
+      appWith({ generate }),
+      "/story/turn",
+      { childId: "lisa-1", sentences, cursor: 2, utterance: "keep going" },
+    );
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as { intent: string; resumeAt: number };
+    expect(json.intent).toBe("continue");
+    expect(json.resumeAt).toBe(2);
+    expect(generate).toHaveBeenCalledOnce();
+  });
+
+  it("returns an answer decision with say text", async () => {
+    const generate = vi.fn(async () =>
+      JSON.stringify({ intent: "answer", say: "His name is Emilio!", resumeAt: 2 }),
+    );
+    const res = await post(
+      appWith({ generate }),
+      "/story/turn",
+      { childId: "lisa-1", sentences, cursor: 2, utterance: "what is his name?" },
+    );
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as { intent: string; say: string };
+    expect(json.intent).toBe("answer");
+    expect(json.say).toBe("His name is Emilio!");
+  });
+
+  it("returns a revise decision with revision data", async () => {
+    const generate = vi.fn(async () =>
+      JSON.stringify({
+        intent: "revise",
+        say: "Let me change that.",
+        revision: { fromSentence: 1, sentences: ["The dragon was green.", "He soared happily."] },
+        resumeAt: 1,
+      }),
+    );
+    const res = await post(
+      appWith({ generate }),
+      "/story/turn",
+      { childId: "lisa-1", sentences, cursor: 3, utterance: "make the dragon green" },
+    );
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as { intent: string; revision: { fromSentence: number; sentences: string[] } };
+    expect(json.intent).toBe("revise");
+    expect(json.revision.fromSentence).toBe(1);
+    expect(json.revision.sentences).toHaveLength(2);
+  });
+
+  it("coerces a violent revision to continue (safety gate)", async () => {
+    const generate = vi.fn(async () =>
+      JSON.stringify({
+        intent: "revise",
+        revision: { fromSentence: 1, sentences: ["The dragon killed the rabbit with a knife."] },
+        resumeAt: 1,
+      }),
+    );
+    const res = await post(
+      appWith({ generate }),
+      "/story/turn",
+      { childId: "lisa-1", sentences, cursor: 3, utterance: "make it more exciting" },
+    );
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as { intent: string; resumeAt: number };
+    expect(json.intent).toBe("continue");
+    expect(json.resumeAt).toBe(3); // falls back to the original cursor
+  });
+});

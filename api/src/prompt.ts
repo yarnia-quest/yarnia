@@ -86,6 +86,74 @@ export function buildStoryPrompt(child: Child, choice: string, language?: string
   return { system, user: userParts.join(" ") };
 }
 
+// Turn prompt for the conversational engine (POST /story/turn).
+// Reuses the same safety preamble as buildStoryPrompt, then adds the story so far
+// as numbered sentences, the cursor position, and the JSON response contract.
+export function buildTurnPrompt(
+  child: Child,
+  sentences: string[],
+  cursor: number,
+  utterance: string,
+  language?: string,
+): StoryPrompt {
+  const { name, age, fearsToAvoid } = child;
+
+  // Same safety preamble as buildStoryPrompt (lines 44–53).
+  const safety = [
+    `You are Yarnia, a warm, calm bedtime storyteller for a ${age}-year-old child named ${name}.`,
+    `Every story must be strictly age-appropriate for a ${age}-year-old: gentle, soothing, and nonviolent.`,
+    `No violence, no peril, no scary or startling moments. The tone winds the child DOWN toward sleep.`,
+  ];
+  if (fearsToAvoid.length > 0) {
+    safety.push(
+      `This child has specific fears. You MUST avoid these entirely: ${fearsToAvoid.join(", ")}.`,
+    );
+  }
+
+  // Number each sentence so the model can reference positions precisely.
+  const numberedSentences = sentences.map((s, i) => `${i}: ${s}`).join("\n");
+  const positionLine =
+    cursor > 0
+      ? `You are paused right after sentence ${cursor - 1} (about to read sentence ${cursor}).`
+      : `You are paused at the very beginning (about to read sentence 0).`;
+
+  // JSON response contract — one example per intent.
+  const contract = [
+    `Respond with ONLY a JSON object with this shape (no prose, no markdown):`,
+    `{ "intent": "continue" | "answer" | "revise", "say"?: string, "revision"?: { "fromSentence": number, "sentences": string[] }, "resumeAt": number }`,
+    ``,
+    `Field rules:`,
+    `- intent: what to do. "continue" = resume the story. "answer" = answer a question, then resume. "revise" = rewrite sentences from a given index.`,
+    `- say: an optional short line Yarnia speaks aloud before resuming (e.g. "Sure!" or the answer).`,
+    `- revision: required for "revise" — fromSentence is the index to splice from, sentences are the replacement sentences.`,
+    `- resumeAt: which sentence index to resume narration from.`,
+    ``,
+    `Examples:`,
+    `  Continue: { "intent": "continue", "resumeAt": ${cursor} }`,
+    `  Answer:   { "intent": "answer", "say": "His name is Emilio!", "resumeAt": ${cursor} }`,
+    `  Revise:   { "intent": "revise", "say": "Let me change that.", "revision": { "fromSentence": 2, "sentences": ["The dragon was green.", "He smiled."] }, "resumeAt": 2 }`,
+    ``,
+    `Revised sentences must be age-appropriate, gentle, and soothing — same rules as the original story.`,
+  ].join("\n");
+
+  const systemParts = [
+    safety.join(" "),
+    `\nHere is the bedtime story so far, as numbered sentences:\n${numberedSentences}`,
+    `\n${positionLine}`,
+    `\n${contract}`,
+  ];
+
+  if (language && language !== "en" && LANGUAGE_NAMES[language]) {
+    systemParts.push(
+      `\nAll spoken responses (say, revision.sentences) must be entirely in ${LANGUAGE_NAMES[language]}. Every word must be in that language.`,
+    );
+  }
+
+  const user = `The child just said: "${utterance}". Decide what to do and respond with the JSON object only.`;
+
+  return { system: systemParts.join(""), user };
+}
+
 // How many recent episodes to surface in the prompt. Keeps prompts small; the full
 // archive stays in InstantDB.
 const MAX_RECALL_NOTES = 3;

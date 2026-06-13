@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildStoryPrompt, type Child } from "../src/prompt";
+import { buildStoryPrompt, buildTurnPrompt, type Child } from "../src/prompt";
 
 // Seeded child matching ideation/YARNIA.md's data model. "Lisa" is the demo child.
 const lisa: Child = {
@@ -117,5 +117,60 @@ describe("buildStoryPrompt", () => {
     expect(user).toContain("Max");
     expect(user.toLowerCase()).toContain("robot");
     expect(system).toMatch(/6[- ]year/i);
+  });
+});
+
+// ── buildTurnPrompt ──────────────────────────────────────────────────────────
+
+describe("buildTurnPrompt", () => {
+  const sentences = [
+    "Once upon a time there was a dragon.",
+    "The dragon loved to fly.",
+    "One day the dragon met a rabbit.",
+    "They became the best of friends.",
+  ];
+
+  it("includes numbered sentences in the system prompt", () => {
+    const { system } = buildTurnPrompt(lisa, sentences, 2, "make the dragon green");
+    expect(system).toContain("0: Once upon a time");
+    expect(system).toContain("1: The dragon loved to fly");
+    expect(system).toContain("2: One day the dragon");
+    expect(system).toContain("3: They became the best");
+  });
+
+  it("includes the current cursor position line", () => {
+    const { system } = buildTurnPrompt(lisa, sentences, 2, "make the dragon green");
+    expect(system).toMatch(/paused right after sentence 1/i);
+    expect(system).toMatch(/about to read sentence 2/i);
+  });
+
+  it("includes the JSON contract with all three intent examples", () => {
+    const { system } = buildTurnPrompt(lisa, sentences, 2, "what is his name?");
+    expect(system).toContain("continue");
+    expect(system).toContain("answer");
+    expect(system).toContain("revise");
+    expect(system).toMatch(/\{.*intent/s);
+  });
+
+  it("puts the utterance in the user message", () => {
+    const { user } = buildTurnPrompt(lisa, sentences, 2, "make the dragon fly faster");
+    expect(user).toContain("make the dragon fly faster");
+    expect(user).toMatch(/child just said/i);
+  });
+
+  it("includes the German language instruction when language is 'de'", () => {
+    const { system } = buildTurnPrompt(lisa, sentences, 1, "mach den Drachen grün", "de");
+    expect(system.toLowerCase()).toContain("german");
+  });
+
+  it("does not include a language instruction for English (default)", () => {
+    const { system } = buildTurnPrompt(lisa, sentences, 1, "make the dragon green");
+    expect(system.toLowerCase()).not.toContain("english");
+  });
+
+  it("includes the safety preamble from buildStoryPrompt", () => {
+    const { system } = buildTurnPrompt(lisa, sentences, 1, "what happens next");
+    expect(system.toLowerCase()).toContain("age-appropriate");
+    expect(system).toContain("thunder"); // fears
   });
 });

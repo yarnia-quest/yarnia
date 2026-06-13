@@ -12,6 +12,9 @@ import { generateChildToken, hashToken, verifyChildToken } from "./auth";
 import { createRateLimiter } from "./ratelimit";
 import { createTelemetry } from "./observability";
 import { estimateStoryCost } from "./usage";
+import { buildTurnPrompt } from "./prompt";
+import { interpretTurn } from "./turn";
+import { isStorySafe } from "./safety";
 
 // Bindings come from api/.dev.vars locally (generated from api/.env) and from
 // `wrangler secret put` / GitHub Actions in production. Never hardcoded. See api/.env.example.
@@ -401,6 +404,64 @@ export function createApp(makeDeps: (env: Bindings) => AppDeps = defaultDeps) {
     }
 
     return c.json({ childId, choice, text: result.text, status: "ok" });
+  });
+
+  // POST /story/turn — conversational turn for the checkpoint narration engine.
+  // Body: { childId, sentences: string[], cursor: number, utterance: string, language? }
+  // Returns a TurnDecision: { intent, say?, revision?, resumeAt }.
+  // Fully stateless: the full sentence list is sent each request (it is small).
+  app.post("/story/turn", async (c) => {
+    const ip = c.req.header("cf-connecting-ip");
+    if (ip && !storyLimiter.check(`turn:${ip}`).allowed) {
+      return c.json({ error: "rate_limited" }, 429);
+    }
+
+    type TurnBody = {
+      childId?: string;
+      sentences?: string[];
+      cursor?: number;
+      utterance?: string;
+      language?: string;
+    };
+    const body = await c.req.json<TurnBody>().catch(() => ({}) as TurnBody);
+    const { childId } = body;
+    if (!childId) return c.json({ error: "childId required" }, 400);
+    if (!Array.isArray(body.sentences) || body.sentences.length === 0) {
+      return c.json({ error: "sentences required" }, 400);
+    }
+
+    const deps = makeDeps(c.env);
+    const telemetry = makeTelemetry(c);
+    const denied = await requireChildToken(c, deps, childId);
+    if (denied) return denied;
+
+    const utterance = sanitizeChoice(body.utterance ?? "");
+    const cursor = typeof body.cursor === "number" && body.cursor >= 0 ? Math.floor(body.cursor) : 0;
+    const language = typeof body.language === "string" ? body.language : undefined;
+    const sentences = body.sentences.map((s) => String(s));
+
+    const child = await deps.loadChild(childId);
+    if (!child) {
+      telemetry.error("story_turn_child_not_found", { childId });
+      return c.json({ error: "child_not_found" }, 404);
+    }
+
+    const prompt = buildTurnPrompt(child, sentences, cursor, utterance, language);
+    const raw = await deps.generate(prompt);
+    let decision = interpretTurn(raw, cursor, sentences.length);
+
+    // Safety gate on revised sentences: if the LLM proposes a revision that contains
+    // unsafe content, drop it and fall back to continue from the current cursor.
+    if (decision.intent === "revise" && decision.revision) {
+      const revisionText = decision.revision.sentences.join(" ");
+      if (!isStorySafe(revisionText)) {
+        telemetry.error("story_turn_unsafe", { childId });
+        decision = { intent: "continue", resumeAt: cursor };
+      }
+    }
+
+    telemetry.track("story_turn", { childId, intent: decision.intent, language: language ?? "en" });
+    return c.json(decision);
   });
 
   // POST /child — onboarding. { name, age, favoriteCharacters?, themes?, fearsToAvoid? }
