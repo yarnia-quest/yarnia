@@ -1,15 +1,18 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
+import 'package:record/record.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 import 'package:http/http.dart' as http;
 
+import '../services/asr_session.dart';
 import '../services/settings_service.dart';
 import '../services/tts_session.dart';
 import '../widgets/starfield.dart';
@@ -41,9 +44,21 @@ class StoryScreen extends StatefulWidget {
 
 class _StoryScreenState extends State<StoryScreen>
     with SingleTickerProviderStateMixin {
+  // System STT
   final SpeechToText _speech = SpeechToText();
+  bool _speechReady = false;
+
+  // Whisper STT
+  final AudioRecorder _recorder = AudioRecorder();
+  AsrSession? _asrSession;
+  StreamSubscription<AsrEvent>? _asrSub;
+  StreamSubscription<Uint8List>? _audioSub;
+  Uint8List _carry = Uint8List(0);
+
+  // TTS + audio playback
   final AudioPlayer _player = AudioPlayer();
   final FlutterTts _systemTts = FlutterTts();
+  TtsSession? _ttsSession;
 
   late AnimationController _pulseController;
   late Animation<double> _pulse;
@@ -51,8 +66,10 @@ class _StoryScreenState extends State<StoryScreen>
   _State _state = _State.listening;
   String _transcript = '';
   String _currentSentence = '';
-  bool _speechReady = false;
-  TtsSession? _ttsSession;
+  bool _isListening = false;
+
+  bool get _usingWhisper =>
+      widget.settings.effectiveSttEngine == SttEngine.whisperBase;
 
   @override
   void initState() {
@@ -65,38 +82,133 @@ class _StoryScreenState extends State<StoryScreen>
       CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
     );
     _pulseController.repeat(reverse: true);
-    _initSpeech();
+    _initStt();
   }
 
-  Future<void> _initSpeech() async {
-    final ok = await _speech.initialize();
-    if (mounted) setState(() => _speechReady = ok);
+  Future<void> _initStt() async {
+    if (_usingWhisper) {
+      await _initWhisper();
+    } else {
+      final ok = await _speech.initialize();
+      if (mounted) setState(() => _speechReady = ok);
+    }
+  }
+
+  Future<void> _initWhisper() async {
+    try {
+      final support = await getApplicationSupportDirectory();
+      final modelDir = p.join(support.path,
+          widget.settings.sttEngine.modelDir ?? 'sherpa-onnx-whisper-base');
+      final vadPath = p.join(support.path, 'silero_vad.onnx');
+      final session = await AsrSession.spawn(
+        kind: 'whisperBase',
+        dirs: {'model': modelDir, 'vad': vadPath},
+      );
+      if (!mounted) {
+        session.dispose();
+        return;
+      }
+      _asrSub = session.events.listen(_onAsrEvent);
+      _asrSession = session;
+      setState(() => _speechReady = true);
+    } catch (e) {
+      debugPrint('Whisper init failed, falling back to system STT: $e');
+      final ok = await _speech.initialize();
+      if (mounted) setState(() => _speechReady = ok);
+    }
+  }
+
+  void _onAsrEvent(AsrEvent event) {
+    if (!mounted) return;
+    switch (event) {
+      case AsrPartial(:final text):
+        setState(() => _transcript = text);
+      case AsrSegment(:final text):
+        // A VAD-delimited segment is a complete utterance — treat as final.
+        setState(() => _transcript = _transcript.isEmpty
+            ? text
+            : '$_transcript $text');
+    }
   }
 
   @override
   void dispose() {
     _pulseController.dispose();
     _speech.stop();
+    _asrSub?.cancel();
+    _audioSub?.cancel();
+    _recorder.dispose();
+    _asrSession?.dispose();
     _player.dispose();
     _systemTts.stop();
     _ttsSession?.dispose();
     super.dispose();
   }
 
+  // ── STT: start ────────────────────────────────────────────────────────────
+
   Future<void> _startListening() async {
     if (!_speechReady || _state != _State.listening) return;
-    setState(() => _transcript = '');
-    await _speech.listen(
-      onResult: (r) => setState(() => _transcript = r.recognizedWords),
-      listenOptions: SpeechListenOptions(
-        listenFor: const Duration(seconds: 15),
-        localeId: widget.settings.locale,
-      ),
-    );
+    setState(() { _transcript = ''; _isListening = true; });
+    if (_usingWhisper && _asrSession != null) {
+      await _startWhisperMic();
+    } else {
+      await _speech.listen(
+        onResult: (r) => setState(() => _transcript = r.recognizedWords),
+        listenOptions: SpeechListenOptions(
+          listenFor: const Duration(seconds: 15),
+          localeId: widget.settings.locale,
+        ),
+      );
+    }
   }
 
+  Future<void> _startWhisperMic() async {
+    if (!await _recorder.hasPermission()) {
+      if (mounted) setState(() => _isListening = false);
+      return;
+    }
+    _carry = Uint8List(0);
+    const sampleRate = 16000;
+    final stream = await _recorder.startStream(const RecordConfig(
+      encoder: AudioEncoder.pcm16bits,
+      sampleRate: sampleRate,
+      numChannels: 1,
+    ));
+    _audioSub = stream.listen((data) {
+      var bytes = data;
+      if (_carry.isNotEmpty) {
+        bytes = Uint8List(_carry.length + data.length)
+          ..setAll(0, _carry)
+          ..setAll(_carry.length, data);
+      }
+      final usable = bytes.length & ~1;
+      _carry = Uint8List.fromList(bytes.sublist(usable));
+      if (usable == 0) return;
+      final bd = ByteData.sublistView(bytes, 0, usable);
+      final n = usable ~/ 2;
+      final samples = Float32List(n);
+      for (var i = 0; i < n; i++) {
+        samples[i] = bd.getInt16(i * 2, Endian.little) / 32768.0;
+      }
+      _asrSession?.feed(samples);
+    });
+  }
+
+  // ── STT: stop ────────────────────────────────────────────────────────────
+
   Future<void> _stopListeningAndGenerate() async {
-    await _speech.stop();
+    setState(() => _isListening = false);
+    if (_usingWhisper && _asrSession != null) {
+      await _audioSub?.cancel();
+      _audioSub = null;
+      await _recorder.stop();
+      _asrSession!.flush();
+      // Give the isolate a moment to emit the final segment.
+      await Future.delayed(const Duration(milliseconds: 300));
+    } else {
+      await _speech.stop();
+    }
     final text = _transcript.trim();
     if (text.isEmpty) {
       _startListening();
@@ -219,8 +331,8 @@ class _StoryScreenState extends State<StoryScreen>
       _state = _State.listening;
       _transcript = '';
       _currentSentence = '';
+      _isListening = false;
     });
-    _startListening();
   }
 
   @override
@@ -240,10 +352,10 @@ class _StoryScreenState extends State<StoryScreen>
                       transcript: _transcript,
                       speechReady: _speechReady,
                       pulse: _pulse,
-                      onMicTap: _speech.isListening
+                      onMicTap: _isListening
                           ? _stopListeningAndGenerate
                           : _startListening,
-                      isListening: _speech.isListening,
+                      isListening: _isListening,
                     ),
                   _State.thinking => _ThinkingView(childName: widget.childName),
                   _State.narrating => _NarratingView(sentence: _currentSentence),
