@@ -73,6 +73,10 @@ class _StoryScreenState extends State<StoryScreen>
   int _cursor = 0;           // index of the NEXT sentence to speak
   bool _interruptPending = false;
 
+  // Phase 2b: hands-free VAD interrupt — stores the segment captured during
+  // narration so it can be forwarded directly to _sendTurn without a re-listen.
+  String? _pendingHandsFreeUtterance;
+
   bool get _usingWhisper =>
       widget.settings.effectiveSttEngine == SttEngine.whisperBase;
 
@@ -129,10 +133,24 @@ class _StoryScreenState extends State<StoryScreen>
       case AsrPartial(:final text):
         setState(() => _transcript = text);
       case AsrSegment(:final text):
-        // A VAD-delimited segment is a complete utterance — treat as final.
-        setState(() => _transcript = _transcript.isEmpty
-            ? text
-            : '$_transcript $text');
+        // Phase 2b: during narration with hands-free enabled, a VAD segment is
+        // treated as an interrupt utterance — finish the current sentence then
+        // process the turn. Debounced to segments with at least 2 words to
+        // reduce false triggers from background noise and Yarnia's own voice
+        // (hardware AEC should suppress self-triggering; this is an extra gate).
+        if (_state == _State.narrating &&
+            widget.settings.handsFreeInterrupt &&
+            text.trim().split(RegExp(r'\s+')).length >= 2) {
+          setState(() => _interruptPending = true);
+          // Store the segment so _enterPaused can pass it directly to _sendTurn
+          // instead of waiting for a re-listen.
+          _pendingHandsFreeUtterance = text.trim();
+        } else {
+          // Normal listening mode: accumulate segments as transcript.
+          setState(() => _transcript = _transcript.isEmpty
+              ? text
+              : '$_transcript $text');
+        }
     }
   }
 
@@ -258,11 +276,26 @@ class _StoryScreenState extends State<StoryScreen>
   // ── Phase 1: resumable narration loop ────────────────────────────────────
 
   /// Start (or resume) narration from sentence index [from].
-  /// After the loop: if interrupted → paused; if finished → done.
+  /// After the loop: if interrupted → send turn (hands-free) or pause; if finished → done.
   Future<void> _narrateFrom(int from) async {
     _cursor = from;
     _interruptPending = false;
+    _pendingHandsFreeUtterance = null;
     setState(() => _state = _State.narrating);
+
+    // Phase 2b: open the mic during narration when hands-free interrupt is enabled
+    // and Whisper ASR is available. Hardware AEC should suppress Yarnia's own voice;
+    // the 2-word debounce in _onAsrEvent is the software gate.
+    if (widget.settings.handsFreeInterrupt &&
+        _usingWhisper &&
+        _asrSession != null) {
+      try {
+        await _startWhisperMic();
+      } catch (e) {
+        debugPrint('StoryScreen: hands-free mic start failed: $e');
+        // Non-fatal: narration proceeds, hands-free is just unavailable.
+      }
+    }
 
     final engine = widget.settings.effectiveEngine;
     if (engine.isSystem) {
@@ -271,10 +304,28 @@ class _StoryScreenState extends State<StoryScreen>
       await _narratePocketFrom(engine);
     }
 
+    // Stop the hands-free mic after narration ends (whether interrupted or done).
+    if (widget.settings.handsFreeInterrupt && _usingWhisper) {
+      try {
+        await _audioSub?.cancel();
+        _audioSub = null;
+        await _recorder.stop();
+      } catch (e) {
+        debugPrint('StoryScreen: hands-free mic stop failed: $e');
+      }
+    }
+
     if (!mounted) return;
     if (_interruptPending) {
-      // Phase 2 hook: start a conversation turn. For now, just pause.
-      setState(() => _state = _State.paused);
+      // Phase 2b: if a hands-free utterance was captured, send it directly as a turn.
+      final hfUtterance = _pendingHandsFreeUtterance;
+      if (hfUtterance != null && hfUtterance.isNotEmpty) {
+        _pendingHandsFreeUtterance = null;
+        await _sendTurn(hfUtterance);
+      } else {
+        // Manual interrupt (button): show the paused view for user input.
+        setState(() => _state = _State.paused);
+      }
     } else if (_cursor >= _sentences.length) {
       setState(() => _state = _State.done);
     }
@@ -393,6 +444,7 @@ class _StoryScreenState extends State<StoryScreen>
       _sentences = [];
       _cursor = 0;
       _interruptPending = false;
+      _pendingHandsFreeUtterance = null;
     });
   }
 

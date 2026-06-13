@@ -127,6 +127,8 @@ class SettingsService extends ChangeNotifier {
   static const _langKey = 'language';
   static const _ttsKey = 'ttsEngine';
   static const _sttKey = 'sttEngine';
+  // Phase 2b: hands-free VAD interrupt toggle. Default OFF until tuned.
+  static const _handsFreeKey = 'handsFreeInterrupt';
   static const _supportedLanguages = {'en', 'de', 'fr', 'es'};
 
   late SharedPreferences _prefs;
@@ -134,11 +136,15 @@ class SettingsService extends ChangeNotifier {
   TtsEngine _ttsEngine = TtsEngine.system;
   SttEngine _sttEngine = SttEngine.system;
   String _appSupportDir = '';
+  // Hands-free VAD interrupt: keep mic open during narration so the child can
+  // interrupt by speaking. Default off — enable once AEC tuning is complete.
+  bool _handsFreeInterrupt = false;
 
   String get language => _language;
   TtsEngine get ttsEngine => _ttsEngine;
   SttEngine get sttEngine => _sttEngine;
   String get appSupportDir => _appSupportDir;
+  bool get handsFreeInterrupt => _handsFreeInterrupt;
 
   Future<void> load() async {
     _prefs = await SharedPreferences.getInstance();
@@ -164,6 +170,8 @@ class SettingsService extends ChangeNotifier {
       _sttEngine = SttEngine.values[savedStt];
     }
 
+    _handsFreeInterrupt = _prefs.getBool(_handsFreeKey) ?? false;
+
     notifyListeners();
   }
 
@@ -183,6 +191,12 @@ class SettingsService extends ChangeNotifier {
   Future<void> setSttEngine(SttEngine engine) async {
     _sttEngine = engine;
     await _prefs.setInt(_sttKey, engine.index);
+    notifyListeners();
+  }
+
+  Future<void> setHandsFreeInterrupt(bool enabled) async {
+    _handsFreeInterrupt = enabled;
+    await _prefs.setBool(_handsFreeKey, enabled);
     notifyListeners();
   }
 

@@ -286,6 +286,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 )),
 
             const SizedBox(height: 32),
+
+            // ── Hands-free interrupt (Phase 2b) ───────────────────────────
+            _sectionLabel('Experimental'),
+            const SizedBox(height: 8),
+            _ToggleTile(
+              label: 'Hands-free interrupt',
+              subtitle: 'Keep mic open during narration so the child can '
+                  'interrupt by speaking. Requires hardware echo cancellation. '
+                  'Default off until tuned.',
+              value: s.handsFreeInterrupt,
+              onChanged: s.setHandsFreeInterrupt,
+            ),
+
+            const SizedBox(height: 32),
           ],
         ),
       ),
@@ -545,4 +559,71 @@ class _StatusChip extends StatelessWidget {
             style: TextStyle(
                 fontFamily: 'Lora', color: color, fontSize: 11)),
       );
+}
+
+// ── Toggle tile ─────────────────────────────────────────────────────────────
+
+class _ToggleTile extends StatelessWidget {
+  final String label;
+  final String subtitle;
+  final bool value;
+  final Future<void> Function(bool) onChanged;
+
+  const _ToggleTile({
+    required this.label,
+    required this.subtitle,
+    required this.value,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 180),
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        border: Border.all(
+          color: value ? gold : cream.withAlpha(40),
+          width: value ? 1.5 : 1,
+        ),
+        borderRadius: BorderRadius.circular(12),
+        color: value ? gold.withAlpha(20) : Colors.transparent,
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontFamily: 'Lora',
+                    color: value ? gold : cream,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  subtitle,
+                  style: TextStyle(
+                    fontFamily: 'Lora',
+                    color: cream.withAlpha(100),
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Switch(
+            value: value,
+            onChanged: onChanged,
+            activeColor: gold,
+          ),
+        ],
+      ),
+    );
+  }
 }
