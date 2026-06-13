@@ -39,7 +39,7 @@ enum TtsEngine {
     modelDir: 'pocket-tts-de',
     sizeMb: 160,
     quality: 'Expressive, voice cloning',
-    hfRepo: null, // TODO: upload to HuggingFace
+    hfRepo: null, // TODO(hf-upload): publish this Pocket export to HuggingFace, then set hfRepo to enable in-app download
     modelFiles: _pocketFiles,
   ),
   pocketFr(
@@ -47,7 +47,7 @@ enum TtsEngine {
     modelDir: 'pocket-tts-fr-24l',
     sizeMb: 400,
     quality: 'Expressive, voice cloning',
-    hfRepo: null, // TODO: upload to HuggingFace
+    hfRepo: null, // TODO(hf-upload): publish this Pocket export to HuggingFace, then set hfRepo to enable in-app download
     modelFiles: _pocketFiles,
   ),
   pocketEs(
@@ -55,7 +55,7 @@ enum TtsEngine {
     modelDir: 'pocket-tts-es',
     sizeMb: 160,
     quality: 'Expressive, voice cloning',
-    hfRepo: null, // TODO: upload to HuggingFace
+    hfRepo: null, // TODO(hf-upload): publish this Pocket export to HuggingFace, then set hfRepo to enable in-app download
     modelFiles: _pocketFiles,
   );
 

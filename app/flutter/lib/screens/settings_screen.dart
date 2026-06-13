@@ -532,7 +532,7 @@ class _StatusChip extends StatelessWidget {
         ),
       );
     }
-    return _chip('Coming soon', cream.withAlpha(60));
+    return _chip('Uploading to HuggingFace soon', cream.withAlpha(60));
   }
 
   Widget _chip(String label, Color color) => Container(
