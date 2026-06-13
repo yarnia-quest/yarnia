@@ -36,7 +36,7 @@ const _sampleText =
 const _sampleTextDe =
     'Es war einmal ein kleiner Fuchs namens Lumi, der in einer stillen Stadt '
     'am Meer nicht einschlafen konnte. Der Mond war voll, die Wellen waren '
-    'sanft, und irgendwo weit weg erzaehlte eine Eule der Nacht ihr liebstes '
+    'sanft, und irgendwo weit weg erzählte eine Eule der Nacht ihr liebstes '
     'Geheimnis. Also schloss Lumi die Augen und lauschte, und das Geheimnis '
     'wurde langsam zu einem Traum.';
 
@@ -165,9 +165,18 @@ class _TtsSpikeScreenState extends State<TtsSpikeScreen>
   bool get _hasMyVoice =>
       _supportPath != null && File(_myVoicePath).existsSync();
 
+  // Native-language reference files, one per model dir. Using a speaker whose
+  // native language matches the target gives more natural prosody and avoids
+  // the "English accent in German" effect that bria.wav (EN) caused.
+  String get _defaultRefFilename => switch (_engine) {
+    _Engine.pocketDe || _Engine.pocketDe24l => 'juergen.wav',
+    _Engine.pocketFr24l                      => 'developpeuse.wav',
+    _                                        => 'bria.wav',
+  };
+
   String get _refWavPath => _useMyVoice && _hasMyVoice
       ? _myVoicePath
-      : p.join(_supportPath!, _engine.dir, 'test_wavs', 'bria.wav');
+      : p.join(_supportPath!, _engine.dir, 'test_wavs', _defaultRefFilename);
 
   // Prompt text shown while recording a voice reference. Any ~20 s of natural
   // speech works — this just gives users something comfortable to read aloud.
