@@ -18,7 +18,7 @@ import '../services/tts_session.dart';
 import '../widgets/starfield.dart';
 import '../theme.dart';
 
-enum _State { listening, thinking, narrating, done }
+enum _State { listening, thinking, narrating, paused, done }
 
 class StoryScreen extends StatefulWidget {
   final String childName;
@@ -67,6 +67,11 @@ class _StoryScreenState extends State<StoryScreen>
   String _transcript = '';
   String _currentSentence = '';
   bool _isListening = false;
+
+  // Phase 1: checkpoint narration state
+  List<String> _sentences = [];
+  int _cursor = 0;           // index of the NEXT sentence to speak
+  bool _interruptPending = false;
 
   bool get _usingWhisper =>
       widget.settings.effectiveSttEngine == SttEngine.whisperBase;
@@ -240,39 +245,58 @@ class _StoryScreenState extends State<StoryScreen>
         setState(() => _state = _State.listening);
         return;
       }
-      setState(() => _state = _State.narrating);
-      await _speakStory(storyText);
+      // Build the sentence checkpoint list and start narrating from the top.
+      _sentences = splitSentences(storyText);
+      _cursor = 0;
+      await _narrateFrom(0);
     } catch (e) {
       debugPrint('StoryScreen: generate/speak failed: $e');
       if (mounted) setState(() => _state = _State.listening);
     }
   }
 
-  Future<void> _speakStory(String text) async {
+  // ── Phase 1: resumable narration loop ────────────────────────────────────
+
+  /// Start (or resume) narration from sentence index [from].
+  /// After the loop: if interrupted → paused; if finished → done.
+  Future<void> _narrateFrom(int from) async {
+    _cursor = from;
+    _interruptPending = false;
+    setState(() => _state = _State.narrating);
+
     final engine = widget.settings.effectiveEngine;
     if (engine.isSystem) {
-      await _speakSystem(text);
+      await _narrateSystemFrom();
     } else {
-      await _speakPocket(text, engine);
+      await _narratePocketFrom(engine);
     }
-    if (mounted) setState(() => _state = _State.done);
+
+    if (!mounted) return;
+    if (_interruptPending) {
+      // Phase 2 hook: start a conversation turn. For now, just pause.
+      setState(() => _state = _State.paused);
+    } else if (_cursor >= _sentences.length) {
+      setState(() => _state = _State.done);
+    }
   }
 
-  Future<void> _speakSystem(String text) async {
+  Future<void> _narrateSystemFrom() async {
     await _systemTts.setLanguage(widget.settings.locale);
     await _systemTts.setSpeechRate(0.5);
-    final sentences = splitSentences(text);
-    for (final sentence in sentences) {
+
+    while (_cursor < _sentences.length && !_interruptPending) {
       if (!mounted) return;
+      final sentence = _sentences[_cursor];
       setState(() => _currentSentence = sentence);
       final completer = Completer<void>();
       _systemTts.setCompletionHandler(() => completer.complete());
       await _systemTts.speak(sentence);
       await completer.future;
+      _cursor++; // advance AFTER the sentence finishes = checkpoint
     }
   }
 
-  Future<void> _speakPocket(String text, TtsEngine engine) async {
+  Future<void> _narratePocketFrom(TtsEngine engine) async {
     final support = await getApplicationSupportDirectory();
     final modelDir = p.join(support.path, engine.modelDir!);
     final refWavPath = _refWavForEngine(engine, modelDir);
@@ -287,10 +311,29 @@ class _StoryScreenState extends State<StoryScreen>
       );
       _ttsSession = session;
 
+      final remaining = _sentences.sublist(_cursor);
+      final sentenceController = StreamController<String>();
+
+      // Feed sentences into the stream, stopping feeding when an interrupt is pending.
+      // The worker may still finish synthesizing the current sentence even after we stop
+      // feeding — that is intentional (finish-current-sentence semantics).
+      () async {
+        for (final s in remaining) {
+          if (_interruptPending) break;
+          sentenceController.add(s);
+        }
+        await sentenceController.close();
+      }();
+
       final playlist = ConcatenatingAudioSource(children: []);
       bool playerStarted = false;
 
-      await for (final chunk in session.speak(text, refWavPath: refWavPath)) {
+      // _cursor tracks "synthesized" position, which is acceptable for checkpointing.
+      // If precise "spoken" position is needed, advance off _player.currentIndex instead.
+      await for (final chunk in session.speakStream(
+        sentenceController.stream,
+        refWavPath: refWavPath,
+      )) {
         if (!mounted) return;
         setState(() => _currentSentence = chunk.text);
         await playlist.add(AudioSource.uri(Uri.file(chunk.wavPath)));
@@ -299,15 +342,23 @@ class _StoryScreenState extends State<StoryScreen>
           unawaited(_player.play());
           playerStarted = true;
         }
+        _cursor++; // advance as each chunk is synthesized
+        if (_interruptPending) {
+          session.cancel();
+          break;
+        }
       }
-      // Wait for playback to complete.
-      await _player.playerStateStream.firstWhere(
-        (s) => s.processingState == ProcessingState.completed,
-      );
+
+      // Wait for playback to complete if we ran through all sentences.
+      if (!_interruptPending && playerStarted) {
+        await _player.playerStateStream.firstWhere(
+          (s) => s.processingState == ProcessingState.completed,
+        );
+      }
     } catch (e) {
       debugPrint('StoryScreen pocket TTS failed: $e');
       // Fall back to system TTS on error.
-      await _speakSystem(text);
+      await _narrateSystemFrom();
     }
   }
 
@@ -324,6 +375,13 @@ class _StoryScreenState extends State<StoryScreen>
     return File(path).existsSync() ? path : null;
   }
 
+  // ── Interrupt + pause ────────────────────────────────────────────────────
+
+  /// Signal that we want to pause after the current sentence finishes.
+  void _requestInterrupt() {
+    setState(() => _interruptPending = true);
+  }
+
   void _restart() {
     _player.stop();
     _systemTts.stop();
@@ -332,7 +390,123 @@ class _StoryScreenState extends State<StoryScreen>
       _transcript = '';
       _currentSentence = '';
       _isListening = false;
+      _sentences = [];
+      _cursor = 0;
+      _interruptPending = false;
     });
+  }
+
+  // ── Phase 2: conversation turn ────────────────────────────────────────────
+
+  /// Send the child's utterance to the backend and apply the decision.
+  Future<void> _sendTurn(String utterance) async {
+    setState(() => _state = _State.thinking);
+    try {
+      final res = await http.post(
+        Uri.parse('${widget.apiBase}/story/turn'),
+        headers: {...widget.apiHeaders, 'content-type': 'application/json'},
+        body: jsonEncode({
+          'childId': widget.childId,
+          'sentences': _sentences,
+          'cursor': _cursor,
+          'utterance': utterance,
+          'language': widget.settings.language,
+        }),
+      );
+      if (!mounted) return;
+      if (res.statusCode != 200) {
+        debugPrint('StoryScreen: /story/turn returned ${res.statusCode}');
+        await _narrateFrom(_cursor);
+        return;
+      }
+      final Map<String, dynamic> decision;
+      try {
+        decision = jsonDecode(res.body) as Map<String, dynamic>;
+      } catch (e) {
+        debugPrint('StoryScreen: failed to parse /story/turn response: $e');
+        await _narrateFrom(_cursor);
+        return;
+      }
+
+      final intent = decision['intent'] as String? ?? 'continue';
+      final say = decision['say'] as String?;
+      final resumeAt = (decision['resumeAt'] as num?)?.toInt() ?? _cursor;
+
+      switch (intent) {
+        case 'answer':
+          if (say != null && say.isNotEmpty) await _speakLine(say);
+          if (!mounted) return;
+          // Show a "Continue?" prompt — the user can tap Continue or speak again.
+          setState(() => _state = _State.paused);
+
+        case 'revise':
+          final revision = decision['revision'] as Map<String, dynamic>?;
+          final newSentences = (revision?['sentences'] as List?)
+              ?.map((e) => e as String)
+              .toList();
+          final fromSentence = (revision?['fromSentence'] as num?)?.toInt();
+          if (newSentences != null && newSentences.isNotEmpty && fromSentence != null) {
+            _sentences.replaceRange(fromSentence, _sentences.length, newSentences);
+          }
+          final revSay = say ?? "Okay, I changed that part — let me read it again.";
+          await _speakLine(revSay);
+          if (!mounted) return;
+          await _narrateFrom(fromSentence ?? resumeAt);
+
+        case 'continue':
+        default:
+          if (say != null && say.isNotEmpty) await _speakLine(say);
+          if (!mounted) return;
+          await _narrateFrom(resumeAt);
+      }
+    } catch (e) {
+      debugPrint('StoryScreen: _sendTurn failed: $e');
+      if (mounted) await _narrateFrom(_cursor);
+    }
+  }
+
+  /// Speak a single short line using the active TTS engine.
+  Future<void> _speakLine(String line) async {
+    final engine = widget.settings.effectiveEngine;
+    if (engine.isSystem) {
+      await _systemTts.setLanguage(widget.settings.locale);
+      await _systemTts.setSpeechRate(0.5);
+      final completer = Completer<void>();
+      _systemTts.setCompletionHandler(() => completer.complete());
+      await _systemTts.speak(line);
+      await completer.future;
+    } else {
+      try {
+        final support = await getApplicationSupportDirectory();
+        final modelDir = p.join(support.path, engine.modelDir!);
+        final refWavPath = _refWavForEngine(engine, modelDir);
+        final session = _ttsSession;
+        if (session != null) {
+          final sc = StreamController<String>();
+          sc.add(line);
+          await sc.close();
+          await for (final chunk in session.speakStream(sc.stream, refWavPath: refWavPath)) {
+            if (!mounted) return;
+            final playlist = ConcatenatingAudioSource(children: []);
+            await playlist.add(AudioSource.uri(Uri.file(chunk.wavPath)));
+            await _player.setAudioSource(playlist);
+            await _player.play();
+            await _player.playerStateStream.firstWhere(
+              (s) => s.processingState == ProcessingState.completed,
+            );
+          }
+        }
+      } catch (e) {
+        debugPrint('StoryScreen: _speakLine pocket TTS failed: $e');
+        // Fall back to system TTS for the line.
+        await _systemTts.setLanguage(widget.settings.locale);
+        await _systemTts.setSpeechRate(0.5);
+        final completer = Completer<void>();
+        _systemTts.setCompletionHandler(() => completer.complete());
+        await _systemTts.speak(line);
+        await completer.future;
+      }
+    }
   }
 
   @override
@@ -358,7 +532,15 @@ class _StoryScreenState extends State<StoryScreen>
                       isListening: _isListening,
                     ),
                   _State.thinking => _ThinkingView(childName: widget.childName),
-                  _State.narrating => _NarratingView(sentence: _currentSentence),
+                  _State.narrating => _NarratingView(
+                      sentence: _currentSentence,
+                      onInterrupt: _requestInterrupt,
+                    ),
+                  _State.paused => _PausedView(
+                      onContinue: () => _narrateFrom(_cursor),
+                      onStartOver: _restart,
+                      onUtterance: _sendTurn,
+                    ),
                   _State.done => _DoneView(
                       onAgain: _restart,
                       onGoodnight: widget.onDone,
@@ -507,7 +689,12 @@ class _ThinkingView extends StatelessWidget {
 
 class _NarratingView extends StatelessWidget {
   final String sentence;
-  const _NarratingView({required this.sentence});
+  final VoidCallback onInterrupt;
+
+  const _NarratingView({
+    required this.sentence,
+    required this.onInterrupt,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -529,6 +716,80 @@ class _NarratingView extends StatelessWidget {
               height: 1.6,
             ),
             textAlign: TextAlign.center,
+          ),
+        ),
+        const SizedBox(height: 40),
+        GestureDetector(
+          onTap: onInterrupt,
+          child: Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: navyLight,
+              border: Border.all(color: gold.withOpacity(0.6), width: 1.5),
+            ),
+            child: const Center(
+              child: Text('⏸', style: TextStyle(fontSize: 22)),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Shown when narration is paused mid-story.
+/// Phase 1: resume or start over.
+/// Phase 2: also captures an utterance and sends a turn.
+class _PausedView extends StatelessWidget {
+  final VoidCallback onContinue;
+  final VoidCallback onStartOver;
+  final void Function(String utterance) onUtterance;
+
+  const _PausedView({
+    required this.onContinue,
+    required this.onStartOver,
+    required this.onUtterance,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        const Text('🌙', style: TextStyle(fontSize: 56)),
+        const SizedBox(height: 24),
+        const Text(
+          'Paused',
+          style: TextStyle(
+            fontFamily: 'Fraunces',
+            fontSize: 26,
+            fontWeight: FontWeight.w700,
+            color: cream,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Say something or tap Continue',
+          style: TextStyle(
+            fontFamily: 'Lora',
+            color: cream.withOpacity(0.5),
+            fontSize: 13,
+          ),
+        ),
+        const SizedBox(height: 40),
+        _OutlineButton(label: 'Continue', onTap: onContinue),
+        const SizedBox(height: 14),
+        TextButton(
+          onPressed: onStartOver,
+          child: Text(
+            'Start over',
+            style: TextStyle(
+              fontFamily: 'Lora',
+              color: cream.withOpacity(0.5),
+              fontSize: 14,
+            ),
           ),
         ),
       ],
