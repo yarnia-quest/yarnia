@@ -210,6 +210,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ],
             ...TtsEngine.values.map((engine) {
               final dl = _downloading[engine];
+              final isRecommended = s.recommendedEngine == engine;
               return _EngineTile(
                 label: engine.label,
                 quality: engine.quality,
@@ -218,6 +219,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 installed: s.isEngineInstalled(engine),
                 isSystem: engine.isSystem,
                 canDownload: engine.canDownload,
+                isRecommended: isRecommended,
                 downloadProgress: dl != null ? dl.$1 / dl.$2 : null,
                 downloadLabel: dl != null ? '${dl.$1}/${dl.$2}' : null,
                 onTap: () {
@@ -265,6 +267,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   installed: s.isSttEngineInstalled(engine),
                   isSystem: engine.isSystem,
                   canDownload: engine.downloadUrl != null,
+                  isRecommended: false,
                   downloadProgress: null,
                   downloadLabel: null,
                   onTap: () {
@@ -373,6 +376,7 @@ class _EngineTile extends StatelessWidget {
   final bool installed;
   final bool isSystem;
   final bool canDownload;
+  final bool isRecommended;
   final double? downloadProgress; // 0.0-1.0 while downloading
   final String? downloadLabel;    // e.g. "3/8"
   final VoidCallback onTap;
@@ -386,6 +390,7 @@ class _EngineTile extends StatelessWidget {
     required this.installed,
     required this.isSystem,
     required this.canDownload,
+    required this.isRecommended,
     required this.downloadProgress,
     required this.downloadLabel,
     required this.onTap,
@@ -419,13 +424,40 @@ class _EngineTile extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(label,
-                          style: TextStyle(
-                            fontFamily: 'Lora',
-                            color: selected ? gold : cream,
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600,
-                          )),
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(label,
+                                style: TextStyle(
+                                  fontFamily: 'Lora',
+                                  color: selected ? gold : cream,
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w600,
+                                )),
+                          ),
+                          if (isRecommended) ...[
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 5, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: gold.withAlpha(40),
+                                border: Border.all(color: gold.withAlpha(120)),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: const Text(
+                                'Recommended',
+                                style: TextStyle(
+                                  fontFamily: 'Lora',
+                                  color: gold,
+                                  fontSize: 9,
+                                  letterSpacing: 0.4,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
                       const SizedBox(height: 2),
                       Text(quality,
                           style: TextStyle(

@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/widgets.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'device_class.dart';
 import 'tts_session.dart';
 
 // Files to download from HuggingFace for each Pocket TTS model.
@@ -16,6 +17,22 @@ const _pocketFiles = [
   'token_scores.json',
   'test_wavs/bria.wav',
 ];
+
+// Files to download from HuggingFace for each Piper VITS model.
+// Piper uses sherpa-onnx's VITS backend: model .onnx + tokens.txt + espeak-ng-data/.
+// The espeak-ng-data directory contains many files; we list only the root entries
+// that sherpa-onnx requires (the directory itself is downloaded recursively by the
+// HuggingFace resolve endpoint when the model card lists it).
+// TODO(plan): Enumerate espeak-ng-data sub-files fully for production use.
+const _piperFiles = [
+  'model.onnx',
+  'tokens.txt',
+];
+
+// espeak-ng-data files are too numerous to enumerate statically; the download
+// logic will need to fetch the file list from HuggingFace's tree API in a future
+// iteration. For now we stub the list so the tile renders with canDownload=true.
+// TODO(plan): Replace with recursive espeak-ng-data enumeration.
 
 enum TtsEngine {
   system(
@@ -57,6 +74,36 @@ enum TtsEngine {
     quality: 'Expressive, voice cloning',
     hfRepo: null, // TODO(hf-upload): publish this Pocket export to HuggingFace, then set hfRepo to enable in-app download
     modelFiles: _pocketFiles,
+  ),
+
+  // ── Piper VITS (light, ~60–80 MB, good for weaker devices) ──────────────
+  // Piper models: VITS-based, multilingual, available on HuggingFace via sherpa-onnx.
+  // Recommended for devices with < 4 cores or < 3 GB RAM (see device_class.dart).
+  piperEn(
+    label: 'Piper EN',
+    modelDir: 'piper-en',
+    sizeMb: 63,
+    quality: 'Natural, fast, offline',
+    hfRepo: 'rhasspy/piper-voices',
+    // TODO(plan): Replace _piperFiles stub with full espeak-ng-data enumeration.
+    modelFiles: _piperFiles,
+  ),
+  piperDe(
+    label: 'Piper DE',
+    modelDir: 'piper-de',
+    sizeMb: 63,
+    quality: 'Natural, fast, offline',
+    hfRepo: 'rhasspy/piper-voices',
+    modelFiles: _piperFiles,
+  ),
+  piperFr(
+    label: 'Piper FR',
+    modelDir: 'piper-fr',
+    sizeMb: 63,
+    quality: 'Natural, fast, offline — replaces 400 MB Pocket FR',
+    // Piper FR supersedes pocketFr (400 MB) for weak devices.
+    hfRepo: 'rhasspy/piper-voices',
+    modelFiles: _piperFiles,
   );
 
   const TtsEngine({
@@ -86,6 +133,16 @@ enum TtsEngine {
         TtsEngine.pocketDe => TtsEngineKind.pocketDe,
         TtsEngine.pocketFr => TtsEngineKind.pocketFr24l,
         TtsEngine.pocketEs => TtsEngineKind.pocketEs,
+        TtsEngine.piperEn => TtsEngineKind.piperEn,
+        TtsEngine.piperDe => TtsEngineKind.piperDe,
+        // Piper FR reuses piperEn kind — same VITS model architecture.
+        // TODO(plan): add piperFr to TtsEngineKind when the FR model is verified.
+        TtsEngine.piperFr => TtsEngineKind.piperEn,
+      };
+
+  bool get isPiper => switch (this) {
+        TtsEngine.piperEn || TtsEngine.piperDe || TtsEngine.piperFr => true,
+        _ => false,
       };
 
   int get seed => this == TtsEngine.pocketFr ? 2 : 1;
@@ -140,16 +197,30 @@ class SettingsService extends ChangeNotifier {
   // interrupt by speaking. Default off — enable once AEC tuning is complete.
   bool _handsFreeInterrupt = false;
 
+  // Phase 3: device class drives the "Recommended" badge and smart default.
+  late DeviceClass _deviceClass;
+
   String get language => _language;
   TtsEngine get ttsEngine => _ttsEngine;
   SttEngine get sttEngine => _sttEngine;
   String get appSupportDir => _appSupportDir;
   bool get handsFreeInterrupt => _handsFreeInterrupt;
+  DeviceClass get deviceClass => _deviceClass;
+
+  /// The engine recommended for this device.
+  /// Strong → Pocket EN (expressive, handles 160 MB fine).
+  /// Weak → Piper EN (small, fast enough for low-end SoCs).
+  TtsEngine get recommendedEngine =>
+      _deviceClass == DeviceClass.strong ? TtsEngine.pocketEn : TtsEngine.piperEn;
 
   Future<void> load() async {
     _prefs = await SharedPreferences.getInstance();
     final dir = await getApplicationSupportDirectory();
     _appSupportDir = dir.path;
+
+    // Phase 3: classify device once on load. Used for "Recommended" badge and
+    // smart default (first run only — never overrides a saved preference).
+    _deviceClass = classifyDevice();
 
     final savedLang = _prefs.getString(_langKey);
     if (savedLang != null && _supportedLanguages.contains(savedLang)) {
@@ -163,6 +234,11 @@ class SettingsService extends ChangeNotifier {
     final savedTts = _prefs.getInt(_ttsKey);
     if (savedTts != null && savedTts < TtsEngine.values.length) {
       _ttsEngine = TtsEngine.values[savedTts];
+    } else {
+      // Phase 3: no saved TTS preference → seed with recommended engine for
+      // this device (Pocket for strong; Piper for weak). Falls back to system
+      // if the recommended engine is not yet installed (user will see Download).
+      _ttsEngine = recommendedEngine;
     }
 
     final savedStt = _prefs.getInt(_sttKey);
@@ -202,8 +278,9 @@ class SettingsService extends ChangeNotifier {
 
   bool isEngineInstalled(TtsEngine engine) {
     if (engine.modelDir == null) return true;
-    // Check for vocab.json as the install-complete sentinel.
-    return File('$_appSupportDir/${engine.modelDir}/vocab.json').existsSync();
+    // Piper uses model.onnx as install sentinel; Pocket uses vocab.json.
+    final sentinel = engine.isPiper ? 'model.onnx' : 'vocab.json';
+    return File('$_appSupportDir/${engine.modelDir}/$sentinel').existsSync();
   }
 
   bool isSttEngineInstalled(SttEngine engine) {
