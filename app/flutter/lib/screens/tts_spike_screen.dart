@@ -51,8 +51,8 @@ const _sampleTextFr =
     'Il était une fois, dans une ville tranquille au bord de la mer, un petit '
     'renard nommé Lumi qui ne pouvait pas s\'endormir. La lune était pleine, '
     'les vagues étaient douces, et quelque part au loin une chouette racontait '
-    'à la nuit son secret préféré. Alors Lumi ferma les yeux et écouta, et le '
-    'secret devint lentement un rêve.';
+    'à la nuit son secret préféré. Elle a fermé les yeux, et doucement le '
+    'rêve a commencé.';
 
 const _sampleTextEs =
     'Había una vez, en un pueblo tranquilo junto al mar, un pequeño zorro '
@@ -286,8 +286,10 @@ class _TtsSpikeScreenState extends State<TtsSpikeScreen>
 
       final support = await getApplicationSupportDirectory();
       final modelDir = p.join(support.path, engine.dir);
+      // FR 24L model: seed=1 crashes sentence [2] (F0→51Hz noise); seed=2 stable.
+      final seed = engine == _Engine.pocketFr24l ? 2 : 1;
       final session = await TtsSession.spawn(
-          kind: engine.kind!, modelDir: modelDir, outDir: support.path);
+          kind: engine.kind!, modelDir: modelDir, outDir: support.path, seed: seed);
       if (!mounted) {
         session.dispose();
         return;

@@ -167,6 +167,7 @@ class TtsSession {
     required TtsEngineKind kind,
     required String modelDir,
     required String outDir,
+    int seed = 1,
   }) async {
     final fromWorker = ReceivePort();
     final isolate = await Isolate.spawn(_ttsWorkerMain, {
@@ -174,6 +175,7 @@ class TtsSession {
       'kind': kind.index,
       'modelDir': modelDir,
       'outDir': outDir,
+      'seed': seed,
     });
     final events =
         fromWorker.asBroadcastStream().cast<Map<dynamic, dynamic>>();
@@ -262,6 +264,7 @@ Future<void> _ttsWorkerMain(Map<dynamic, dynamic> args) async {
   final kind = TtsEngineKind.values[args['kind'] as int];
   final modelDir = args['modelDir'] as String;
   final outDir = args['outDir'] as String;
+  final seed = (args['seed'] as int?) ?? 1;
 
   sherpa_onnx.OfflineTts tts;
   final initSw = Stopwatch()..start();
@@ -340,9 +343,9 @@ Future<void> _ttsWorkerMain(Map<dynamic, dynamic> args) async {
                   // temperature=0.25 (default 0.7): lower noise variance tightens
                   // voice conditioning — reduces F0 spread from ~60Hz to ~8-24Hz on
                   // the 24-layer models.
-                  extra: const {
+                  extra: {
                     'max_reference_audio_len': 20,
-                    'seed': 1,
+                    'seed': seed,
                     'temperature': 0.25,
                   },
                 ))

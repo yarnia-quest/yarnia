@@ -49,7 +49,7 @@ SENTENCES: dict[str, list[str]] = {
     "fr": [
         "Il était une fois, dans une ville tranquille au bord de la mer, un petit renard nommé Lumi qui ne pouvait pas s'endormir.",
         "La lune était pleine, les vagues étaient douces, et quelque part au loin une chouette racontait à la nuit son secret préféré.",
-        "Alors Lumi ferma les yeux et écouta, et le secret devint lentement un rêve.",
+        "Elle a fermé les yeux, et doucement le rêve a commencé.",
     ],
     "es": [
         "Había una vez, en un pueblo tranquilo junto al mar, un pequeño zorro llamado Lumi que no podía dormirse.",
