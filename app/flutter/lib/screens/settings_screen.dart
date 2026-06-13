@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -68,17 +69,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _downloadEngine(TtsEngine engine) async {
     if (_downloading.containsKey(engine)) return;
     final repo = engine.hfRepo;
-    final files = engine.modelFiles;
-    if (repo == null || files == null) return;
+    if (repo == null) return;
 
     final baseDir = p.join(widget.settings.appSupportDir, engine.modelDir!);
     setState(() {
-      _downloading[engine] = (0, files.length);
+      _downloading[engine] = (0, 0);
       _downloadError = null;
     });
 
     final client = HttpClient()..autoUncompress = true;
     try {
+      // Pocket models ship a fixed file list; Piper packages are enumerated
+      // recursively from the HuggingFace tree API (incl. the espeak-ng-data tree).
+      final files = engine.needsRecursiveDownload
+          ? await _listRepoFiles(client, repo)
+          : (engine.modelFiles ?? const <String>[]);
+      if (files.isEmpty) {
+        throw const HttpException('no files to download');
+      }
+      if (mounted) setState(() => _downloading[engine] = (0, files.length));
       for (int i = 0; i < files.length; i++) {
         final filename = files[i];
         final url = 'https://huggingface.co/$repo/resolve/main/$filename';
@@ -96,6 +105,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
       client.close();
       if (mounted) setState(() => _downloading.remove(engine));
     }
+  }
+
+  // Lists every file path in a HuggingFace model repo (recursively), so a model
+  // made of many files (e.g. Piper's espeak-ng-data tree) can be fetched whole.
+  Future<List<String>> _listRepoFiles(HttpClient client, String repo) async {
+    final url = 'https://huggingface.co/api/models/$repo/tree/main?recursive=true';
+    final req = await client.getUrl(Uri.parse(url));
+    req.followRedirects = true;
+    req.maxRedirects = 5;
+    final resp = await req.close();
+    if (resp.statusCode != 200) {
+      throw HttpException('HTTP ${resp.statusCode}', uri: Uri.parse(url));
+    }
+    final body = await resp.transform(utf8.decoder).join();
+    final entries = jsonDecode(body) as List;
+    return entries
+        .whereType<Map>()
+        .where((e) => e['type'] == 'file')
+        .map((e) => e['path'] as String)
+        .toList();
   }
 
   Future<void> _downloadFile(HttpClient client, String url, String dest) async {
@@ -220,8 +249,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 isSystem: engine.isSystem,
                 canDownload: engine.canDownload,
                 isRecommended: isRecommended,
-                downloadProgress: dl != null ? dl.$1 / dl.$2 : null,
-                downloadLabel: dl != null ? '${dl.$1}/${dl.$2}' : null,
+                downloadProgress: dl != null && dl.$2 > 0 ? dl.$1 / dl.$2 : null,
+                downloadLabel: dl != null
+                    ? (dl.$2 > 0 ? '${dl.$1}/${dl.$2}' : '…')
+                    : null,
+                pendingLabel: engine.isPiper
+                    ? 'Coming soon'
+                    : 'Uploading to HuggingFace soon',
                 onTap: () {
                   if (engine.isSystem || s.isEngineInstalled(engine)) {
                     s.setTtsEngine(engine);
@@ -379,6 +413,7 @@ class _EngineTile extends StatelessWidget {
   final bool isRecommended;
   final double? downloadProgress; // 0.0-1.0 while downloading
   final String? downloadLabel;    // e.g. "3/8"
+  final String pendingLabel;      // chip text when not installed and not downloadable
   final VoidCallback onTap;
   final VoidCallback? onDownload;
 
@@ -393,6 +428,7 @@ class _EngineTile extends StatelessWidget {
     required this.isRecommended,
     required this.downloadProgress,
     required this.downloadLabel,
+    this.pendingLabel = 'Uploading to HuggingFace soon',
     required this.onTap,
     this.onDownload,
   });
@@ -485,6 +521,7 @@ class _EngineTile extends StatelessWidget {
                         isSystem: isSystem,
                         installed: installed,
                         canDownload: canDownload,
+                        pendingLabel: pendingLabel,
                         onDownload: onDownload,
                       )
                     else
@@ -550,12 +587,14 @@ class _StatusChip extends StatelessWidget {
   final bool isSystem;
   final bool installed;
   final bool canDownload;
+  final String pendingLabel;
   final VoidCallback? onDownload;
 
   const _StatusChip({
     required this.isSystem,
     required this.installed,
     required this.canDownload,
+    this.pendingLabel = 'Uploading to HuggingFace soon',
     this.onDownload,
   });
 
@@ -578,7 +617,7 @@ class _StatusChip extends StatelessWidget {
         ),
       );
     }
-    return _chip('Uploading to HuggingFace soon', cream.withAlpha(60));
+    return _chip(pendingLabel, cream.withAlpha(60));
   }
 
   Widget _chip(String label, Color color) => Container(

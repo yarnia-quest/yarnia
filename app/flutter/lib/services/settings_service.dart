@@ -18,22 +18,6 @@ const _pocketFiles = [
   'test_wavs/bria.wav',
 ];
 
-// Files to download from HuggingFace for each Piper VITS model.
-// Piper uses sherpa-onnx's VITS backend: model .onnx + tokens.txt + espeak-ng-data/.
-// The espeak-ng-data directory contains many files; we list only the root entries
-// that sherpa-onnx requires (the directory itself is downloaded recursively by the
-// HuggingFace resolve endpoint when the model card lists it).
-// TODO(plan): Enumerate espeak-ng-data sub-files fully for production use.
-const _piperFiles = [
-  'model.onnx',
-  'tokens.txt',
-];
-
-// espeak-ng-data files are too numerous to enumerate statically; the download
-// logic will need to fetch the file list from HuggingFace's tree API in a future
-// iteration. For now we stub the list so the tile renders with canDownload=true.
-// TODO(plan): Replace with recursive espeak-ng-data enumeration.
-
 enum TtsEngine {
   system(
     label: 'System TTS',
@@ -76,34 +60,36 @@ enum TtsEngine {
     modelFiles: _pocketFiles,
   ),
 
-  // ── Piper VITS (light, ~60–80 MB, good for weaker devices) ──────────────
-  // Piper models: VITS-based, multilingual, available on HuggingFace via sherpa-onnx.
-  // Recommended for devices with < 4 cores or < 3 GB RAM (see device_class.dart).
+  // ── Piper VITS (light, ~80 MB, good for weaker devices) ─────────────────
+  // sherpa-onnx Piper packages: model .onnx + tokens.txt + espeak-ng-data/ tree.
+  // modelFiles is null — the file list (incl. the espeak-ng-data tree) is fetched
+  // recursively from the HuggingFace tree API at download time (see settings_screen).
+  // Recommended for low-core / low-RAM devices (see device_class.dart).
   piperEn(
     label: 'Piper EN',
     modelDir: 'piper-en',
-    sizeMb: 63,
+    sizeMb: 80,
     quality: 'Natural, fast, offline',
-    hfRepo: 'rhasspy/piper-voices',
-    // TODO(plan): Replace _piperFiles stub with full espeak-ng-data enumeration.
-    modelFiles: _piperFiles,
+    hfRepo: 'csukuangfj/vits-piper-en_US-libritts_r-medium',
+    modelFiles: null,
   ),
   piperDe(
     label: 'Piper DE',
     modelDir: 'piper-de',
-    sizeMb: 63,
+    sizeMb: 80,
     quality: 'Natural, fast, offline',
-    hfRepo: 'rhasspy/piper-voices',
-    modelFiles: _piperFiles,
+    hfRepo: 'csukuangfj/vits-piper-de_DE-thorsten-medium',
+    modelFiles: null,
   ),
   piperFr(
     label: 'Piper FR',
     modelDir: 'piper-fr',
-    sizeMb: 63,
-    quality: 'Natural, fast, offline — replaces 400 MB Pocket FR',
-    // Piper FR supersedes pocketFr (400 MB) for weak devices.
-    hfRepo: 'rhasspy/piper-voices',
-    modelFiles: _piperFiles,
+    sizeMb: 80,
+    quality: 'Natural, fast, offline',
+    // No French Piper voice is wired in the TTS worker yet (only EN/DE/TR kinds
+    // exist in tts_session.dart). Keep non-downloadable until that is added.
+    hfRepo: null, // TODO(piper-fr): add TtsEngineKind.piperFr + voice, then set hfRepo
+    modelFiles: null,
   );
 
   const TtsEngine({
@@ -143,6 +129,19 @@ enum TtsEngine {
   bool get isPiper => switch (this) {
         TtsEngine.piperEn || TtsEngine.piperDe || TtsEngine.piperFr => true,
         _ => false,
+      };
+
+  // Piper packages are many files (incl. the espeak-ng-data tree), so enumerate
+  // them from the HuggingFace tree API rather than a static list.
+  bool get needsRecursiveDownload => isPiper;
+
+  // File whose presence on disk marks the model as fully installed. Must match the
+  // model filename the TTS worker loads (see tts_session.dart) for Piper.
+  String get installSentinel => switch (this) {
+        TtsEngine.piperEn => 'en_US-libritts_r-medium.onnx',
+        TtsEngine.piperDe => 'de_DE-thorsten-medium.onnx',
+        TtsEngine.piperFr => 'fr_FR-medium.onnx',
+        _ => 'vocab.json', // Pocket models
       };
 
   int get seed => this == TtsEngine.pocketFr ? 2 : 1;
@@ -278,9 +277,8 @@ class SettingsService extends ChangeNotifier {
 
   bool isEngineInstalled(TtsEngine engine) {
     if (engine.modelDir == null) return true;
-    // Piper uses model.onnx as install sentinel; Pocket uses vocab.json.
-    final sentinel = engine.isPiper ? 'model.onnx' : 'vocab.json';
-    return File('$_appSupportDir/${engine.modelDir}/$sentinel').existsSync();
+    return File('$_appSupportDir/${engine.modelDir}/${engine.installSentinel}')
+        .existsSync();
   }
 
   bool isSttEngineInstalled(SttEngine engine) {

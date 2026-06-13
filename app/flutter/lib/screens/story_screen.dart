@@ -351,8 +351,12 @@ class _StoryScreenState extends State<StoryScreen>
     final support = await getApplicationSupportDirectory();
     final modelDir = p.join(support.path, engine.modelDir!);
     final refWavPath = _refWavForEngine(engine, modelDir);
+    // Playlist item i corresponds to sentence (startIndex + i). We resolve _cursor
+    // from actual playback position, NOT synthesis (Pocket synthesizes ahead of audio).
+    final startIndex = _cursor;
 
     _ttsSession?.dispose();
+    StreamSubscription<int?>? idxSub;
     try {
       final session = await TtsSession.spawn(
         kind: engine.kind!,
@@ -362,7 +366,7 @@ class _StoryScreenState extends State<StoryScreen>
       );
       _ttsSession = session;
 
-      final remaining = _sentences.sublist(_cursor);
+      final remaining = _sentences.sublist(startIndex);
       final sentenceController = StreamController<String>();
 
       // Feed sentences into the stream, stopping feeding when an interrupt is pending.
@@ -379,37 +383,54 @@ class _StoryScreenState extends State<StoryScreen>
       final playlist = ConcatenatingAudioSource(children: []);
       bool playerStarted = false;
 
-      // _cursor tracks "synthesized" position, which is acceptable for checkpointing.
-      // If precise "spoken" position is needed, advance off _player.currentIndex instead.
       await for (final chunk in session.speakStream(
         sentenceController.stream,
         refWavPath: refWavPath,
       )) {
         if (!mounted) return;
-        setState(() => _currentSentence = chunk.text);
         await playlist.add(AudioSource.uri(Uri.file(chunk.wavPath)));
         if (!playerStarted) {
           await _player.setAudioSource(playlist);
+          // Show the sentence that is actually playing, not the one being synthesized.
+          idxSub = _player.currentIndexStream.listen((i) {
+            if (i == null || !mounted) return;
+            final si = startIndex + i;
+            if (si >= 0 && si < _sentences.length) {
+              setState(() => _currentSentence = _sentences[si]);
+            }
+          });
           unawaited(_player.play());
           playerStarted = true;
         }
-        _cursor++; // advance as each chunk is synthesized
         if (_interruptPending) {
           session.cancel();
           break;
         }
       }
 
-      // Wait for playback to complete if we ran through all sentences.
-      if (!_interruptPending && playerStarted) {
+      if (!playerStarted) return; // nothing synthesized
+
+      if (_interruptPending) {
+        // Finish-current-sentence: let the audible sentence complete, then stop.
+        final heardIdx = _player.currentIndex ?? 0;
+        await _player.playerStateStream.firstWhere((s) =>
+            (_player.currentIndex ?? heardIdx) > heardIdx ||
+            s.processingState == ProcessingState.completed);
+        await _player.pause();
+        _cursor = (startIndex + heardIdx + 1).clamp(0, _sentences.length);
+      } else {
+        // Ran through every sentence — wait for playback to drain.
         await _player.playerStateStream.firstWhere(
           (s) => s.processingState == ProcessingState.completed,
         );
+        _cursor = _sentences.length;
       }
     } catch (e) {
       debugPrint('StoryScreen pocket TTS failed: $e');
       // Fall back to system TTS on error.
       await _narrateSystemFrom();
+    } finally {
+      await idxSub?.cancel();
     }
   }
 
@@ -517,6 +538,61 @@ class _StoryScreenState extends State<StoryScreen>
     }
   }
 
+  // ── Paused: capture one utterance from the child, then send it as a turn ────
+
+  /// Open the mic while paused so the child can ask a question or change the story.
+  Future<void> _startPausedCapture() async {
+    if (!_speechReady || _isListening) return;
+    setState(() {
+      _transcript = '';
+      _isListening = true;
+    });
+    if (_usingWhisper && _asrSession != null) {
+      await _startWhisperMic();
+    } else {
+      await _speech.listen(
+        onResult: (r) => setState(() => _transcript = r.recognizedWords),
+        listenOptions: SpeechListenOptions(
+          listenFor: const Duration(seconds: 15),
+          localeId: widget.settings.locale,
+        ),
+      );
+    }
+  }
+
+  /// Stop the paused-mode mic and send whatever was said as a conversation turn.
+  Future<void> _stopPausedCaptureAndSend() async {
+    setState(() => _isListening = false);
+    if (_usingWhisper && _asrSession != null) {
+      await _audioSub?.cancel();
+      _audioSub = null;
+      await _recorder.stop();
+      _asrSession!.flush();
+      await Future.delayed(const Duration(milliseconds: 300));
+    } else {
+      await _speech.stop();
+    }
+    final text = _transcript.trim();
+    if (text.isEmpty) return; // nothing said — stay paused
+    await _sendTurn(text);
+  }
+
+  /// Resume narration from the paused view, stopping the mic first if it is open.
+  Future<void> _resumeFromPaused() async {
+    if (_isListening) {
+      setState(() => _isListening = false);
+      await _audioSub?.cancel();
+      _audioSub = null;
+      try {
+        await _recorder.stop();
+      } catch (e) {
+        debugPrint('StoryScreen: recorder stop on resume failed: $e');
+      }
+      await _speech.stop();
+    }
+    await _narrateFrom(_cursor);
+  }
+
   /// Speak a single short line using the active TTS engine.
   Future<void> _speakLine(String line) async {
     final engine = widget.settings.effectiveEngine;
@@ -589,9 +665,15 @@ class _StoryScreenState extends State<StoryScreen>
                       onInterrupt: _requestInterrupt,
                     ),
                   _State.paused => _PausedView(
-                      onContinue: () => _narrateFrom(_cursor),
+                      onContinue: _resumeFromPaused,
                       onStartOver: _restart,
-                      onUtterance: _sendTurn,
+                      onMicTap: _isListening
+                          ? _stopPausedCaptureAndSend
+                          : _startPausedCapture,
+                      isListening: _isListening,
+                      speechReady: _speechReady,
+                      transcript: _transcript,
+                      pulse: _pulse,
                     ),
                   _State.done => _DoneView(
                       onAgain: _restart,
@@ -797,12 +879,20 @@ class _NarratingView extends StatelessWidget {
 class _PausedView extends StatelessWidget {
   final VoidCallback onContinue;
   final VoidCallback onStartOver;
-  final void Function(String utterance) onUtterance;
+  final VoidCallback onMicTap;
+  final bool isListening;
+  final bool speechReady;
+  final String transcript;
+  final Animation<double> pulse;
 
   const _PausedView({
     required this.onContinue,
     required this.onStartOver,
-    required this.onUtterance,
+    required this.onMicTap,
+    required this.isListening,
+    required this.speechReady,
+    required this.transcript,
+    required this.pulse,
   });
 
   @override
@@ -821,16 +911,74 @@ class _PausedView extends StatelessWidget {
             color: cream,
           ),
         ),
-        const SizedBox(height: 8),
-        Text(
-          'Say something or tap Continue',
-          style: TextStyle(
-            fontFamily: 'Lora',
-            color: cream.withOpacity(0.5),
-            fontSize: 13,
+        const SizedBox(height: 24),
+        // Mic: tap to ask a question or change the story; tap again to send.
+        GestureDetector(
+          onTap: speechReady ? onMicTap : null,
+          child: SizedBox(
+            width: 80,
+            height: 80,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                AnimatedBuilder(
+                  animation: pulse,
+                  builder: (_, __) => Transform.scale(
+                    scale: isListening ? pulse.value : 1.0,
+                    child: Container(
+                      width: 80,
+                      height: 80,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: gold.withOpacity(isListening ? 0.4 : 0.1),
+                          width: 2,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                Container(
+                  width: 62,
+                  height: 62,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: navyLight,
+                    border: Border.all(color: gold, width: 1.5),
+                  ),
+                  child: Center(
+                    child: Text(
+                      isListening ? '⏹' : '🎙',
+                      style: const TextStyle(fontSize: 24),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
-        const SizedBox(height: 40),
+        const SizedBox(height: 16),
+        if (transcript.isNotEmpty)
+          Text(
+            '"$transcript"',
+            style: const TextStyle(
+              fontFamily: 'Lora',
+              color: gold,
+              fontSize: 14,
+              fontStyle: FontStyle.italic,
+            ),
+            textAlign: TextAlign.center,
+          )
+        else
+          Text(
+            isListening ? 'Listening…' : 'Tap to talk, or Continue',
+            style: TextStyle(
+              fontFamily: 'Lora',
+              color: cream.withOpacity(0.5),
+              fontSize: 13,
+            ),
+          ),
+        const SizedBox(height: 32),
         _OutlineButton(label: 'Continue', onTap: onContinue),
         const SizedBox(height: 14),
         TextButton(
