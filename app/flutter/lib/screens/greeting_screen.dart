@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
-import '../services/agent_session_prefetch.dart';
 import '../services/subscribe.dart';
 import '../widgets/starfield.dart';
 import '../widgets/history_panel.dart';
@@ -12,8 +11,8 @@ class GreetingScreen extends StatefulWidget {
   final String apiBase;
   final VoidCallback onBegin;
   final VoidCallback onLogout;
-  // Present (non-null) when the household has more than one child: opens the profile switcher.
   final VoidCallback? onSwitchProfile;
+  final VoidCallback? onSettings;
 
   const GreetingScreen({
     super.key,
@@ -23,6 +22,7 @@ class GreetingScreen extends StatefulWidget {
     required this.onBegin,
     required this.onLogout,
     this.onSwitchProfile,
+    this.onSettings,
   });
 
   @override
@@ -38,13 +38,7 @@ class _GreetingScreenState extends State<GreetingScreen> with SingleTickerProvid
   @override
   void initState() {
     super.initState();
-    // Keep the device awake across the ritual so it does not lock between greeting and the
-    // voice session (which would interrupt audio). "Screen-off" is delivered by the dark UI,
-    // not by letting the device sleep mid-story. Released when the flow ends.
     WakelockPlus.enable();
-    // Warm the agent session (and mic permission) while the parent reads "Good night, X"
-    // so tapping Begin connects to ElevenLabs with no /agent/session round-trip in the way.
-    prefetchAgentSession(widget.apiBase, widget.childId);
     _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 2000));
     _moonScale = Tween(begin: 0.7, end: 1.0).animate(
       CurvedAnimation(parent: _controller, curve: const Interval(0, 0.6, curve: Curves.elasticOut)),
@@ -109,13 +103,22 @@ class _GreetingScreenState extends State<GreetingScreen> with SingleTickerProvid
           Positioned(
             top: 48,
             right: 20,
-            child: IconButton(
-              icon: Icon(Icons.history, color: cream.withAlpha(120), size: 22),
-              onPressed: () => showHistoryPanel(
-                context,
-                childId: widget.childId,
-                apiBase: widget.apiBase,
-              ),
+            child: Row(
+              children: [
+                IconButton(
+                  icon: Icon(Icons.history, color: cream.withAlpha(120), size: 22),
+                  onPressed: () => showHistoryPanel(
+                    context,
+                    childId: widget.childId,
+                    apiBase: widget.apiBase,
+                  ),
+                ),
+                if (widget.onSettings != null)
+                  IconButton(
+                    icon: Icon(Icons.settings_outlined, color: cream.withAlpha(120), size: 22),
+                    onPressed: widget.onSettings,
+                  ),
+              ],
             ),
           ),
           AnimatedBuilder(

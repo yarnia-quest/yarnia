@@ -1,6 +1,6 @@
 // Orchestration core for a bedtime story: load child -> build safety+memory prompt ->
 // generate. Dependencies are injected so the flow is unit-testable with fakes; the route
-// wires real ones (loadChild over InstantDB admin, generateStory over Qwen).
+// wires real ones (loadChild over InstantDB admin, generateStory over Nebula).
 import { buildStoryPrompt, type Child, type StoryPrompt } from "./prompt";
 import { isStorySafe, safeFallbackStory } from "./safety";
 import { quotaState } from "./usage";
@@ -8,11 +8,10 @@ import { quotaState } from "./usage";
 export type StoryDeps = {
   loadChild: (childId: string) => Promise<Child | null>;
   generate: (prompt: StoryPrompt) => Promise<string>;
-  synthesize: (text: string) => Promise<string>;
 };
 
 export type CreateStoryResult =
-  | { ok: true; text: string; audio: string | null; prompt: StoryPrompt }
+  | { ok: true; text: string; prompt: StoryPrompt }
   | { ok: false; reason: "child_not_found" }
   | { ok: false; reason: "subscription_required" };
 
@@ -20,17 +19,17 @@ export async function createStory(
   childId: string,
   choice: string,
   deps: StoryDeps,
+  language?: string,
 ): Promise<CreateStoryResult> {
   const child = await deps.loadChild(childId);
   if (!child) return { ok: false, reason: "child_not_found" };
 
-  // Free tier: a few stories, then a subscription is required (the checkout actually gates
-  // value, and runaway LLM/TTS spend on free accounts is bounded).
+  // Free tier: a few stories, then a subscription is required.
   if (!quotaState(child.pastSessions.length, child.subscribed === true).allowed) {
     return { ok: false, reason: "subscription_required" };
   }
 
-  const prompt = buildStoryPrompt(child, choice);
+  const prompt = buildStoryPrompt(child, choice, language);
   let text = await deps.generate(prompt);
 
   // Output moderation (defense in depth on top of the prompt-level guardrail). If the draft
@@ -48,14 +47,5 @@ export async function createStory(
     if (!isStorySafe(text)) text = safeFallbackStory(child.name);
   }
 
-  // Narration is an enhancement: if TTS fails (e.g. ElevenLabs quota/auth), the story
-  // still returns with audio:null rather than failing the whole request.
-  let audio: string | null = null;
-  try {
-    audio = await deps.synthesize(text);
-  } catch (err) {
-    console.error("synthesize failed, returning story without audio:", err);
-  }
-
-  return { ok: true, text, audio, prompt };
+  return { ok: true, text, prompt };
 }

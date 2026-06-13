@@ -30,9 +30,15 @@ export type StoryPrompt = {
   user: string;
 };
 
+const LANGUAGE_NAMES: Record<string, string> = {
+  de: "German",
+  fr: "French",
+  es: "Spanish",
+};
+
 // The content-safety guardrail + memory injection. system = the constraints Yarnia must
 // always honor; user = tonight's specific ask (child, chosen character, what to remember).
-export function buildStoryPrompt(child: Child, choice: string): StoryPrompt {
+export function buildStoryPrompt(child: Child, choice: string, language?: string): StoryPrompt {
   const { name, age, themes, fearsToAvoid, pastSessions } = child;
 
   const safety = [
@@ -68,6 +74,12 @@ export function buildStoryPrompt(child: Child, choice: string): StoryPrompt {
     userParts.push(
       `Notes from ${name}'s recent bedtime stories (most recent last): ${notes}`,
       `You MAY gently weave in a familiar character or a small callback if it feels natural and soothing, but a fresh standalone story is equally welcome. Never force a reference and never retell a past story.`,
+    );
+  }
+
+  if (language && language !== "en" && LANGUAGE_NAMES[language]) {
+    userParts.push(
+      `Tell the entire story in ${LANGUAGE_NAMES[language]}. Every word must be in that language.`,
     );
   }
 

@@ -4,12 +4,12 @@ import 'package:http/http.dart' as http;
 import 'api_config.dart';
 import 'screens/onboarding_screen.dart';
 import 'screens/greeting_screen.dart';
-import 'screens/agent_screen.dart';
-import 'screens/cocreation_screen.dart';
-import 'screens/playback_screen.dart';
+import 'screens/story_screen.dart';
+import 'screens/settings_screen.dart';
 import 'screens/spike_home_screen_stub.dart'
     if (dart.library.io) 'screens/spike_home_screen.dart';
 import 'services/child_store.dart';
+import 'services/settings_service.dart';
 import 'widgets/history_panel.dart';
 import 'widgets/profile_picker.dart';
 import 'widgets/starfield.dart';
@@ -26,22 +26,34 @@ const _apiBase = String.fromEnvironment('API_BASE', defaultValue: 'https://api.y
 const _ttsSpike = bool.fromEnvironment('TTS_SPIKE');
 
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
   runApp(const YarniaApp());
 }
 
-class YarniaApp extends StatelessWidget {
+class YarniaApp extends StatefulWidget {
   const YarniaApp({super.key});
+
+  @override
+  State<YarniaApp> createState() => _YarniaAppState();
+}
+
+class _YarniaAppState extends State<YarniaApp> {
+  final SettingsService _settings = SettingsService();
+
+  @override
+  void initState() {
+    super.initState();
+    _settings.load();
+  }
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Yarnia',
       debugShowCheckedModeBanner: false,
-      // Lora (the deck's body serif) is the app-wide default so any unstyled or
-      // Material-default text inherits it; screens opt into Fraunces for headlines.
       theme: ThemeData(scaffoldBackgroundColor: navy, fontFamily: 'Lora'),
       builder: (context, child) => _PhoneFrame(child: child!),
-      home: _ttsSpike ? const SpikeHomeScreen() : const YarniaRoot(),
+      home: _ttsSpike ? const SpikeHomeScreen() : YarniaRoot(settings: _settings),
     );
   }
 }
@@ -91,7 +103,9 @@ class _PhoneFrame extends StatelessWidget {
 }
 
 class YarniaRoot extends StatefulWidget {
-  const YarniaRoot({super.key});
+  final SettingsService settings;
+
+  const YarniaRoot({super.key, required this.settings});
 
   @override
   State<YarniaRoot> createState() => _YarniaRootState();
@@ -105,9 +119,6 @@ class _YarniaRootState extends State<YarniaRoot> {
   String _screen = 'loading';
   String? _childId;
   String? _childName;
-  String? _storyText;
-  String? _audioUrl;
-  // All profiles onboarded on this device (a household can have several children).
   List<StoredChild> _children = [];
 
   @override
@@ -167,8 +178,6 @@ class _YarniaRootState extends State<YarniaRoot> {
     _children = await loadChildren();
     final next = await loadStoredChild();
     if (!mounted) return;
-    _storyText = null;
-    _audioUrl = null;
     if (next != null) {
       _activate(next);
     } else {
@@ -198,45 +207,8 @@ class _YarniaRootState extends State<YarniaRoot> {
     }
   }
 
-  Future<void> _handleChoice(String choice) async {
-    final childId = _childId;
-    if (childId == null) return;
-    // Show a "weaving your story" state while POST /story runs (gen + narration can take a few
-    // seconds) instead of flashing an empty playback screen.
-    setState(() => _screen = 'generating');
-    try {
-      final res = await http.post(
-        Uri.parse('$_apiBase/story'),
-        headers: apiHeaders(json: true),
-        body: jsonEncode({'childId': childId, 'choice': choice}),
-      );
-      if (res.statusCode == 200) {
-        final data = jsonDecode(res.body) as Map<String, dynamic>;
-        setState(() {
-          _storyText = data['text'] as String?;
-          // POST /story returns `audio` already as a full data: URI
-          // (data:audio/mpeg;base64,...) or null. PlaybackScreen plays it as-is.
-          _audioUrl = data['audio'] as String?;
-          _screen = 'playback';
-        });
-      } else {
-        // Surface the failure instead of a blank playback screen: return to co-creation so
-        // the parent can try another idea.
-        debugPrint('Story request failed: ${res.statusCode} ${res.body}');
-        if (mounted) setState(() => _screen = 'cocreation');
-      }
-    } catch (e) {
-      debugPrint('Story fetch failed: $e');
-      if (mounted) setState(() => _screen = 'cocreation');
-    }
-  }
-
   void _handleRestart() {
-    setState(() {
-      _screen = 'greeting';
-      _storyText = null;
-      _audioUrl = null;
-    });
+    setState(() => _screen = 'greeting');
   }
 
   @override
@@ -266,10 +238,15 @@ class _YarniaRootState extends State<YarniaRoot> {
           childName: childName,
           childId: childId,
           apiBase: _apiBase,
-          onBegin: () => setState(() => _screen = 'agent'),
+          onBegin: () => setState(() => _screen = 'story'),
           onLogout: _handleLogout,
-          // Show the profile switcher when this household has more than one child.
           onSwitchProfile: _children.length > 1 ? _handleOpenProfiles : null,
+          onSettings: () => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => SettingsScreen(settings: widget.settings),
+            ),
+          ),
         ),
       'profiles' => ProfilePicker(
           children: _children,
@@ -278,46 +255,13 @@ class _YarniaRootState extends State<YarniaRoot> {
           onAddChild: _handleAddChild,
           onBack: () => setState(() => _screen = 'greeting'),
         ),
-      'agent' => AgentScreen(
+      _ => StoryScreen(
           childName: childName,
           childId: childId,
           apiBase: _apiBase,
+          settings: widget.settings,
+          apiHeaders: apiHeaders(json: true),
           onDone: _handleRestart,
-          // If the live voice agent can't run (mic denied, network, ElevenLabs error), fall
-          // back to the tap/voice co-creation flow, which generates + narrates a story via
-          // POST /story. Graceful degradation instead of a dead end.
-          onFallback: () => setState(() => _screen = 'cocreation'),
-        ),
-      'cocreation' => CoCreationScreen(
-          childName: childName,
-          onChoice: _handleChoice,
-        ),
-      'generating' => const Scaffold(
-          backgroundColor: navy,
-          body: Stack(
-            children: [
-              Positioned.fill(child: Starfield()),
-              Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text('🌙', style: TextStyle(fontSize: 40)),
-                    SizedBox(height: 20),
-                    Text(
-                      'Weaving your story…',
-                      style: TextStyle(fontFamily: 'Lora', color: cream, fontSize: 16, letterSpacing: 1),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      _ => PlaybackScreen(
-          childName: childName,
-          storyText: _storyText,
-          audioUrl: _audioUrl,
-          onRestart: _handleRestart,
         ),
     };
   }

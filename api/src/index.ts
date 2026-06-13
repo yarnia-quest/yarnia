@@ -3,7 +3,6 @@ import { cors } from "hono/cors";
 import { init, id } from "@instantdb/admin";
 import { loadChild } from "./child";
 import { generateStory } from "./generate";
-import { synthesizeStory } from "./synthesize";
 import { createStory, type StoryDeps } from "./story";
 import { createAgentSession, getSignedUrl, type ConversationTurn } from "./agent";
 import { persistSession, persistAgentSession, enrichSessionRecap, agentStoryText, type SaveSessionInput } from "./session";
@@ -17,11 +16,10 @@ import { estimateStoryCost } from "./usage";
 // Bindings come from api/.dev.vars locally (generated from api/.env) and from
 // `wrangler secret put` / GitHub Actions in production. Never hardcoded. See api/.env.example.
 type Bindings = {
-  QWEN_API_KEY: string;
-  ELEVENLABS_API_KEY: string;
-  ELEVENLABS_AGENT_ID: string;
-  // Shared secret for verifying ElevenLabs post-call webhooks (HMAC-SHA256). Set via
-  // `wrangler secret put ELEVENLABS_WEBHOOK_SECRET`; copied from the EL webhook config.
+  // ElevenLabs — kept for the /agent/webhook handler that processes existing sessions.
+  ELEVENLABS_API_KEY?: string;
+  ELEVENLABS_AGENT_ID?: string;
+  // Shared secret for verifying ElevenLabs post-call webhooks (HMAC-SHA256).
   ELEVENLABS_WEBHOOK_SECRET: string;
   INSTANT_APP_ID: string;
   INSTANT_ADMIN_TOKEN: string;
@@ -155,10 +153,9 @@ function defaultDeps(env: Bindings): AppDeps {
   const db = init({ appId: env.INSTANT_APP_ID, adminToken: env.INSTANT_ADMIN_TOKEN });
   return {
     loadChild: (childId) => loadChild(childId, db.query.bind(db)),
-    generate: (prompt) => generateStory(prompt, { apiKey: env.QWEN_API_KEY }),
-    synthesize: (text) => synthesizeStory(text, { apiKey: env.ELEVENLABS_API_KEY }),
-    agentId: env.ELEVENLABS_AGENT_ID,
-    getSignedUrl: (agentId) => getSignedUrl(agentId, { apiKey: env.ELEVENLABS_API_KEY }),
+    generate: (prompt) => generateStory(prompt),
+    agentId: env.ELEVENLABS_AGENT_ID ?? "",
+    getSignedUrl: (agentId) => getSignedUrl(agentId, { apiKey: env.ELEVENLABS_API_KEY ?? "" }),
     saveSession: async (childId, input) => {
       const sessionId = id();
       await db.transact(
@@ -317,18 +314,15 @@ export function createApp(makeDeps: (env: Bindings) => AppDeps = defaultDeps) {
 
   app.get("/", (c) => c.json({ service: "yarnia-api", ok: true }));
 
-  // GET /healthz — readiness probe. Reports whether each dependency is configured so a monitor
-  // can alert before users hit failures (no secrets are revealed, only presence booleans).
+  // GET /healthz — readiness probe.
   app.get("/healthz", (c) => {
     const e = c.env ?? ({} as Bindings);
     const checks = {
       instant: !!e.INSTANT_APP_ID && !!e.INSTANT_ADMIN_TOKEN,
-      story_gen: !!e.QWEN_API_KEY,
-      voice: !!e.ELEVENLABS_API_KEY && !!e.ELEVENLABS_AGENT_ID,
       webhook_secret: !!e.ELEVENLABS_WEBHOOK_SECRET,
       payments: !!e.MOLLIE_API_KEY || !!e.MOLLIE_PAYMENT_LINK,
     };
-    const ok = checks.instant && checks.story_gen && checks.voice;
+    const ok = checks.instant;
     return c.json({ ok, checks }, ok ? 200 : 503);
   });
 
@@ -362,17 +356,16 @@ export function createApp(makeDeps: (env: Bindings) => AppDeps = defaultDeps) {
     }
   });
 
-  // POST /story — { childId, choice? } -> { childId, choice, text, audio, audioKey, status }.
-  // Stores audio in Instant Storage; returns both the base64 URI (for immediate playback) and the key
-  // (for later replay via GET /audio/:key without re-synthesizing).
+  // POST /story — { childId, choice?, language? } -> { childId, choice, text, status }.
+  // App handles TTS; no audio synthesis on the server.
   app.post("/story", async (c) => {
     const ip = c.req.header("cf-connecting-ip");
     if (ip && !storyLimiter.check(`story:${ip}`).allowed) {
       return c.json({ error: "rate_limited" }, 429);
     }
     const body = await c.req
-      .json<{ childId?: string; choice?: string }>()
-      .catch(() => ({}) as { childId?: string; choice?: string });
+      .json<{ childId?: string; choice?: string; language?: string }>()
+      .catch(() => ({}) as { childId?: string; choice?: string; language?: string });
     const { childId } = body;
     if (!childId) return c.json({ error: "childId required" }, 400);
 
@@ -380,51 +373,34 @@ export function createApp(makeDeps: (env: Bindings) => AppDeps = defaultDeps) {
     const telemetry = makeTelemetry(c);
     const denied = await requireChildToken(c, deps, childId);
     if (denied) return denied;
-    // Sanitize the caller-supplied choice before it ever reaches the LLM prompt.
     const choice = sanitizeChoice(body.choice ?? "") || "a gentle surprise";
+    const language = typeof body.language === "string" ? body.language : undefined;
 
-    const result = await createStory(childId, choice, deps);
+    const result = await createStory(childId, choice, deps, language);
     if (!result.ok) {
       if (result.reason === "subscription_required") {
-        // Free tier exhausted: the client should surface the EUR 8/mo subscribe flow.
         return c.json({ error: "subscription_required" }, 402);
       }
       telemetry.error("story_child_not_found", { childId });
       return c.json({ error: result.reason }, 404);
     }
-    // Cost visibility: estimate and record the marginal LLM/TTS spend of this story.
-    const cost = estimateStoryCost(result.text, result.audio != null);
+    const cost = estimateStoryCost(result.text, false);
     telemetry.track("story_created", {
       childId,
-      hasAudio: result.audio != null,
+      language: language ?? "en",
       tokens: cost.tokens,
       estUsd: cost.totalUsd,
     });
 
-    const audioBase64 = result.audio ?? null;
-    const audioKey = audioBase64 ? `stories/${crypto.randomUUID()}.mp3` : null;
-
     try {
       c.executionCtx.waitUntil(
-        (async () => {
-          if (audioBase64 && audioKey) {
-            await deps.storeAudio(audioKey, audioBase64);
-          }
-          await persistSession(childId, choice ?? "a gentle surprise", result.prompt, result.text, deps, audioKey ?? undefined);
-        })(),
+        persistSession(childId, choice, result.prompt, result.text, deps, undefined),
       );
     } catch {
       // no execution context in tests
     }
 
-    return c.json({
-      childId,
-      choice: choice ?? null,
-      text: result.text,
-      audio: audioBase64 ? `data:audio/mpeg;base64,${audioBase64}` : null,
-      audioKey,
-      status: "ok",
-    });
+    return c.json({ childId, choice, text: result.text, status: "ok" });
   });
 
   // POST /child — onboarding. { name, age, favoriteCharacters?, themes?, fearsToAvoid? }
@@ -540,24 +516,8 @@ export function createApp(makeDeps: (env: Bindings) => AppDeps = defaultDeps) {
 
       const storyText = agentStoryText(transcript);
 
-      // 2) The two slow parts run AFTER the row exists, IN PARALLEL, and patch onto the row:
-      //    (a) the LLM recall-layer recap, (b) the mp3 narration. Neither blocks the save the
-      //    user sees, and they no longer run one-after-another.
-      const enrich = enrichSessionRecap(sessionId, storyText, deps);
-      const attachAudio = (async () => {
-        if (!storyText) return;
-        try {
-          const audioBase64 = await deps.synthesize(storyText.slice(0, 4500));
-          if (audioBase64) {
-            const audioKey = `stories/${crypto.randomUUID()}.mp3`;
-            await deps.storeAudio(audioKey, audioBase64);
-            await deps.updateSessionAudio(sessionId, audioKey);
-          }
-        } catch (err) {
-          console.error("webhook audio synthesis/storage failed, story saved without audio:", err);
-        }
-      })();
-      await Promise.all([enrich, attachAudio]);
+      // Enrich the session with LLM recall-layer recap after the row exists.
+      await enrichSessionRecap(sessionId, storyText, deps);
     };
 
     try {
