@@ -4,41 +4,59 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'tts_session.dart';
 
+// Files to download from HuggingFace for each Pocket TTS model.
+// Path inside the repo → relative path inside the local model dir.
+const _pocketFiles = [
+  'lm_flow.int8.onnx',
+  'lm_main.int8.onnx',
+  'encoder.onnx',
+  'decoder.int8.onnx',
+  'text_conditioner.onnx',
+  'vocab.json',
+  'token_scores.json',
+  'test_wavs/bria.wav',
+];
+
 enum TtsEngine {
   system(
     label: 'System TTS',
     modelDir: null,
     sizeMb: 0,
     quality: 'Built-in, varies by device',
-    downloadUrl: null,
+    hfRepo: null,
+    modelFiles: null,
   ),
   pocketEn(
     label: 'Pocket EN',
     modelDir: 'pocket-tts-en',
     sizeMb: 160,
     quality: 'Expressive, voice cloning',
-    downloadUrl: 'https://huggingface.co/csukuangfj/sherpa-onnx-pocket-tts-int8-2026-01-26',
+    hfRepo: 'csukuangfj2/sherpa-onnx-pocket-tts-int8-2026-01-26',
+    modelFiles: _pocketFiles,
   ),
   pocketDe(
     label: 'Pocket DE',
     modelDir: 'pocket-tts-de',
     sizeMb: 160,
     quality: 'Expressive, voice cloning',
-    downloadUrl: null, // our custom export — not yet public
+    hfRepo: null, // TODO: upload to HuggingFace
+    modelFiles: _pocketFiles,
   ),
   pocketFr(
     label: 'Pocket FR',
     modelDir: 'pocket-tts-fr-24l',
     sizeMb: 400,
     quality: 'Expressive, voice cloning',
-    downloadUrl: null,
+    hfRepo: null, // TODO: upload to HuggingFace
+    modelFiles: _pocketFiles,
   ),
   pocketEs(
     label: 'Pocket ES',
     modelDir: 'pocket-tts-es',
     sizeMb: 160,
     quality: 'Expressive, voice cloning',
-    downloadUrl: null,
+    hfRepo: null, // TODO: upload to HuggingFace
+    modelFiles: _pocketFiles,
   );
 
   const TtsEngine({
@@ -46,16 +64,21 @@ enum TtsEngine {
     required this.modelDir,
     required this.sizeMb,
     required this.quality,
-    required this.downloadUrl,
+    required this.hfRepo,
+    required this.modelFiles,
   });
 
   final String label;
   final String? modelDir;
   final int sizeMb;
   final String quality;
-  final String? downloadUrl;
+  // HuggingFace repo ID — null until we publish the model.
+  final String? hfRepo;
+  // Files to fetch from the repo (null == same as hfRepo being null).
+  final List<String>? modelFiles;
 
   bool get isSystem => this == TtsEngine.system;
+  bool get canDownload => hfRepo != null;
 
   TtsEngineKind? get kind => switch (this) {
         TtsEngine.system => null,
@@ -65,7 +88,6 @@ enum TtsEngine {
         TtsEngine.pocketEs => TtsEngineKind.pocketEs,
       };
 
-  // seed=2 stabilizes FR 24L; all other engines use seed=1.
   int get seed => this == TtsEngine.pocketFr ? 2 : 1;
 }
 
@@ -98,7 +120,6 @@ enum SttEngine {
   final int sizeMb;
   final String quality;
   final String? downloadUrl;
-
   bool get isSystem => this == SttEngine.system;
 }
 
@@ -117,6 +138,7 @@ class SettingsService extends ChangeNotifier {
   String get language => _language;
   TtsEngine get ttsEngine => _ttsEngine;
   SttEngine get sttEngine => _sttEngine;
+  String get appSupportDir => _appSupportDir;
 
   Future<void> load() async {
     _prefs = await SharedPreferences.getInstance();
@@ -166,7 +188,8 @@ class SettingsService extends ChangeNotifier {
 
   bool isEngineInstalled(TtsEngine engine) {
     if (engine.modelDir == null) return true;
-    return Directory('$_appSupportDir/${engine.modelDir}').existsSync();
+    // Check for vocab.json as the install-complete sentinel.
+    return File('$_appSupportDir/${engine.modelDir}/vocab.json').existsSync();
   }
 
   bool isSttEngineInstalled(SttEngine engine) {
@@ -174,21 +197,20 @@ class SettingsService extends ChangeNotifier {
     return Directory('$_appSupportDir/${engine.modelDir}').existsSync();
   }
 
-  // Returns the best available TTS engine: preferred if installed, else system.
   TtsEngine get effectiveEngine {
     if (_ttsEngine == TtsEngine.system) return TtsEngine.system;
     if (isEngineInstalled(_ttsEngine)) return _ttsEngine;
     return TtsEngine.system;
   }
 
-  // Returns the best available STT engine: preferred if installed, else system.
   SttEngine get effectiveSttEngine {
     if (_sttEngine == SttEngine.system) return SttEngine.system;
     if (isSttEngineInstalled(_sttEngine)) return _sttEngine;
     return SttEngine.system;
   }
 
-  // BCP-47 locale string for STT and system TTS (e.g. 'de-DE').
+  void refreshInstalled() => notifyListeners();
+
   String get locale => switch (_language) {
         'de' => 'de-DE',
         'fr' => 'fr-FR',
