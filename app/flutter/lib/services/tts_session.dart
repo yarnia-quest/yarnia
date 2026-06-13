@@ -24,6 +24,7 @@
 
 import 'dart:async';
 import 'dart:isolate';
+import 'dart:typed_data';
 
 import 'package:path/path.dart' as p;
 import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa_onnx;
@@ -326,9 +327,12 @@ Future<void> _ttsWorkerMain(Map<dynamic, dynamic> args) async {
         final ref = reqRefPath != null ? refWave : null;
 
         final sw = Stopwatch()..start();
+        // Leading comma gives the model a brief pre-speech pause so the first
+        // word isn't clipped. Stripped from display text by the caller.
+        final text = ', ${m['text'] as String}';
         final audio = ref != null
             ? tts.generateWithConfig(
-                text: m['text'] as String,
+                text: text,
                 config: sherpa_onnx.OfflineTtsGenerationConfig(
                   sid: m['sid'] as int,
                   speed: m['speed'] as double,
@@ -350,13 +354,30 @@ Future<void> _ttsWorkerMain(Map<dynamic, dynamic> args) async {
                   },
                 ))
             : tts.generate(
-                text: m['text'] as String,
+                text: text,
                 sid: m['sid'] as int,
                 speed: m['speed'] as double);
 
         final wav = p.join(outDir, 'tts-$req-$chunkIndex.wav');
+        // Prepend silence: 80ms on first chunk prevents player from clipping
+        // the first word; 200ms on later chunks is the inter-sentence pause.
+        // Append 60ms trailing silence so the WAV ends at zero before the
+        // player moves to the next file (prevents click/pop at boundaries).
+        // Also apply a 20ms linear fade-out on the last 20ms of speech so
+        // the waveform reaches zero before the trailing silence.
+        final leadMs = chunkIndex == 0 ? 80 : 200;
+        final sr = audio.sampleRate;
+        final speech = Float32List.fromList(audio.samples);
+        final fadeLen = sr * 20 ~/ 1000;
+        for (var i = 0; i < fadeLen && i < speech.length; i++) {
+          speech[speech.length - 1 - i] *= i / fadeLen;
+        }
+        final leadLen = sr * leadMs ~/ 1000;
+        final tailLen = sr * 60 ~/ 1000;
+        final padded = Float32List(leadLen + speech.length + tailLen);
+        padded.setRange(leadLen, leadLen + speech.length, speech);
         sherpa_onnx.writeWave(
-            filename: wav, samples: audio.samples, sampleRate: audio.sampleRate);
+            filename: wav, samples: padded, sampleRate: sr);
         sw.stop();
 
         out.send({
