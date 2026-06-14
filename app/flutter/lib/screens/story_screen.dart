@@ -132,43 +132,32 @@ class _StoryScreenState extends State<StoryScreen>
     _startSession();
   }
 
-  // Greet (like an agent), then start listening — no manual tap to begin.
+  // Greet first (like an agent — Yarnia speaks before the child does), THEN load
+  // STT in the background, THEN listen. The greeting must not wait behind the
+  // slow Whisper model load, and it runs locally (no network).
   Future<void> _startSession() async {
-    await _initStt();
-    if (!mounted) return;
     await _greet();
+    if (!mounted) return;
+    await _initStt(); // load STT after the greeting is spoken
     if (!mounted || _state != _State.greeting) return;
     setState(() => _state = _State.listening);
     await _startListening();
   }
 
-  // Personalized greeting from the backend, spoken aloud. Falls back to an
-  // instant local line if the LLM is slow/unreachable so entry never stalls.
+  // Local, instant, spoken greeting. (Backend/LLM-personalized greeting is Phase 2;
+  // the backend can't reach Nebula and we're going fully on-device anyway.)
   Future<void> _greet() async {
-    setState(() => _state = _State.greeting);
-    String greeting = _localGreeting();
-    try {
-      final res = await http
-          .post(
-            Uri.parse('${widget.apiBase}/greeting'),
-            headers: {...widget.apiHeaders, 'content-type': 'application/json'},
-            body: jsonEncode({
-              'childId': widget.childId,
-              'language': widget.settings.language,
-            }),
-          )
-          .timeout(const Duration(seconds: 6));
-      if (res.statusCode == 200) {
-        final g = (jsonDecode(res.body) as Map<String, dynamic>)['greeting']
-            as String?;
-        if (g != null && g.trim().isNotEmpty) greeting = g.trim();
-      }
-    } catch (e) {
-      debugPrint('StoryScreen: greeting fetch failed, using local: $e');
-    }
-    if (!mounted) return;
-    setState(() => _currentSentence = greeting);
-    await _speakLine(greeting);
+    final greeting = _localGreeting();
+    setState(() {
+      _state = _State.greeting;
+      _currentSentence = greeting;
+    });
+    // Let the greeting be readable even if TTS is silent/instant.
+    await Future.any([
+      _speakLine(greeting),
+      Future.delayed(const Duration(seconds: 8)), // safety cap
+    ]);
+    await Future.delayed(const Duration(milliseconds: 400));
   }
 
   String _localGreeting() {
@@ -888,21 +877,30 @@ class _StoryScreenState extends State<StoryScreen>
         final support = await getApplicationSupportDirectory();
         final modelDir = p.join(support.path, engine.modelDir!);
         final refWavPath = _refWavForEngine(engine, modelDir);
-        final session = _ttsSession;
-        if (session != null) {
-          final sc = StreamController<String>();
-          sc.add(line);
-          await sc.close();
-          await for (final chunk in session.speakStream(sc.stream, refWavPath: refWavPath)) {
-            if (!mounted) return;
-            final playlist = ConcatenatingAudioSource(children: []);
-            await playlist.add(AudioSource.uri(Uri.file(chunk.wavPath)));
-            await _player.setAudioSource(playlist);
-            await _player.play();
-            await _player.playerStateStream.firstWhere(
-              (s) => s.processingState == ProcessingState.completed,
-            );
-          }
+        // Spawn a session if none exists yet (e.g. the greeting speaks before any
+        // story narration has created one) — otherwise the line is silently dropped.
+        var session = _ttsSession;
+        if (session == null) {
+          session = await TtsSession.spawn(
+            kind: engine.kind!,
+            modelDir: modelDir,
+            outDir: support.path,
+            seed: engine.seed,
+          );
+          _ttsSession = session;
+        }
+        final sc = StreamController<String>();
+        sc.add(line);
+        await sc.close();
+        await for (final chunk in session.speakStream(sc.stream, refWavPath: refWavPath)) {
+          if (!mounted) return;
+          final playlist = ConcatenatingAudioSource(children: []);
+          await playlist.add(AudioSource.uri(Uri.file(chunk.wavPath)));
+          await _player.setAudioSource(playlist);
+          await _player.play();
+          await _player.playerStateStream.firstWhere(
+            (s) => s.processingState == ProcessingState.completed,
+          );
         }
       } catch (e) {
         debugPrint('StoryScreen: _speakLine pocket TTS failed: $e');
