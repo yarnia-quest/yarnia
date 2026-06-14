@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -67,6 +68,9 @@ class _StoryScreenState extends State<StoryScreen>
   String _transcript = '';
   String _currentSentence = '';
   bool _isListening = false;
+  // Live mic input level (0..1) for the listening indicator. A ValueNotifier so the
+  // ring repaints on every audio frame without rebuilding the whole screen.
+  final ValueNotifier<double> _micLevel = ValueNotifier(0);
 
   // Phase 1: checkpoint narration state
   List<String> _sentences = [];
@@ -157,6 +161,7 @@ class _StoryScreenState extends State<StoryScreen>
   @override
   void dispose() {
     _pulseController.dispose();
+    _micLevel.dispose();
     _speech.stop();
     _asrSub?.cancel();
     _audioSub?.cancel();
@@ -178,6 +183,8 @@ class _StoryScreenState extends State<StoryScreen>
     } else {
       await _speech.listen(
         onResult: (r) => setState(() => _transcript = r.recognizedWords),
+        onSoundLevelChange: (level) =>
+            _micLevel.value = ((level + 2) / 12).clamp(0.0, 1.0),
         listenOptions: SpeechListenOptions(
           listenFor: const Duration(seconds: 15),
           localeId: widget.settings.locale,
@@ -211,8 +218,17 @@ class _StoryScreenState extends State<StoryScreen>
       final bd = ByteData.sublistView(bytes, 0, usable);
       final n = usable ~/ 2;
       final samples = Float32List(n);
+      var sumSq = 0.0;
       for (var i = 0; i < n; i++) {
-        samples[i] = bd.getInt16(i * 2, Endian.little) / 32768.0;
+        final s = bd.getInt16(i * 2, Endian.little) / 32768.0;
+        samples[i] = s;
+        sumSq += s * s;
+      }
+      // RMS → 0..1 level for the on-screen mic indicator (scaled so normal speech
+      // fills most of the ring; quiet room stays near zero).
+      if (n > 0) {
+        final rms = math.sqrt(sumSq / n);
+        _micLevel.value = (rms * 6).clamp(0.0, 1.0);
       }
       _asrSession?.feed(samples);
     });
@@ -222,6 +238,7 @@ class _StoryScreenState extends State<StoryScreen>
 
   Future<void> _stopListeningAndGenerate() async {
     setState(() => _isListening = false);
+    _micLevel.value = 0;
     if (_usingWhisper && _asrSession != null) {
       await _audioSub?.cancel();
       _audioSub = null;
@@ -233,10 +250,9 @@ class _StoryScreenState extends State<StoryScreen>
       await _speech.stop();
     }
     final text = _transcript.trim();
-    if (text.isEmpty) {
-      _startListening();
-      return;
-    }
+    // Nothing was heard: stop and stay idle so the user can retry — do NOT loop
+    // back into listening (that made the mic impossible to turn off).
+    if (text.isEmpty) return;
     setState(() => _state = _State.thinking);
     await _generateAndSpeak(text);
   }
@@ -654,6 +670,7 @@ class _StoryScreenState extends State<StoryScreen>
                       transcript: _transcript,
                       speechReady: _speechReady,
                       pulse: _pulse,
+                      level: _micLevel,
                       onMicTap: _isListening
                           ? _stopListeningAndGenerate
                           : _startListening,
@@ -674,6 +691,7 @@ class _StoryScreenState extends State<StoryScreen>
                       speechReady: _speechReady,
                       transcript: _transcript,
                       pulse: _pulse,
+                      level: _micLevel,
                     ),
                   _State.done => _DoneView(
                       onAgain: _restart,
@@ -694,6 +712,7 @@ class _ListeningView extends StatelessWidget {
   final String transcript;
   final bool speechReady;
   final Animation<double> pulse;
+  final ValueNotifier<double> level;
   final VoidCallback onMicTap;
   final bool isListening;
 
@@ -702,6 +721,7 @@ class _ListeningView extends StatelessWidget {
     required this.transcript,
     required this.speechReady,
     required this.pulse,
+    required this.level,
     required this.onMicTap,
     required this.isListening,
   });
@@ -731,6 +751,19 @@ class _ListeningView extends StatelessWidget {
             child: Stack(
               alignment: Alignment.center,
               children: [
+                // Voice-reactive halo: grows and brightens with mic input so the
+                // user can see it is actually hearing them.
+                ValueListenableBuilder<double>(
+                  valueListenable: level,
+                  builder: (_, lvl, __) => Container(
+                    width: 88 + lvl * 44,
+                    height: 88 + lvl * 44,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: gold.withOpacity(isListening ? 0.10 + lvl * 0.30 : 0),
+                    ),
+                  ),
+                ),
                 AnimatedBuilder(
                   animation: pulse,
                   builder: (_, __) => Transform.scale(
@@ -884,6 +917,7 @@ class _PausedView extends StatelessWidget {
   final bool speechReady;
   final String transcript;
   final Animation<double> pulse;
+  final ValueNotifier<double> level;
 
   const _PausedView({
     required this.onContinue,
@@ -893,6 +927,7 @@ class _PausedView extends StatelessWidget {
     required this.speechReady,
     required this.transcript,
     required this.pulse,
+    required this.level,
   });
 
   @override
@@ -921,6 +956,17 @@ class _PausedView extends StatelessWidget {
             child: Stack(
               alignment: Alignment.center,
               children: [
+                ValueListenableBuilder<double>(
+                  valueListenable: level,
+                  builder: (_, lvl, __) => Container(
+                    width: 80 + lvl * 40,
+                    height: 80 + lvl * 40,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: gold.withOpacity(isListening ? 0.10 + lvl * 0.30 : 0),
+                    ),
+                  ),
+                ),
                 AnimatedBuilder(
                   animation: pulse,
                   builder: (_, __) => Transform.scale(
