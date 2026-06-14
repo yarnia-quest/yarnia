@@ -65,9 +65,29 @@ class _StoryScreenState extends State<StoryScreen>
   late Animation<double> _pulse;
 
   _State _state = _State.listening;
-  String _transcript = '';
+  // Transcript is split so a trailing empty partial can't wipe finalized text:
+  // _committed holds decoded VAD segments; _partial is the live interim only.
+  String _committed = '';
+  String _partial = '';
+  bool _decoding = false; // a segment finished and is being transcribed
+  String? _sttError; // surfaced on screen if the recognizer fails to load
+  bool _thinkingForTurn = false; // thinking state copy: turn vs initial story
   String _currentSentence = '';
   bool _isListening = false;
+
+  // What the user has said so far (committed words + meaningful interim).
+  String get _heard {
+    final p = _partial == '(listening...)' ? '' : _partial;
+    return '$_committed $p'.trim();
+  }
+
+  // Short status line under the caption so the user knows what is happening.
+  String get _sttStatus {
+    final engine = _usingWhisper ? 'Whisper' : 'System STT';
+    if (_decoding) return '$engine · transcribing…';
+    if (_isListening) return '$engine · listening';
+    return engine;
+  }
   // Live mic input level (0..1) for the listening indicator. A ValueNotifier so the
   // ring repaints on every audio frame without rebuilding the whole screen.
   final ValueNotifier<double> _micLevel = ValueNotifier(0);
@@ -116,6 +136,9 @@ class _StoryScreenState extends State<StoryScreen>
       final session = await AsrSession.spawn(
         kind: 'whisperBase',
         dirs: {'model': modelDir, 'vad': vadPath},
+        // Pin the decode language to the chosen one (auto-detect flip-flops
+        // between languages per segment and wrecks accuracy).
+        whisperLang: widget.settings.language,
       );
       if (!mounted) {
         session.dispose();
@@ -123,11 +146,20 @@ class _StoryScreenState extends State<StoryScreen>
       }
       _asrSub = session.events.listen(_onAsrEvent);
       _asrSession = session;
-      setState(() => _speechReady = true);
+      setState(() {
+        _speechReady = true;
+        _sttError = null;
+      });
     } catch (e) {
       debugPrint('Whisper init failed, falling back to system STT: $e');
+      // Surface it: a bad/missing model should be visible, not silent.
       final ok = await _speech.initialize();
-      if (mounted) setState(() => _speechReady = ok);
+      if (mounted) {
+        setState(() {
+          _speechReady = ok;
+          _sttError = ok ? null : 'Whisper failed to load: $e';
+        });
+      }
     }
   }
 
@@ -135,25 +167,26 @@ class _StoryScreenState extends State<StoryScreen>
     if (!mounted) return;
     switch (event) {
       case AsrPartial(:final text):
-        setState(() => _transcript = text);
+        // Interim only — never touch _committed. An empty/placeholder partial
+        // just clears the live text. (_decoding is managed by the stop path.)
+        setState(() => _partial = text);
       case AsrSegment(:final text):
+        final seg = text.trim();
+        if (seg.isEmpty) return;
         // Phase 2b: during narration with hands-free enabled, a VAD segment is
-        // treated as an interrupt utterance — finish the current sentence then
-        // process the turn. Debounced to segments with at least 2 words to
-        // reduce false triggers from background noise and Yarnia's own voice
-        // (hardware AEC should suppress self-triggering; this is an extra gate).
+        // treated as an interrupt utterance (>=2 words to dodge noise / TTS bleed).
         if (_state == _State.narrating &&
             widget.settings.handsFreeInterrupt &&
-            text.trim().split(RegExp(r'\s+')).length >= 2) {
+            seg.split(RegExp(r'\s+')).length >= 2) {
           setState(() => _interruptPending = true);
-          // Store the segment so _enterPaused can pass it directly to _sendTurn
-          // instead of waiting for a re-listen.
-          _pendingHandsFreeUtterance = text.trim();
+          _pendingHandsFreeUtterance = seg;
         } else {
-          // Normal listening mode: accumulate segments as transcript.
-          setState(() => _transcript = _transcript.isEmpty
-              ? text
-              : '$_transcript $text');
+          // Accumulate finalized segments; clear interim + decoding flag.
+          setState(() {
+            _committed = _committed.isEmpty ? seg : '$_committed $seg';
+            _partial = '';
+            _decoding = false;
+          });
         }
     }
   }
@@ -177,12 +210,17 @@ class _StoryScreenState extends State<StoryScreen>
 
   Future<void> _startListening() async {
     if (!_speechReady || _state != _State.listening) return;
-    setState(() { _transcript = ''; _isListening = true; });
+    setState(() {
+      _committed = '';
+      _partial = '';
+      _decoding = false;
+      _isListening = true;
+    });
     if (_usingWhisper && _asrSession != null) {
       await _startWhisperMic();
     } else {
       await _speech.listen(
-        onResult: (r) => setState(() => _transcript = r.recognizedWords),
+        onResult: (r) => setState(() => _partial = r.recognizedWords),
         onSoundLevelChange: (level) =>
             _micLevel.value = ((level + 2) / 12).clamp(0.0, 1.0),
         listenOptions: SpeechListenOptions(
@@ -237,7 +275,10 @@ class _StoryScreenState extends State<StoryScreen>
   // ── STT: stop ────────────────────────────────────────────────────────────
 
   Future<void> _stopListeningAndGenerate() async {
-    setState(() => _isListening = false);
+    setState(() {
+      _isListening = false;
+      _decoding = _usingWhisper; // a final segment may still be decoding
+    });
     _micLevel.value = 0;
     if (_usingWhisper && _asrSession != null) {
       await _audioSub?.cancel();
@@ -245,11 +286,12 @@ class _StoryScreenState extends State<StoryScreen>
       await _recorder.stop();
       _asrSession!.flush();
       // Give the isolate a moment to emit the final segment.
-      await Future.delayed(const Duration(milliseconds: 300));
+      await Future.delayed(const Duration(milliseconds: 400));
     } else {
       await _speech.stop();
     }
-    final text = _transcript.trim();
+    if (mounted) setState(() => _decoding = false);
+    final text = _heard;
     // Nothing was heard: stop and stay idle so the user can retry — do NOT loop
     // back into listening (that made the mic impossible to turn off).
     if (text.isEmpty) return;
@@ -258,6 +300,7 @@ class _StoryScreenState extends State<StoryScreen>
   }
 
   Future<void> _generateAndSpeak(String userInput) async {
+    _thinkingForTurn = false;
     try {
       final res = await http.post(
         Uri.parse('${widget.apiBase}/story'),
@@ -475,7 +518,9 @@ class _StoryScreenState extends State<StoryScreen>
     _systemTts.stop();
     setState(() {
       _state = _State.listening;
-      _transcript = '';
+      _committed = '';
+      _partial = '';
+      _decoding = false;
       _currentSentence = '';
       _isListening = false;
       _sentences = [];
@@ -489,7 +534,10 @@ class _StoryScreenState extends State<StoryScreen>
 
   /// Send the child's utterance to the backend and apply the decision.
   Future<void> _sendTurn(String utterance) async {
-    setState(() => _state = _State.thinking);
+    setState(() {
+      _state = _State.thinking;
+      _thinkingForTurn = true;
+    });
     try {
       final res = await http.post(
         Uri.parse('${widget.apiBase}/story/turn'),
@@ -560,14 +608,16 @@ class _StoryScreenState extends State<StoryScreen>
   Future<void> _startPausedCapture() async {
     if (!_speechReady || _isListening) return;
     setState(() {
-      _transcript = '';
+      _committed = '';
+      _partial = '';
+      _decoding = false;
       _isListening = true;
     });
     if (_usingWhisper && _asrSession != null) {
       await _startWhisperMic();
     } else {
       await _speech.listen(
-        onResult: (r) => setState(() => _transcript = r.recognizedWords),
+        onResult: (r) => setState(() => _partial = r.recognizedWords),
         listenOptions: SpeechListenOptions(
           listenFor: const Duration(seconds: 15),
           localeId: widget.settings.locale,
@@ -578,17 +628,22 @@ class _StoryScreenState extends State<StoryScreen>
 
   /// Stop the paused-mode mic and send whatever was said as a conversation turn.
   Future<void> _stopPausedCaptureAndSend() async {
-    setState(() => _isListening = false);
+    setState(() {
+      _isListening = false;
+      _decoding = _usingWhisper;
+    });
+    _micLevel.value = 0;
     if (_usingWhisper && _asrSession != null) {
       await _audioSub?.cancel();
       _audioSub = null;
       await _recorder.stop();
       _asrSession!.flush();
-      await Future.delayed(const Duration(milliseconds: 300));
+      await Future.delayed(const Duration(milliseconds: 400));
     } else {
       await _speech.stop();
     }
-    final text = _transcript.trim();
+    if (mounted) setState(() => _decoding = false);
+    final text = _heard;
     if (text.isEmpty) return; // nothing said — stay paused
     await _sendTurn(text);
   }
@@ -667,7 +722,9 @@ class _StoryScreenState extends State<StoryScreen>
                 child: switch (_state) {
                   _State.listening => _ListeningView(
                       childName: widget.childName,
-                      transcript: _transcript,
+                      transcript: _heard,
+                      status: _sttStatus,
+                      error: _sttError,
                       speechReady: _speechReady,
                       pulse: _pulse,
                       level: _micLevel,
@@ -676,7 +733,8 @@ class _StoryScreenState extends State<StoryScreen>
                           : _startListening,
                       isListening: _isListening,
                     ),
-                  _State.thinking => _ThinkingView(childName: widget.childName),
+                  _State.thinking => _ThinkingView(
+                      childName: widget.childName, forTurn: _thinkingForTurn),
                   _State.narrating => _NarratingView(
                       sentence: _currentSentence,
                       onInterrupt: _requestInterrupt,
@@ -689,7 +747,8 @@ class _StoryScreenState extends State<StoryScreen>
                           : _startPausedCapture,
                       isListening: _isListening,
                       speechReady: _speechReady,
-                      transcript: _transcript,
+                      transcript: _heard,
+                      status: _sttStatus,
                       pulse: _pulse,
                       level: _micLevel,
                     ),
@@ -710,6 +769,8 @@ class _StoryScreenState extends State<StoryScreen>
 class _ListeningView extends StatelessWidget {
   final String childName;
   final String transcript;
+  final String status;
+  final String? error;
   final bool speechReady;
   final Animation<double> pulse;
   final ValueNotifier<double> level;
@@ -719,6 +780,8 @@ class _ListeningView extends StatelessWidget {
   const _ListeningView({
     required this.childName,
     required this.transcript,
+    required this.status,
+    required this.error,
     required this.speechReady,
     required this.pulse,
     required this.level,
@@ -801,27 +864,68 @@ class _ListeningView extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 24),
-        if (transcript.isNotEmpty)
+        // Live caption — committed + interim transcript, so it is visible that
+        // speech is being heard and what was understood.
+        _Caption(
+          text: transcript,
+          status: status,
+          emptyHint: isListening ? 'Listening…' : 'Tap to speak',
+        ),
+        if (error != null) ...[
+          const SizedBox(height: 12),
           Text(
-            '"$transcript"',
+            error!,
             style: const TextStyle(
               fontFamily: 'Lora',
-              color: gold,
-              fontSize: 15,
-              fontStyle: FontStyle.italic,
+              color: Color(0xFFE2A0A0),
+              fontSize: 12,
             ),
             textAlign: TextAlign.center,
-          )
-        else
-          Text(
-            isListening ? 'Listening…' : 'Tap to speak',
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+// Shared live-caption block: the heard text (or a hint) plus a small status line.
+class _Caption extends StatelessWidget {
+  final String text;
+  final String status;
+  final String emptyHint;
+  const _Caption(
+      {required this.text, required this.status, required this.emptyHint});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 44),
+          child: Text(
+            text.isNotEmpty ? '"$text"' : emptyHint,
             style: TextStyle(
               fontFamily: 'Lora',
-              color: cream.withOpacity(0.4),
-              fontSize: 13,
-              letterSpacing: 1,
+              color: text.isNotEmpty ? gold : cream.withOpacity(0.4),
+              fontSize: text.isNotEmpty ? 16 : 13,
+              fontStyle:
+                  text.isNotEmpty ? FontStyle.italic : FontStyle.normal,
+              letterSpacing: text.isNotEmpty ? 0 : 1,
+              height: 1.5,
             ),
+            textAlign: TextAlign.center,
           ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          status,
+          style: TextStyle(
+            fontFamily: 'Lora',
+            color: cream.withOpacity(0.35),
+            fontSize: 11,
+            letterSpacing: 0.5,
+          ),
+        ),
       ],
     );
   }
@@ -829,7 +933,8 @@ class _ListeningView extends StatelessWidget {
 
 class _ThinkingView extends StatelessWidget {
   final String childName;
-  const _ThinkingView({required this.childName});
+  final bool forTurn; // a mid-story conversation turn vs the initial story
+  const _ThinkingView({required this.childName, this.forTurn = false});
 
   @override
   Widget build(BuildContext context) {
@@ -839,7 +944,7 @@ class _ThinkingView extends StatelessWidget {
         const Text('🌙', style: TextStyle(fontSize: 56)),
         const SizedBox(height: 24),
         Text(
-          'Weaving your story…',
+          forTurn ? 'One moment…' : 'Weaving your story…',
           style: TextStyle(
             fontFamily: 'Lora',
             color: cream.withOpacity(0.7),
@@ -916,6 +1021,7 @@ class _PausedView extends StatelessWidget {
   final bool isListening;
   final bool speechReady;
   final String transcript;
+  final String status;
   final Animation<double> pulse;
   final ValueNotifier<double> level;
 
@@ -926,6 +1032,7 @@ class _PausedView extends StatelessWidget {
     required this.isListening,
     required this.speechReady,
     required this.transcript,
+    required this.status,
     required this.pulse,
     required this.level,
   });
@@ -1004,26 +1111,11 @@ class _PausedView extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 16),
-        if (transcript.isNotEmpty)
-          Text(
-            '"$transcript"',
-            style: const TextStyle(
-              fontFamily: 'Lora',
-              color: gold,
-              fontSize: 14,
-              fontStyle: FontStyle.italic,
-            ),
-            textAlign: TextAlign.center,
-          )
-        else
-          Text(
-            isListening ? 'Listening…' : 'Tap to talk, or Continue',
-            style: TextStyle(
-              fontFamily: 'Lora',
-              color: cream.withOpacity(0.5),
-              fontSize: 13,
-            ),
-          ),
+        _Caption(
+          text: transcript,
+          status: status,
+          emptyHint: isListening ? 'Listening…' : 'Tap to talk, or Continue',
+        ),
         const SizedBox(height: 32),
         _OutlineButton(label: 'Continue', onTap: onContinue),
         const SizedBox(height: 14),

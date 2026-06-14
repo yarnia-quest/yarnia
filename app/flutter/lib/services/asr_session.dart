@@ -41,6 +41,7 @@ class AsrSession {
     required String kind,
     required Map<String, String> dirs,
     String canaryLang = 'en',
+    String? whisperLang,
   }) async {
     final fromWorker = ReceivePort();
     final isolate = await Isolate.spawn(_asrWorkerMain, {
@@ -48,6 +49,7 @@ class AsrSession {
       'kind': kind,
       'dirs': dirs,
       'canaryLang': canaryLang,
+      'whisperLang': whisperLang ?? '',
     });
     final raw = fromWorker.asBroadcastStream().cast<Map<dynamic, dynamic>>();
     final ready = await raw.first;
@@ -106,12 +108,13 @@ Future<void> _asrWorkerMain(Map<dynamic, dynamic> args) async {
   final kind = args['kind'] as String;
   final dirs = (args['dirs'] as Map).cast<String, String>();
   final canaryLang = args['canaryLang'] as String;
+  final whisperLang = (args['whisperLang'] as String?) ?? '';
 
   final engines = _Engines();
   final initSw = Stopwatch()..start();
   try {
     sherpa_onnx.initBindings();
-    _buildEngines(engines, kind, dirs, canaryLang);
+    _buildEngines(engines, kind, dirs, canaryLang, whisperLang);
   } catch (e) {
     out.send({'type': 'error', 'message': '$e'});
     return;
@@ -220,15 +223,16 @@ Future<void> _asrWorkerMain(Map<dynamic, dynamic> args) async {
   }
 }
 
-void _buildEngines(
-    _Engines e, String kind, Map<String, String> dirs, String canaryLang) {
+void _buildEngines(_Engines e, String kind, Map<String, String> dirs,
+    String canaryLang, String whisperLang) {
   sherpa_onnx.OfflineRecognizerConfig whisper(String dir, String prefix) =>
       sherpa_onnx.OfflineRecognizerConfig(
         model: sherpa_onnx.OfflineModelConfig(
           whisper: sherpa_onnx.OfflineWhisperModelConfig(
             encoder: p.join(dir, '$prefix-encoder.int8.onnx'),
             decoder: p.join(dir, '$prefix-decoder.int8.onnx'),
-            language: '',
+            // Pin the language when known to avoid unstable per-segment detection.
+            language: whisperLang,
             task: 'transcribe',
           ),
           tokens: p.join(dir, '$prefix-tokens.txt'),
