@@ -13,6 +13,7 @@ export type GenerateOpts = {
   baseUrl?: string;
   fetch?: typeof fetch;
   timeoutMs?: number;
+  maxTokens?: number;
 };
 
 type ChatResponse = {
@@ -38,6 +39,7 @@ export async function generateStory(prompt: StoryPrompt, opts: GenerateOpts = {}
           { role: "system", content: prompt.system },
           { role: "user", content: prompt.user },
         ],
+        ...(opts.maxTokens ? { max_tokens: opts.maxTokens } : {}),
       }),
     });
 

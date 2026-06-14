@@ -12,7 +12,7 @@ import { generateChildToken, hashToken, verifyChildToken } from "./auth";
 import { createRateLimiter } from "./ratelimit";
 import { createTelemetry } from "./observability";
 import { estimateStoryCost } from "./usage";
-import { buildTurnPrompt } from "./prompt";
+import { buildTurnPrompt, buildGreetingPrompt, type StoryPrompt } from "./prompt";
 import { interpretTurn } from "./turn";
 import { isStorySafe } from "./safety";
 
@@ -74,6 +74,8 @@ export function sanitizeList(xs?: string[]): string[] {
 
 // Everything the routes need, built from the Worker env. Injectable so tests pass fakes.
 type AppDeps = StoryDeps & {
+  // Short, fast personalized greeting (capped tokens) for the start of a session.
+  generateGreeting?: (prompt: StoryPrompt) => Promise<string>;
   agentId: string;
   getSignedUrl: (agentId: string) => Promise<string>;
   saveSession: (childId: string, input: SaveSessionInput) => Promise<string>;
@@ -157,6 +159,8 @@ function defaultDeps(env: Bindings): AppDeps {
   return {
     loadChild: (childId) => loadChild(childId, db.query.bind(db)),
     generate: (prompt) => generateStory(prompt),
+    // Greeting is short — cap tokens so it returns fast.
+    generateGreeting: (prompt) => generateStory(prompt, { maxTokens: 80 }),
     agentId: env.ELEVENLABS_AGENT_ID ?? "",
     getSignedUrl: (agentId) => getSignedUrl(agentId, { apiKey: env.ELEVENLABS_API_KEY ?? "" }),
     saveSession: async (childId, input) => {
@@ -462,6 +466,30 @@ export function createApp(makeDeps: (env: Bindings) => AppDeps = defaultDeps) {
 
     telemetry.track("story_turn", { childId, intent: decision.intent, language: language ?? "en" });
     return c.json(decision);
+  });
+
+  // POST /greeting — { childId, language? } -> { greeting }. A short spoken welcome
+  // for the start of a session, personalized from child memory. The app shows a
+  // local fallback if this is slow, so keep it small/fast.
+  app.post("/greeting", async (c) => {
+    const body = await c.req
+      .json<{ childId?: string; language?: string }>()
+      .catch(() => ({}) as { childId?: string; language?: string });
+    const { childId } = body;
+    if (!childId) return c.json({ error: "childId required" }, 400);
+
+    const deps = makeDeps(c.env);
+    const denied = await requireChildToken(c, deps, childId);
+    if (denied) return denied;
+    const language = typeof body.language === "string" ? body.language : undefined;
+
+    const child = await deps.loadChild(childId);
+    if (!child) return c.json({ error: "child_not_found" }, 404);
+
+    const prompt = buildGreetingPrompt(child, language);
+    const gen = deps.generateGreeting ?? deps.generate;
+    const greeting = (await gen(prompt)).trim();
+    return c.json({ greeting });
   });
 
   // POST /child — onboarding. { name, age, favoriteCharacters?, themes?, fearsToAvoid? }

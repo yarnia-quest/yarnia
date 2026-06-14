@@ -154,6 +154,28 @@ export function buildTurnPrompt(
   return { system: systemParts.join(""), user };
 }
 
+// A short spoken greeting for the start of a session — a warm storyteller
+// welcoming the child. One or two sentences, personalized from memory if any.
+// Kept tiny (low max_tokens at the call site) so it returns fast.
+export function buildGreetingPrompt(child: Child, language?: string): StoryPrompt {
+  const { name, age, pastSessions } = child;
+  const system =
+    `You are Yarnia, a warm, calm bedtime storyteller greeting a ${age}-year-old child named ${name}. ` +
+    `Speak ONE or TWO short, gentle sentences directly to ${name}: welcome them and invite them to say what tonight's story should be about. ` +
+    `No story yet — just the greeting. Plain text only, no quotes, no emojis.`;
+  const parts = [`Greet ${name} to start tonight's bedtime story.`];
+  if (pastSessions.length > 0) {
+    const last = pastSessions[pastSessions.length - 1];
+    parts.push(
+      `You may warmly nod to last time if it feels natural: "${last.title ?? last.summary}". Do not retell it.`,
+    );
+  }
+  if (language && language !== "en" && LANGUAGE_NAMES[language]) {
+    parts.push(`Greet entirely in ${LANGUAGE_NAMES[language]}.`);
+  }
+  return { system, user: parts.join(" ") };
+}
+
 // How many recent episodes to surface in the prompt. Keeps prompts small; the full
 // archive stays in InstantDB.
 const MAX_RECALL_NOTES = 3;
