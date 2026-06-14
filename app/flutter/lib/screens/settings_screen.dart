@@ -32,6 +32,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   // engine → (filesDownloaded, totalFiles)  — present while downloading
   final Map<TtsEngine, (int, int)> _downloading = {};
+  final Map<SttEngine, (int, int)> _downloadingStt = {};
   String? _downloadError;
 
   @override
@@ -107,6 +108,48 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  // In-app download for an STT model: the model files into its dir, plus the
+  // shared Silero VAD at the support root (matching where the recognizer looks).
+  Future<void> _downloadSttEngine(SttEngine engine) async {
+    if (_downloadingStt.containsKey(engine)) return;
+    final repo = engine.hfRepo;
+    final files = engine.modelFiles;
+    if (repo == null || files == null) return;
+
+    final support = widget.settings.appSupportDir;
+    final baseDir = p.join(support, engine.modelDir!);
+    final total = files.length + 1; // + the VAD file
+    setState(() {
+      _downloadingStt[engine] = (0, total);
+      _downloadError = null;
+    });
+
+    final client = HttpClient()..autoUncompress = true;
+    try {
+      for (int i = 0; i < files.length; i++) {
+        final url = 'https://huggingface.co/$repo/resolve/main/${files[i]}';
+        final dest = p.join(baseDir, files[i]);
+        await File(dest).parent.create(recursive: true);
+        await _downloadFile(client, url, dest);
+        if (!mounted) return;
+        setState(() => _downloadingStt[engine] = (i + 1, total));
+      }
+      // Silero VAD lives at the support root, shared by the offline STT path.
+      final vadDest = p.join(support, sileroVadFile);
+      if (!File(vadDest).existsSync()) {
+        await _downloadFile(client, sileroVadUrl, vadDest);
+      }
+      if (mounted) setState(() => _downloadingStt[engine] = (total, total));
+      widget.settings.refreshInstalled();
+    } catch (e) {
+      debugPrint('STT download failed for ${engine.label}: $e');
+      if (mounted) setState(() => _downloadError = 'Download failed: $e');
+    } finally {
+      client.close();
+      if (mounted) setState(() => _downloadingStt.remove(engine));
+    }
+  }
+
   // Lists every file path in a HuggingFace model repo (recursively), so a model
   // made of many files (e.g. Piper's espeak-ng-data tree) can be fetched whole.
   Future<List<String>> _listRepoFiles(HttpClient client, String repo) async {
@@ -153,8 +196,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   void _openPlayStoreTts() =>
       _openUrl('market://details?id=com.google.android.tts');
-  void _openPlayStoreStt() =>
-      _openUrl('market://details?id=com.google.android.googlequicksearchbox');
 
   @override
   Widget build(BuildContext context) {
@@ -222,15 +263,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
             const SizedBox(height: 8),
             if (_sysTtsAvailable == false && s.ttsEngine == TtsEngine.system)
               ...[
-              _WarningBanner(
-                message: Platform.isAndroid
-                    ? 'Google Text-to-Speech is not installed.'
-                    : 'System TTS unavailable.',
-                actionLabel:
-                    Platform.isAndroid ? 'Open Play Store →' : null,
-                onAction:
-                    Platform.isAndroid ? _openPlayStoreTts : null,
-              ),
+              Builder(builder: (_) {
+                final rec = s.recommendedEngine; // on-device fallback (Pocket/Piper)
+                final installed = s.isEngineInstalled(rec);
+                return _WarningBanner(
+                  message: installed
+                      ? 'This device has no text-to-speech. Switch to '
+                          '${rec.label} (on-device) below.'
+                      : 'This device has no text-to-speech. Download '
+                          '${rec.label} (on-device) below to enable narration.',
+                  actionLabel: installed ? 'Use ${rec.label}' : 'Download ${rec.label}',
+                  onAction: () {
+                    if (installed) {
+                      s.setTtsEngine(rec);
+                    } else if (rec.canDownload) {
+                      _downloadEngine(rec);
+                    } else if (Platform.isAndroid) {
+                      _openPlayStoreTts();
+                    }
+                  },
+                );
+              }),
               const SizedBox(height: 8),
             ],
             if (_downloadError != null) ...[
@@ -283,44 +336,62 @@ class _SettingsScreenState extends State<SettingsScreen> {
             if (_sysSttAvailable == false && s.sttEngine == SttEngine.system)
               ...[
               _WarningBanner(
-                message: Platform.isAndroid
-                    ? 'Speech recognition is not available.'
-                    : 'System STT unavailable.',
-                actionLabel:
-                    Platform.isAndroid ? 'Open Play Store →' : null,
-                onAction:
-                    Platform.isAndroid ? _openPlayStoreStt : null,
+                message: s.isSttEngineInstalled(SttEngine.whisperBase)
+                    ? 'This device has no speech recognition. Switch to '
+                        'Whisper (on-device) below.'
+                    : 'This device has no speech recognition. Download '
+                        'Whisper (on-device) below to enable listening.',
+                actionLabel: s.isSttEngineInstalled(SttEngine.whisperBase)
+                    ? 'Use Whisper'
+                    : 'Download Whisper',
+                onAction: () {
+                  if (s.isSttEngineInstalled(SttEngine.whisperBase)) {
+                    s.setSttEngine(SttEngine.whisperBase);
+                  } else {
+                    _downloadSttEngine(SttEngine.whisperBase);
+                  }
+                },
               ),
               const SizedBox(height: 8),
             ],
-            ...SttEngine.values.map((engine) => _EngineTile(
-                  label: engine.label,
-                  quality: engine.quality,
-                  sizeMb: engine.sizeMb,
-                  selected: s.sttEngine == engine,
-                  installed: s.isSttEngineInstalled(engine),
-                  isSystem: engine.isSystem,
-                  canDownload: engine.downloadUrl != null,
-                  isRecommended: false,
-                  downloadProgress: null,
-                  downloadLabel: null,
-                  onTap: () {
-                    if (engine.isSystem || s.isSttEngineInstalled(engine)) {
-                      s.setSttEngine(engine);
-                    } else if (engine.downloadUrl != null) {
-                      _openUrl(engine.downloadUrl!);
-                    } else {
-                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                        content: Text('${engine.label} is not yet available.',
-                            style: const TextStyle(fontFamily: 'Lora')),
-                        backgroundColor: navyLight,
-                      ));
-                    }
-                  },
-                  onDownload: engine.downloadUrl != null
-                      ? () => _openUrl(engine.downloadUrl!)
-                      : null,
-                )),
+            ...SttEngine.values.map((engine) {
+              final dl = _downloadingStt[engine];
+              // Recommend the on-device option when the system recognizer is missing.
+              final isRecommended = _sysSttAvailable == false &&
+                  engine == SttEngine.whisperBase;
+              return _EngineTile(
+                label: engine.label,
+                quality: engine.quality,
+                sizeMb: engine.sizeMb,
+                selected: s.sttEngine == engine,
+                installed: s.isSttEngineInstalled(engine),
+                isSystem: engine.isSystem,
+                canDownload: engine.canDownload,
+                isRecommended: isRecommended,
+                downloadProgress: dl != null && dl.$2 > 0 ? dl.$1 / dl.$2 : null,
+                downloadLabel: dl != null
+                    ? (dl.$2 > 0 ? '${dl.$1}/${dl.$2}' : '…')
+                    : null,
+                pendingLabel: 'Coming soon',
+                onTap: () {
+                  if (engine.isSystem || s.isSttEngineInstalled(engine)) {
+                    s.setSttEngine(engine);
+                  } else if (engine.canDownload) {
+                    _downloadSttEngine(engine);
+                  } else {
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                      content: Text('${engine.label} is not yet available.',
+                          style: const TextStyle(fontFamily: 'Lora')),
+                      backgroundColor: navyLight,
+                    ));
+                  }
+                },
+                onDownload:
+                    engine.canDownload && !_downloadingStt.containsKey(engine)
+                        ? () => _downloadSttEngine(engine)
+                        : null,
+              );
+            }),
 
             const SizedBox(height: 32),
 

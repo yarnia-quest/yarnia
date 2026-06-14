@@ -18,6 +18,19 @@ const _pocketFiles = [
   'test_wavs/bria.wav',
 ];
 
+// sherpa-onnx Whisper base (int8) files, downloaded into the model dir.
+const _whisperBaseFiles = [
+  'base-encoder.int8.onnx',
+  'base-decoder.int8.onnx',
+  'base-tokens.txt',
+];
+
+// Silero VAD — shared by the offline STT path; lives at the app support root
+// (not inside the model dir), matching where _initWhisper looks for it.
+const sileroVadUrl =
+    'https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx';
+const sileroVadFile = 'silero_vad.onnx';
+
 enum TtsEngine {
   system(
     label: 'System TTS',
@@ -153,14 +166,16 @@ enum SttEngine {
     modelDir: null,
     sizeMb: 0,
     quality: 'Google / Apple built-in',
-    downloadUrl: null,
+    hfRepo: null,
+    modelFiles: null,
   ),
   whisperBase(
     label: 'Whisper Base',
     modelDir: 'sherpa-onnx-whisper-base',
-    sizeMb: 75,
-    quality: 'Offline, multilingual, accurate',
-    downloadUrl: 'https://huggingface.co/csukuangfj/sherpa-onnx-whisper-base',
+    sizeMb: 160,
+    quality: 'Offline, on-device, multilingual',
+    hfRepo: 'csukuangfj/sherpa-onnx-whisper-base',
+    modelFiles: _whisperBaseFiles,
   );
 
   const SttEngine({
@@ -168,15 +183,22 @@ enum SttEngine {
     required this.modelDir,
     required this.sizeMb,
     required this.quality,
-    required this.downloadUrl,
+    required this.hfRepo,
+    required this.modelFiles,
   });
 
   final String label;
   final String? modelDir;
   final int sizeMb;
   final String quality;
-  final String? downloadUrl;
+  final String? hfRepo;
+  final List<String>? modelFiles;
+
   bool get isSystem => this == SttEngine.system;
+  bool get canDownload => hfRepo != null;
+
+  // File whose presence in the model dir marks the model as installed.
+  String get installSentinel => 'base-encoder.int8.onnx';
 }
 
 class SettingsService extends ChangeNotifier {
@@ -283,7 +305,12 @@ class SettingsService extends ChangeNotifier {
 
   bool isSttEngineInstalled(SttEngine engine) {
     if (engine.modelDir == null) return true;
-    return Directory('$_appSupportDir/${engine.modelDir}').existsSync();
+    // Need both the model (sentinel file) and the shared Silero VAD at the root.
+    final model =
+        File('$_appSupportDir/${engine.modelDir}/${engine.installSentinel}')
+            .existsSync();
+    final vad = File('$_appSupportDir/$sileroVadFile').existsSync();
+    return model && vad;
   }
 
   TtsEngine get effectiveEngine {
