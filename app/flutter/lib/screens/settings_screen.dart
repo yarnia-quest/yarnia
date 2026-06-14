@@ -7,8 +7,6 @@ import 'package:path/path.dart' as p;
 import 'package:speech_to_text/speech_to_text.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import 'package:flutter_gemma/flutter_gemma.dart' show ModelType;
-
 import '../services/local_llm.dart';
 import '../services/settings_service.dart';
 import '../theme.dart';
@@ -121,7 +119,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     });
     try {
       await LocalLlm.instance.install(
-        modelType: ModelType.qwen,
+        modelType: engine.modelType,
+        fileType: engine.fileType,
         url: engine.url,
         onProgress: (p) {
           if (mounted) setState(() => _downloadingLlm[engine] = p);

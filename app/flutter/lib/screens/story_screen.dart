@@ -13,17 +13,16 @@ import 'package:record/record.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 import 'package:http/http.dart' as http;
 
-import 'package:flutter_gemma/flutter_gemma.dart' show ModelType;
-
 import '../services/asr_session.dart';
 import '../services/local_llm.dart';
 import '../services/settings_service.dart';
 import '../services/story_safety.dart';
 import '../services/tts_session.dart';
+import 'settings_screen.dart';
 import '../widgets/starfield.dart';
 import '../theme.dart';
 
-enum _State { greeting, listening, thinking, narrating, paused, done, error }
+enum _State { setup, greeting, listening, thinking, narrating, paused, done, error }
 
 class StoryScreen extends StatefulWidget {
   final String childName;
@@ -86,6 +85,11 @@ class _StoryScreenState extends State<StoryScreen>
   String? _genError;
   String _lastInput = '';
   static const _genTimeout = Duration(seconds: 45);
+
+  // First-run setup: download the on-device storyteller before anything else,
+  // so the child never lands on a dead "not ready" screen.
+  int? _setupProgress; // 0..100 while the model downloads
+  String? _setupError;
   String _currentSentence = '';
   bool _isListening = false;
 
@@ -136,12 +140,57 @@ class _StoryScreenState extends State<StoryScreen>
   // STT in the background, THEN listen. The greeting must not wait behind the
   // slow Whisper model load, and it runs locally (no network).
   Future<void> _startSession() async {
+    // The storyteller runs on-device — if it isn't downloaded yet, set up first
+    // (never greet into a dead end).
+    if (!widget.settings.anyLlmInstalled) {
+      setState(() => _state = _State.setup);
+      return;
+    }
     await _greet();
     if (!mounted) return;
     await _initStt(); // load STT after the greeting is spoken
     if (!mounted || _state != _State.greeting) return;
     setState(() => _state = _State.listening);
     await _startListening();
+  }
+
+  // Download the device-recommended storyteller model inline, then start.
+  Future<void> _downloadStoryteller() async {
+    if (_setupProgress != null) return;
+    final engine = widget.settings.recommendedLlm;
+    setState(() {
+      _setupProgress = 0;
+      _setupError = null;
+    });
+    try {
+      await LocalLlm.instance.install(
+        modelType: engine.modelType,
+        fileType: engine.fileType,
+        url: engine.url,
+        onProgress: (p) {
+          if (mounted) setState(() => _setupProgress = p);
+        },
+      );
+      await widget.settings.markLlmInstalled(engine);
+      await widget.settings.setLlmEngine(engine);
+      if (!mounted) return;
+      setState(() => _setupProgress = null);
+      await _startSession(); // now installed → greet → listen
+    } catch (e) {
+      debugPrint('StoryScreen: storyteller download failed: $e');
+      if (mounted) {
+        setState(() {
+          _setupError = 'Download failed: $e';
+          _setupProgress = null;
+        });
+      }
+    }
+  }
+
+  void _openSettings() {
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => SettingsScreen(settings: widget.settings),
+    ));
   }
 
   // Local, instant, spoken greeting. (Backend/LLM-personalized greeting is Phase 2;
@@ -382,7 +431,7 @@ class _StoryScreenState extends State<StoryScreen>
 
     // The LLM runs on-device now (the Worker can't reach Nebula). Need a model.
     if (!widget.settings.anyLlmInstalled) {
-      _showGenError('Download a storyteller model in Settings first.');
+      setState(() => _state = _State.setup);
       return;
     }
 
@@ -424,7 +473,11 @@ class _StoryScreenState extends State<StoryScreen>
     final engine = widget.settings.llmEngine;
     String storyText;
     try {
-      await LocalLlm.instance.activate(modelType: ModelType.qwen, url: engine.url);
+      await LocalLlm.instance.activate(
+        modelType: engine.modelType,
+        fileType: engine.fileType,
+        url: engine.url,
+      );
       final buf = StringBuffer();
       await for (final delta
           in LocalLlm.instance.generate(system: system, user: user)) {
@@ -927,11 +980,20 @@ class _StoryScreenState extends State<StoryScreen>
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 32),
                 child: switch (_state) {
+                  _State.setup => _SetupView(
+                      engineLabel: widget.settings.recommendedLlm.label,
+                      sizeMb: widget.settings.recommendedLlm.sizeMb,
+                      progress: _setupProgress,
+                      error: _setupError,
+                      onDownload: _downloadStoryteller,
+                      onSettings: _openSettings,
+                    ),
                   _State.greeting => _GreetingView(text: _currentSentence),
                   _State.error => _ErrorView(
                       message: _genError ?? 'Something went wrong.',
                       onRetry: _retryGeneration,
                       onStartOver: _restart,
+                      onSettings: _openSettings,
                     ),
                   _State.listening => _ListeningView(
                       childName: widget.childName,
@@ -970,6 +1032,18 @@ class _StoryScreenState extends State<StoryScreen>
                       onGoodnight: widget.onDone,
                     ),
                 },
+              ),
+            ),
+          ),
+          // Always-reachable settings (so the child/parent is never stuck).
+          Positioned(
+            top: 8,
+            right: 8,
+            child: SafeArea(
+              child: IconButton(
+                icon: Icon(Icons.settings_outlined, color: cream.withOpacity(0.6)),
+                onPressed: _openSettings,
+                tooltip: 'Settings',
               ),
             ),
           ),
@@ -1178,10 +1252,12 @@ class _ErrorView extends StatelessWidget {
   final String message;
   final VoidCallback onRetry;
   final VoidCallback onStartOver;
+  final VoidCallback onSettings;
   const _ErrorView({
     required this.message,
     required this.onRetry,
     required this.onStartOver,
+    required this.onSettings,
   });
 
   @override
@@ -1205,6 +1281,12 @@ class _ErrorView extends StatelessWidget {
         _OutlineButton(label: 'Try again', onTap: onRetry),
         const SizedBox(height: 14),
         TextButton(
+          onPressed: onSettings,
+          child: Text('Open Settings',
+              style: TextStyle(
+                  fontFamily: 'Lora', color: gold.withOpacity(0.9), fontSize: 14)),
+        ),
+        TextButton(
           onPressed: onStartOver,
           child: Text(
             'Start over',
@@ -1214,6 +1296,90 @@ class _ErrorView extends StatelessWidget {
               fontSize: 14,
             ),
           ),
+        ),
+      ],
+    );
+  }
+}
+
+// First-run setup: download the on-device storyteller before the session starts.
+class _SetupView extends StatelessWidget {
+  final String engineLabel;
+  final int sizeMb;
+  final int? progress; // 0..100 while downloading
+  final String? error;
+  final VoidCallback onDownload;
+  final VoidCallback onSettings;
+  const _SetupView({
+    required this.engineLabel,
+    required this.sizeMb,
+    required this.progress,
+    required this.error,
+    required this.onDownload,
+    required this.onSettings,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final downloading = progress != null;
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        const Text('🌙', style: TextStyle(fontSize: 56)),
+        const SizedBox(height: 24),
+        const Text(
+          'Getting Yarnia ready',
+          style: TextStyle(
+            fontFamily: 'Fraunces',
+            fontSize: 24,
+            fontWeight: FontWeight.w700,
+            color: cream,
+          ),
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 10),
+        Text(
+          downloading
+              ? 'Downloading the storyteller… $progress%'
+              : 'Yarnia tells stories right on your device. '
+                  'Download her storyteller ($engineLabel, ~$sizeMb MB) once to begin.',
+          style: TextStyle(
+            fontFamily: 'Lora',
+            color: cream.withOpacity(0.7),
+            fontSize: 14,
+            height: 1.5,
+          ),
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 24),
+        if (downloading)
+          SizedBox(
+            width: 200,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(3),
+              child: LinearProgressIndicator(
+                value: progress! > 0 ? progress! / 100.0 : null,
+                minHeight: 5,
+                backgroundColor: cream.withOpacity(0.15),
+                valueColor: const AlwaysStoppedAnimation<Color>(gold),
+              ),
+            ),
+          )
+        else
+          _OutlineButton(label: 'Download & start', onTap: onDownload),
+        if (error != null) ...[
+          const SizedBox(height: 16),
+          Text(error!,
+              style: const TextStyle(
+                  fontFamily: 'Lora', color: Color(0xFFE2A0A0), fontSize: 12),
+              textAlign: TextAlign.center),
+        ],
+        const SizedBox(height: 14),
+        TextButton(
+          onPressed: onSettings,
+          child: Text('More options in Settings',
+              style: TextStyle(
+                  fontFamily: 'Lora', color: cream.withOpacity(0.5), fontSize: 13)),
         ),
       ],
     );

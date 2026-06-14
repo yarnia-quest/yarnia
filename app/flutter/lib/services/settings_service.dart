@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/widgets.dart';
+import 'package:flutter_gemma/flutter_gemma.dart' show ModelType, ModelFileType;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'device_class.dart';
@@ -201,24 +202,28 @@ enum SttEngine {
   String get installSentinel => 'base-encoder.int8.onnx';
 }
 
-// On-device story LLM (flutter_gemma). Small ungated Qwen .task models so the
-// in-app download is frictionless (Gemma is gated). flutterGemmaType maps to the
-// plugin's ModelType via LocalLlm. installed-state is tracked in prefs (the plugin
-// owns the files; we just remember which engines finished downloading).
+// On-device story LLM (flutter_gemma). Ungated models so the in-app download is
+// frictionless (Gemma is gated). Qwen3-0.6B ships as LiteRT-LM (.litertlm);
+// Qwen2.5 ships as MediaPipe .task. installed-state is tracked in prefs (the
+// plugin owns the files; we just remember which engines finished downloading).
 enum LlmEngine {
-  qwen05b(
-    label: 'Qwen2.5 0.5B',
-    sizeMb: 547,
-    quality: 'On-device, light & fast',
+  qwen3_06b(
+    label: 'Qwen3 0.6B',
+    sizeMb: 498,
+    quality: 'On-device, newest & smallest',
     url:
-        'https://huggingface.co/litert-community/Qwen2.5-0.5B-Instruct/resolve/main/Qwen2.5-0.5B-Instruct_multi-prefill-seq_q8_ekv1280.task',
+        'https://huggingface.co/litert-community/Qwen3-0.6B/resolve/main/qwen3_0_6b_mixed_int4.litertlm',
+    modelType: ModelType.qwen3,
+    fileType: ModelFileType.litertlm,
   ),
-  qwen15b(
+  qwen25_15b(
     label: 'Qwen2.5 1.5B',
     sizeMb: 1567,
     quality: 'On-device, richer stories',
     url:
         'https://huggingface.co/litert-community/Qwen2.5-1.5B-Instruct/resolve/main/Qwen2.5-1.5B-Instruct_seq128_q8_ekv1280.task',
+    modelType: ModelType.qwen,
+    fileType: ModelFileType.task,
   );
 
   const LlmEngine({
@@ -226,12 +231,16 @@ enum LlmEngine {
     required this.sizeMb,
     required this.quality,
     required this.url,
+    required this.modelType,
+    required this.fileType,
   });
 
   final String label;
   final int sizeMb;
   final String quality;
   final String url;
+  final ModelType modelType;
+  final ModelFileType fileType;
 }
 
 class SettingsService extends ChangeNotifier {
@@ -248,7 +257,7 @@ class SettingsService extends ChangeNotifier {
   String _language = 'en';
   TtsEngine _ttsEngine = TtsEngine.system;
   SttEngine _sttEngine = SttEngine.system;
-  LlmEngine _llmEngine = LlmEngine.qwen05b;
+  LlmEngine _llmEngine = LlmEngine.qwen3_06b;
   Set<String> _llmInstalled = {}; // engine.name values that finished downloading
   String _appSupportDir = '';
   // Hands-free VAD interrupt: keep mic open during narration so the child can
@@ -266,9 +275,9 @@ class SettingsService extends ChangeNotifier {
   bool get handsFreeInterrupt => _handsFreeInterrupt;
   DeviceClass get deviceClass => _deviceClass;
 
-  /// On-device LLM recommended for this device: strong → richer 1.5B, weak → 0.5B.
-  LlmEngine get recommendedLlm =>
-      _deviceClass == DeviceClass.strong ? LlmEngine.qwen15b : LlmEngine.qwen05b;
+  /// Default on-device LLM: the tiny, newest Qwen3-0.6B (~498 MB) everywhere — a
+  /// friendly first download. Stronger devices can opt into the richer 1.5B in Settings.
+  LlmEngine get recommendedLlm => LlmEngine.qwen3_06b;
 
   bool isLlmInstalled(LlmEngine e) => _llmInstalled.contains(e.name);
   bool get anyLlmInstalled => _llmInstalled.isNotEmpty;

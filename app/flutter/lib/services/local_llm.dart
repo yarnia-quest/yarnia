@@ -20,11 +20,12 @@ class LocalLlm {
   /// file is already present it skips the download and just sets it active.
   Future<void> install({
     required ModelType modelType,
+    required ModelFileType fileType,
     required String url,
     required void Function(int) onProgress,
   }) async {
     await _ensureInit();
-    await FlutterGemma.installModel(modelType: modelType)
+    await FlutterGemma.installModel(modelType: modelType, fileType: fileType)
         .fromNetwork(url)
         .withProgress(onProgress)
         .install();
@@ -32,10 +33,16 @@ class LocalLlm {
   }
 
   /// Ensure [url]'s model is the active one (idempotent install, no re-download).
-  Future<void> activate({required ModelType modelType, required String url}) async {
+  Future<void> activate({
+    required ModelType modelType,
+    required ModelFileType fileType,
+    required String url,
+  }) async {
     if (_activeUrl == url && FlutterGemma.hasActiveModel()) return;
     await _ensureInit();
-    await FlutterGemma.installModel(modelType: modelType).fromNetwork(url).install();
+    await FlutterGemma.installModel(modelType: modelType, fileType: fileType)
+        .fromNetwork(url)
+        .install();
     _activeUrl = url;
   }
 
