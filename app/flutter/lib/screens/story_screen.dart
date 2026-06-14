@@ -13,8 +13,12 @@ import 'package:record/record.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 import 'package:http/http.dart' as http;
 
+import 'package:flutter_gemma/flutter_gemma.dart' show ModelType;
+
 import '../services/asr_session.dart';
+import '../services/local_llm.dart';
 import '../services/settings_service.dart';
+import '../services/story_safety.dart';
 import '../services/tts_session.dart';
 import '../widgets/starfield.dart';
 import '../theme.dart';
@@ -386,10 +390,21 @@ class _StoryScreenState extends State<StoryScreen>
   Future<void> _generateAndSpeak(String userInput) async {
     _thinkingForTurn = false;
     _lastInput = userInput;
+
+    // The LLM runs on-device now (the Worker can't reach Nebula). Need a model.
+    if (!widget.settings.anyLlmInstalled) {
+      _showGenError('Download a storyteller model in Settings first.');
+      return;
+    }
+
+    // 1. Build the prompt on the backend (CF→InstantDB is reachable; no LLM call).
+    String system;
+    String user;
+    String choice;
     try {
       final res = await http
           .post(
-            Uri.parse('${widget.apiBase}/story'),
+            Uri.parse('${widget.apiBase}/story/prompt'),
             headers: {...widget.apiHeaders, 'content-type': 'application/json'},
             body: jsonEncode({
               'childId': widget.childId,
@@ -397,28 +412,79 @@ class _StoryScreenState extends State<StoryScreen>
               'language': widget.settings.language,
             }),
           )
-          .timeout(_genTimeout);
+          .timeout(const Duration(seconds: 20));
       if (!mounted) return;
       if (res.statusCode != 200) {
-        _showGenError('The story service is busy (${res.statusCode}).');
+        _showGenError('Could not prepare the story (${res.statusCode}).');
         return;
       }
-      final data = jsonDecode(res.body) as Map<String, dynamic>;
-      final storyText = data['text'] as String? ?? '';
-      if (storyText.isEmpty) {
-        _showGenError('The story came back empty.');
-        return;
-      }
-      // Build the sentence checkpoint list and start narrating from the top.
-      _sentences = splitSentences(storyText);
-      _cursor = 0;
-      await _narrateFrom(0);
+      final d = jsonDecode(res.body) as Map<String, dynamic>;
+      system = d['system'] as String? ?? '';
+      user = d['user'] as String? ?? userInput;
+      choice = d['choice'] as String? ?? userInput;
     } on TimeoutException {
-      debugPrint('StoryScreen: /story timed out');
-      _showGenError("The story is taking too long to arrive.");
+      _showGenError('Could not prepare the story (timed out).');
+      return;
     } catch (e) {
-      debugPrint('StoryScreen: generate/speak failed: $e');
-      _showGenError("Couldn't reach the story service.");
+      debugPrint('StoryScreen: /story/prompt failed: $e');
+      _showGenError("Couldn't prepare the story.");
+      return;
+    }
+
+    // 2. Generate the story fully on-device.
+    final engine = widget.settings.llmEngine;
+    String storyText;
+    try {
+      await LocalLlm.instance.activate(modelType: ModelType.qwen, url: engine.url);
+      final buf = StringBuffer();
+      await for (final delta
+          in LocalLlm.instance.generate(system: system, user: user)) {
+        buf.write(delta);
+      }
+      storyText = buf.toString().trim();
+    } catch (e) {
+      debugPrint('StoryScreen: local LLM generation failed: $e');
+      _showGenError('The storyteller model could not run on this device.');
+      return;
+    }
+    if (!mounted) return;
+
+    // 3. Safety-vet on-device; fall back to a guaranteed-safe story if needed.
+    if (storyText.isEmpty || !isStorySafe(storyText)) {
+      debugPrint('StoryScreen: story empty/unsafe → safe fallback');
+      storyText = safeFallbackStory(widget.childName);
+    }
+
+    // 4. Narrate via the existing checkpoint loop, then persist (best-effort).
+    _sentences = splitSentences(storyText);
+    _cursor = 0;
+    unawaited(_persistStory(choice: choice, text: storyText, system: system, user: user));
+    await _narrateFrom(0);
+  }
+
+  // Best-effort save so per-child memory/recall keeps working next session.
+  Future<void> _persistStory({
+    required String choice,
+    required String text,
+    required String system,
+    required String user,
+  }) async {
+    try {
+      await http
+          .post(
+            Uri.parse('${widget.apiBase}/session/persist'),
+            headers: {...widget.apiHeaders, 'content-type': 'application/json'},
+            body: jsonEncode({
+              'childId': widget.childId,
+              'choice': choice,
+              'text': text,
+              'system': system,
+              'user': user,
+            }),
+          )
+          .timeout(const Duration(seconds: 15));
+    } catch (e) {
+      debugPrint('StoryScreen: session persist failed (non-fatal): $e');
     }
   }
 

@@ -7,6 +7,9 @@ import 'package:path/path.dart' as p;
 import 'package:speech_to_text/speech_to_text.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'package:flutter_gemma/flutter_gemma.dart' show ModelType;
+
+import '../services/local_llm.dart';
 import '../services/settings_service.dart';
 import '../theme.dart';
 
@@ -33,6 +36,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   // engine → (filesDownloaded, totalFiles)  — present while downloading
   final Map<TtsEngine, (int, int)> _downloading = {};
   final Map<SttEngine, (int, int)> _downloadingStt = {};
+  final Map<LlmEngine, int> _downloadingLlm = {}; // engine → percent (0..100)
   String? _downloadError;
 
   @override
@@ -105,6 +109,31 @@ class _SettingsScreenState extends State<SettingsScreen> {
     } finally {
       client.close();
       if (mounted) setState(() => _downloading.remove(engine));
+    }
+  }
+
+  // In-app download for an on-device LLM via flutter_gemma (progress 0..100).
+  Future<void> _downloadLlm(LlmEngine engine) async {
+    if (_downloadingLlm.containsKey(engine)) return;
+    setState(() {
+      _downloadingLlm[engine] = 0;
+      _downloadError = null;
+    });
+    try {
+      await LocalLlm.instance.install(
+        modelType: ModelType.qwen,
+        url: engine.url,
+        onProgress: (p) {
+          if (mounted) setState(() => _downloadingLlm[engine] = p);
+        },
+      );
+      await widget.settings.markLlmInstalled(engine);
+      await widget.settings.setLlmEngine(engine);
+    } catch (e) {
+      debugPrint('LLM download failed for ${engine.label}: $e');
+      if (mounted) setState(() => _downloadError = 'Download failed: $e');
+    } finally {
+      if (mounted) setState(() => _downloadingLlm.remove(engine));
     }
   }
 
@@ -255,6 +284,43 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 );
               }).toList(),
             ),
+
+            const SizedBox(height: 32),
+
+            // ── Storyteller (on-device LLM) ───────────────────────────────
+            _sectionLabel('Storyteller'),
+            const SizedBox(height: 4),
+            Text('Runs fully on your device',
+                style: TextStyle(
+                    fontFamily: 'Lora', color: cream.withAlpha(100), fontSize: 12)),
+            const SizedBox(height: 8),
+            ...LlmEngine.values.map((engine) {
+              final pct = _downloadingLlm[engine];
+              final installed = s.isLlmInstalled(engine);
+              return _EngineTile(
+                label: engine.label,
+                quality: engine.quality,
+                sizeMb: engine.sizeMb,
+                selected: s.llmEngine == engine && installed,
+                installed: installed,
+                isSystem: false,
+                canDownload: !installed,
+                isRecommended: s.recommendedLlm == engine,
+                downloadProgress: pct != null ? pct / 100.0 : null,
+                downloadLabel: pct != null ? '$pct%' : null,
+                pendingLabel: 'Download',
+                onTap: () {
+                  if (installed) {
+                    s.setLlmEngine(engine);
+                  } else {
+                    _downloadLlm(engine);
+                  }
+                },
+                onDownload: !installed && !_downloadingLlm.containsKey(engine)
+                    ? () => _downloadLlm(engine)
+                    : null,
+              );
+            }),
 
             const SizedBox(height: 32),
 

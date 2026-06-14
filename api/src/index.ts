@@ -5,14 +5,14 @@ import { loadChild } from "./child";
 import { generateStory } from "./generate";
 import { createStory, type StoryDeps } from "./story";
 import { createAgentSession, getSignedUrl, type ConversationTurn } from "./agent";
-import { persistSession, persistAgentSession, enrichSessionRecap, agentStoryText, type SaveSessionInput } from "./session";
+import { persistSession, persistAgentSession, enrichSessionRecap, agentStoryText, quickRecap, toMessages, type SaveSessionInput } from "./session";
 import { verifyWebhookSignature } from "./webhook";
 import { createCheckout, getPaymentStatus, type CheckoutResult } from "./payments";
 import { generateChildToken, hashToken, verifyChildToken } from "./auth";
 import { createRateLimiter } from "./ratelimit";
 import { createTelemetry } from "./observability";
 import { estimateStoryCost } from "./usage";
-import { buildTurnPrompt, buildGreetingPrompt, type StoryPrompt } from "./prompt";
+import { buildStoryPrompt, buildTurnPrompt, buildGreetingPrompt, type StoryPrompt } from "./prompt";
 import { interpretTurn } from "./turn";
 import { isStorySafe } from "./safety";
 
@@ -490,6 +490,67 @@ export function createApp(makeDeps: (env: Bindings) => AppDeps = defaultDeps) {
     const gen = deps.generateGreeting ?? deps.generate;
     const greeting = (await gen(prompt)).trim();
     return c.json({ greeting });
+  });
+
+  // POST /story/prompt — { childId, choice?, language? } -> { system, user, choice }.
+  // Returns the built story prompt only (loads child + memory/recall from InstantDB).
+  // No LLM call — the app runs the model on-device, so this works even though the
+  // Worker cannot reach Nebula.
+  app.post("/story/prompt", async (c) => {
+    const body = await c.req
+      .json<{ childId?: string; choice?: string; language?: string }>()
+      .catch(() => ({}) as { childId?: string; choice?: string; language?: string });
+    const { childId } = body;
+    if (!childId) return c.json({ error: "childId required" }, 400);
+
+    const deps = makeDeps(c.env);
+    const denied = await requireChildToken(c, deps, childId);
+    if (denied) return denied;
+
+    const child = await deps.loadChild(childId);
+    if (!child) return c.json({ error: "child_not_found" }, 404);
+
+    const choice = sanitizeChoice(body.choice ?? "") || "a gentle surprise";
+    const language = typeof body.language === "string" ? body.language : undefined;
+    const prompt = buildStoryPrompt(child, choice, language);
+    return c.json({ system: prompt.system, user: prompt.user, choice });
+  });
+
+  // POST /session/persist — { childId, choice, text, system?, user? } -> { ok, sessionId }.
+  // Saves an on-device-generated story so recall/memory keeps working next session.
+  // Uses the heuristic quick recap only (the LLM recap enrichment needs Nebula, which
+  // the Worker can't reach).
+  app.post("/session/persist", async (c) => {
+    const body = await c.req
+      .json<{ childId?: string; choice?: string; text?: string; system?: string; user?: string }>()
+      .catch(() => ({}) as Record<string, string>);
+    const { childId } = body;
+    if (!childId || !body.text) {
+      return c.json({ error: "childId and text required" }, 400);
+    }
+
+    const deps = makeDeps(c.env);
+    const telemetry = makeTelemetry(c);
+    const denied = await requireChildToken(c, deps, childId);
+    if (denied) return denied;
+
+    const choice = sanitizeChoice(body.choice ?? "") || "a gentle surprise";
+    const prompt: StoryPrompt = { system: body.system ?? "", user: body.user ?? "" };
+    const quick = quickRecap(body.text, choice);
+    try {
+      const sessionId = await deps.saveSession(childId, {
+        title: quick.title,
+        summary: quick.summary,
+        messages: toMessages(prompt, body.text),
+        charactersUsed: quick.characters.length ? quick.characters : [choice],
+        continuityNotes: quick.continuityNotes,
+        storyText: body.text,
+      });
+      return c.json({ ok: true, sessionId });
+    } catch (err) {
+      telemetry.error("session_persist_failed", { childId, error: String(err) });
+      return c.json({ ok: false }, 502);
+    }
   });
 
   // POST /child — onboarding. { name, age, favoriteCharacters?, themes?, fearsToAvoid? }

@@ -201,10 +201,45 @@ enum SttEngine {
   String get installSentinel => 'base-encoder.int8.onnx';
 }
 
+// On-device story LLM (flutter_gemma). Small ungated Qwen .task models so the
+// in-app download is frictionless (Gemma is gated). flutterGemmaType maps to the
+// plugin's ModelType via LocalLlm. installed-state is tracked in prefs (the plugin
+// owns the files; we just remember which engines finished downloading).
+enum LlmEngine {
+  qwen05b(
+    label: 'Qwen2.5 0.5B',
+    sizeMb: 547,
+    quality: 'On-device, light & fast',
+    url:
+        'https://huggingface.co/litert-community/Qwen2.5-0.5B-Instruct/resolve/main/Qwen2.5-0.5B-Instruct_multi-prefill-seq_q8_ekv1280.task',
+  ),
+  qwen15b(
+    label: 'Qwen2.5 1.5B',
+    sizeMb: 1567,
+    quality: 'On-device, richer stories',
+    url:
+        'https://huggingface.co/litert-community/Qwen2.5-1.5B-Instruct/resolve/main/Qwen2.5-1.5B-Instruct_seq128_q8_ekv1280.task',
+  );
+
+  const LlmEngine({
+    required this.label,
+    required this.sizeMb,
+    required this.quality,
+    required this.url,
+  });
+
+  final String label;
+  final int sizeMb;
+  final String quality;
+  final String url;
+}
+
 class SettingsService extends ChangeNotifier {
   static const _langKey = 'language';
   static const _ttsKey = 'ttsEngine';
   static const _sttKey = 'sttEngine';
+  static const _llmKey = 'llmEngine';
+  static const _llmInstalledKey = 'llmInstalled';
   // Phase 2b: hands-free VAD interrupt toggle. Default OFF until tuned.
   static const _handsFreeKey = 'handsFreeInterrupt';
   static const _supportedLanguages = {'en', 'de', 'fr', 'es'};
@@ -213,6 +248,8 @@ class SettingsService extends ChangeNotifier {
   String _language = 'en';
   TtsEngine _ttsEngine = TtsEngine.system;
   SttEngine _sttEngine = SttEngine.system;
+  LlmEngine _llmEngine = LlmEngine.qwen05b;
+  Set<String> _llmInstalled = {}; // engine.name values that finished downloading
   String _appSupportDir = '';
   // Hands-free VAD interrupt: keep mic open during narration so the child can
   // interrupt by speaking. Default off — enable once AEC tuning is complete.
@@ -224,9 +261,17 @@ class SettingsService extends ChangeNotifier {
   String get language => _language;
   TtsEngine get ttsEngine => _ttsEngine;
   SttEngine get sttEngine => _sttEngine;
+  LlmEngine get llmEngine => _llmEngine;
   String get appSupportDir => _appSupportDir;
   bool get handsFreeInterrupt => _handsFreeInterrupt;
   DeviceClass get deviceClass => _deviceClass;
+
+  /// On-device LLM recommended for this device: strong → richer 1.5B, weak → 0.5B.
+  LlmEngine get recommendedLlm =>
+      _deviceClass == DeviceClass.strong ? LlmEngine.qwen15b : LlmEngine.qwen05b;
+
+  bool isLlmInstalled(LlmEngine e) => _llmInstalled.contains(e.name);
+  bool get anyLlmInstalled => _llmInstalled.isNotEmpty;
 
   /// The engine recommended for this device.
   /// Strong → Pocket EN (expressive, handles 160 MB fine).
@@ -269,6 +314,14 @@ class SettingsService extends ChangeNotifier {
 
     _handsFreeInterrupt = _prefs.getBool(_handsFreeKey) ?? false;
 
+    _llmInstalled = (_prefs.getStringList(_llmInstalledKey) ?? const []).toSet();
+    final savedLlm = _prefs.getInt(_llmKey);
+    if (savedLlm != null && savedLlm < LlmEngine.values.length) {
+      _llmEngine = LlmEngine.values[savedLlm];
+    } else {
+      _llmEngine = recommendedLlm; // first run → recommended for this device
+    }
+
     notifyListeners();
   }
 
@@ -294,6 +347,18 @@ class SettingsService extends ChangeNotifier {
   Future<void> setHandsFreeInterrupt(bool enabled) async {
     _handsFreeInterrupt = enabled;
     await _prefs.setBool(_handsFreeKey, enabled);
+    notifyListeners();
+  }
+
+  Future<void> setLlmEngine(LlmEngine engine) async {
+    _llmEngine = engine;
+    await _prefs.setInt(_llmKey, engine.index);
+    notifyListeners();
+  }
+
+  Future<void> markLlmInstalled(LlmEngine engine) async {
+    _llmInstalled = {..._llmInstalled, engine.name};
+    await _prefs.setStringList(_llmInstalledKey, _llmInstalled.toList());
     notifyListeners();
   }
 
