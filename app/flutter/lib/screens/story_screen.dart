@@ -397,10 +397,12 @@ class _StoryScreenState extends State<StoryScreen>
       return;
     }
 
-    // 1. Build the prompt on the backend (CF→InstantDB is reachable; no LLM call).
+    // 1. Build the prompt. Prefer the backend (it adds per-child memory/recall from
+    //    InstantDB), but fall back to a local prompt so generation works even when
+    //    the backend is unreachable — the whole point is to not depend on the network.
     String system;
     String user;
-    String choice;
+    final choice = userInput;
     try {
       final res = await http
           .post(
@@ -412,24 +414,22 @@ class _StoryScreenState extends State<StoryScreen>
               'language': widget.settings.language,
             }),
           )
-          .timeout(const Duration(seconds: 20));
-      if (!mounted) return;
-      if (res.statusCode != 200) {
-        _showGenError('Could not prepare the story (${res.statusCode}).');
-        return;
+          .timeout(const Duration(seconds: 12));
+      if (res.statusCode == 200) {
+        final d = jsonDecode(res.body) as Map<String, dynamic>;
+        system = d['system'] as String? ?? _localStorySystem();
+        user = d['user'] as String? ?? _localStoryUser(userInput);
+      } else {
+        debugPrint('StoryScreen: /story/prompt ${res.statusCode} → local prompt');
+        system = _localStorySystem();
+        user = _localStoryUser(userInput);
       }
-      final d = jsonDecode(res.body) as Map<String, dynamic>;
-      system = d['system'] as String? ?? '';
-      user = d['user'] as String? ?? userInput;
-      choice = d['choice'] as String? ?? userInput;
-    } on TimeoutException {
-      _showGenError('Could not prepare the story (timed out).');
-      return;
     } catch (e) {
-      debugPrint('StoryScreen: /story/prompt failed: $e');
-      _showGenError("Couldn't prepare the story.");
-      return;
+      debugPrint('StoryScreen: /story/prompt failed → local prompt: $e');
+      system = _localStorySystem();
+      user = _localStoryUser(userInput);
     }
+    if (!mounted) return;
 
     // 2. Generate the story fully on-device.
     final engine = widget.settings.llmEngine;
@@ -460,6 +460,34 @@ class _StoryScreenState extends State<StoryScreen>
     _cursor = 0;
     unawaited(_persistStory(choice: choice, text: storyText, system: system, user: user));
     await _narrateFrom(0);
+  }
+
+  // Local fallback prompt (mirrors api/src/prompt.ts core, without the recall layer
+  // which needs the backend). Used when /story/prompt is unreachable.
+  String _localStorySystem() {
+    final n = widget.childName;
+    return 'You are Yarnia, a warm, calm bedtime storyteller for the child named $n. '
+        'The story must be gentle, soothing, and nonviolent — no peril, no scary or '
+        'startling moments. The tone winds the child DOWN toward sleep. Keep it short '
+        '(a handful of short paragraphs).';
+  }
+
+  String _localStoryUser(String choice) {
+    final n = widget.childName;
+    final parts = [
+      'Tell $n a short bedtime story.',
+      'Tonight $n chose this to be in the story: $choice.',
+    ];
+    final lang = switch (widget.settings.language) {
+      'de' => 'German',
+      'fr' => 'French',
+      'es' => 'Spanish',
+      _ => null,
+    };
+    if (lang != null) {
+      parts.add('Tell the entire story in $lang. Every word must be in that language.');
+    }
+    return parts.join(' ');
   }
 
   // Best-effort save so per-child memory/recall keeps working next session.
