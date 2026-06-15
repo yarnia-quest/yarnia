@@ -1,0 +1,14 @@
+[project]
+name = "pocket-tts-export"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.12"
+dependencies = [
+    "onnx>=1.21.0",
+    "onnxruntime>=1.21",
+    "openai-whisper>=20250625",
+    "pocket-tts>=2.1.0",
+    "sentencepiece>=0.2.1",
+    "soundfile>=0.14.0",
+    "torch>=2.5",
+]

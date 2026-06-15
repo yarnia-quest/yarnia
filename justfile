@@ -30,6 +30,17 @@ flutter-local:
     adb reverse tcp:8787 tcp:8787
     cd app/flutter && flutter run --dart-define-from-file=dart_defines/local.json
 
+# Run Flutter on device against CORE (Tailscale, no adb reverse needed — Ollama on core)
+flutter-core:
+    cd app/flutter && flutter run --dart-define-from-file=dart_defines/core.json
+
+# Build debug APK against core and install on both devices
+build-core:
+    cd app/flutter && flutter build apk --debug --dart-define-from-file=dart_defines/core.json
+    adb -s LCL0218419004596 install -r app/flutter/build/app/outputs/flutter-apk/app-debug.apk &
+    adb -s pixie:5555 install -r app/flutter/build/app/outputs/flutter-apk/app-debug.apk &
+    wait && echo "Installed on both devices"
+
 # Run Flutter on device against PRODUCTION API
 flutter-prod:
     cd app/flutter && flutter run --dart-define-from-file=dart_defines/prod.json

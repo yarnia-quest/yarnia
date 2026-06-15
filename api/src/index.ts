@@ -38,8 +38,12 @@ type Bindings = {
   MOLLIE_API_KEY?: string;
   MOLLIE_PAYMENT_LINK?: string;
   APP_BASE_URL?: string;
-  // DashScope API key for Qwen story generation.
+  // DashScope API key for Qwen story generation (cloud fallback).
   QWEN_API_KEY?: string;
+  // Override LLM base URL and model — set in .dev.vars to point at a local Ollama instance
+  // (http://localhost:11434/v1) or any OpenAI-compatible endpoint. Falls back to DashScope.
+  LLM_BASE_URL?: string;
+  LLM_MODEL?: string;
   // Optional observability sinks (structured logs are always emitted; these forward them).
   ERROR_WEBHOOK?: string;
   ANALYTICS_WEBHOOK?: string;
@@ -162,11 +166,11 @@ function defaultDeps(env: Bindings): AppDeps {
   const db = init({ appId: env.INSTANT_APP_ID, adminToken: env.INSTANT_ADMIN_TOKEN });
   return {
     loadChild: (childId) => loadChild(childId, db.query.bind(db)),
-    generate: (prompt) => generateStory(prompt, { apiKey: env.QWEN_API_KEY }),
+    generate: (prompt) => generateStory(prompt, { apiKey: env.QWEN_API_KEY, baseUrl: env.LLM_BASE_URL, model: env.LLM_MODEL }),
     // Greeting is short — cap tokens so it returns fast.
-    generateGreeting: (prompt) => generateStory(prompt, { apiKey: env.QWEN_API_KEY, maxTokens: 80 }),
+    generateGreeting: (prompt) => generateStory(prompt, { apiKey: env.QWEN_API_KEY, baseUrl: env.LLM_BASE_URL, model: env.LLM_MODEL, maxTokens: 80 }),
     // Agent conversation turn — multi-turn, capped short so it stays snappy.
-    generateAgentTurn: (system, history) => generateChat(system, history, { apiKey: env.QWEN_API_KEY, maxTokens: 150 }),
+    generateAgentTurn: (system, history) => generateChat(system, history, { apiKey: env.QWEN_API_KEY, baseUrl: env.LLM_BASE_URL, model: env.LLM_MODEL, maxTokens: 150 }),
     agentId: env.ELEVENLABS_AGENT_ID ?? "",
     getSignedUrl: (agentId) => getSignedUrl(agentId, { apiKey: env.ELEVENLABS_API_KEY ?? "" }),
     saveSession: async (childId, input) => {
