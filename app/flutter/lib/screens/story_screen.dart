@@ -1549,7 +1549,10 @@ class _ListeningView extends StatelessWidget {
           textAlign: TextAlign.center,
         ),
         const SizedBox(height: 40),
-        GestureDetector(
+        Semantics(
+          label: 'talk_button',
+          button: true,
+          child: GestureDetector(
           onTap: speechReady ? onMicTap : null,
           child: SizedBox(
             width: 88,
@@ -1605,6 +1608,7 @@ class _ListeningView extends StatelessWidget {
               ],
             ),
           ),
+        ),
         ),
         const SizedBox(height: 24),
         // Live caption — committed + interim transcript, so it is visible that

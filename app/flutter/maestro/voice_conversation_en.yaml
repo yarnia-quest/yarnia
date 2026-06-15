@@ -1,0 +1,42 @@
+appId: quest.yarnia.yarnia
+---
+# Full voice conversation flow (English) — uses the text input field that is
+# always visible in the conversation panel as a fallback to the mic.
+#
+# Run:
+#   maestro test maestro/voice_conversation_en.yaml
+#
+# For real audio testing, generate fixtures with:
+#   espeak-ng -v en -s 140 -w test/fixtures/audio/en_rabbits.wav "Hi I want a story about rabbits"
+# Then use adb to push audio to device and simulate mic input.
+
+- launchApp:
+    clearState: true
+
+# Wait for greeting to finish loading (audio plays, then listening state)
+- waitForAnimationToEnd:
+    timeout: 8000
+
+# Type into the always-visible text field in the conversation panel
+- tapOn:
+    text: "or type here…"
+- inputText: "I want a story about rabbits"
+- pressKey: Enter
+
+# Wait for agent to respond (cloud: ~3s, local fallback: ~10s)
+- waitForAnimationToEnd:
+    timeout: 15000
+
+# Confirm we got a response (something new appears on screen)
+- assertNotVisible:
+    text: "I want a story about rabbits"
+
+# Send a follow-up confirming the story choice
+- tapOn:
+    text: "or type here…"
+- inputText: "Yes please, let's start"
+- pressKey: Enter
+
+# Wait for story generation + narration start (up to 20s including LLM)
+- waitForAnimationToEnd:
+    timeout: 25000
