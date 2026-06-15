@@ -73,7 +73,6 @@ describe("POST /story", () => {
       childId: "lisa-1",
       choice: "dragon",
       text: "Once upon a time, Lisa...",
-      audio: "data:audio/mpeg;base64,BASE64AUDIO",
       status: "ok",
     });
   });
@@ -259,16 +258,13 @@ describe("POST /agent/webhook (ElevenLabs post-call)", () => {
     expect(res.status).toBe(401);
   });
 
-  it("verifies signature, persists the session first, then attaches synthesized audio", async () => {
+  it("verifies signature, persists the session", async () => {
     const saveSession = vi.fn(async () => "sess-1");
-    const synthesize = vi.fn(async () => "BASE64AUDIO");
-    const storeAudio = vi.fn(async (key: string) => key);
-    const updateSessionAudio = vi.fn(async () => {});
     const generate = vi.fn(async () =>
       JSON.stringify({ title: "Dragon", summary: "a gentle dragon", characters: ["dragon"], continuityNotes: [] }),
     );
     const body = webhookBody("lisa-1");
-    const res = await appWith({ saveSession, synthesize, storeAudio, updateSessionAudio, generate }).request(
+    const res = await appWith({ saveSession, generate }).request(
       "/agent/webhook",
       { method: "POST", headers: { "content-type": "application/json", "ElevenLabs-Signature": await signed(body) }, body },
       ENV,
@@ -277,13 +273,6 @@ describe("POST /agent/webhook (ElevenLabs post-call)", () => {
     expect(await res.json()).toEqual({ ok: true, persisted: true });
     expect(saveSession).toHaveBeenCalledOnce();
     expect(saveSession.mock.calls[0][0]).toBe("lisa-1"); // linked to the right child
-    // Row is written WITHOUT audio; the mp3 is synthesized + attached afterward.
-    expect((saveSession.mock.calls[0][1] as { audioKey?: string }).audioKey).toBeUndefined();
-    expect(synthesize).toHaveBeenCalledOnce();
-    expect(storeAudio).toHaveBeenCalledOnce();
-    expect(updateSessionAudio).toHaveBeenCalledOnce();
-    expect(updateSessionAudio.mock.calls[0][0]).toBe("sess-1"); // attached to the saved row
-    expect(updateSessionAudio.mock.calls[0][1]).toMatch(/^stories\/.*\.mp3$/);
   });
 
   it("ignores non-transcription event types", async () => {
