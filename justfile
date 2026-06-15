@@ -76,6 +76,26 @@ pocket-install-debug pkg="quest.yarnia.yarnia":
 pocket-spike-deploy pkg="quest.yarnia.yarnia":
     cd tools/pocket-tts-export && ./deploy_and_test.sh {{pkg}}
 
+# ── Maestro E2E tests ────────────────────────────────────────────────────────
+# Requires: device unlocked, screen on, Maestro in PATH (~/.local/maestro/bin/maestro)
+# Keep screen on while plugged in (run once per device):
+#   adb -s 53111FDAP004SA shell settings put global stay_on_while_plugged_in 3
+
+# Full English conversation flow on USB device
+maestro-en device="53111FDAP004SA":
+    adb -s {{device}} shell input keyevent 224
+    ~/.local/maestro/bin/maestro --device {{device}} test app/flutter/maestro/voice_conversation_en.yaml
+
+# Full German conversation flow on USB device
+maestro-de device="53111FDAP004SA":
+    adb -s {{device}} shell input keyevent 224
+    ~/.local/maestro/bin/maestro --device {{device}} test app/flutter/maestro/voice_conversation_de.yaml
+
+# Run all Maestro flows
+maestro-all device="53111FDAP004SA":
+    adb -s {{device}} shell input keyevent 224
+    ~/.local/maestro/bin/maestro --device {{device}} test app/flutter/maestro/
+
 # ── Flutter web (app.yarnia.quest) ────────────────────────────────────────────
 
 # Run Flutter web (Chrome) against LOCAL API (requires: just api)

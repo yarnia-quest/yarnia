@@ -1,0 +1,41 @@
+appId: quest.yarnia.yarnia
+---
+# Subflow: navigate from wherever the app lands to the StoryScreen.
+# Handles three possible starting states:
+#   1. OnboardingScreen  — no profile on device (creates "Mira", age 5)
+#   2. ProfilePicker     — multiple profiles; taps the first listed child
+#   3. GreetingScreen    — single returning profile; taps Begin directly
+
+# ── Path 1: Onboarding (fresh install or clearState) ──────────────────
+- runFlow:
+    when:
+      visible:
+        text: "e.g. Mira"
+    file: setup_child.yaml
+
+# ── Path 2: ProfilePicker (multiple children) ─────────────────────────
+# "Whose story night is it?" is the header of the ProfilePicker screen.
+- runFlow:
+    when:
+      visible:
+        text: "Whose story night is it?"
+    commands:
+      # Tap the first child card (any name — just the first one listed)
+      - tapOn:
+          index: 0
+          text: "🌟"
+          optional: true
+      - tapOn:
+          index: 0
+          text: "🌙"
+          optional: true
+      - waitForAnimationToEnd:
+          timeout: 3000
+
+# ── Path 3: GreetingScreen — tap Begin ───────────────────────────────
+- waitForAnimationToEnd:
+    timeout: 5000
+- tapOn:
+    text: "Begin"
+- waitForAnimationToEnd:
+    timeout: 8000

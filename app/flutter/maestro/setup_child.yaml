@@ -1,0 +1,25 @@
+appId: quest.yarnia.yarnia
+---
+# Subflow: create a new child profile from the onboarding screen.
+# Called by other flows when clearState=true or when no profile exists.
+# After this flow completes, the app is on the GreetingScreen.
+
+- tapOn:
+    text: "e.g. Mira"
+- inputText: "Mira"
+- pressKey: Enter
+
+- tapOn:
+    text: "5"
+
+- scrollUntilVisible:
+    element:
+      text: "START"
+    direction: DOWN
+    timeout: 5000
+
+- tapOn:
+    text: "START"
+
+- waitForAnimationToEnd:
+    timeout: 5000

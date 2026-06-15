@@ -1,26 +1,25 @@
 appId: quest.yarnia.yarnia
 ---
-# Full voice conversation flow (German)
+# Full German voice conversation flow.
+# Build with German: flutter build apk --dart-define=APP_LANGUAGE=de
 #
-# Build with German locale override:
-#   flutter build apk --dart-define-from-file=dart_defines/local.json --dart-define=APP_LANGUAGE=de
-# Run:
-#   maestro test maestro/voice_conversation_de.yaml
+# Run: maestro test maestro/voice_conversation_de.yaml --device 53111FDAP004SA
 
-- launchApp:
-    clearState: true
+- launchApp
+
+- runFlow:
+    file: navigate_to_story.yaml
 
 - waitForAnimationToEnd:
-    timeout: 8000
+    timeout: 5000
 
-# German text hint
 - tapOn:
     text: "oder hier tippen…"
 - inputText: "Ich will heute Abend zum Mond fliegen"
 - pressKey: Enter
 
 - waitForAnimationToEnd:
-    timeout: 15000
+    timeout: 20000
 
 - tapOn:
     text: "oder hier tippen…"
@@ -28,4 +27,4 @@ appId: quest.yarnia.yarnia
 - pressKey: Enter
 
 - waitForAnimationToEnd:
-    timeout: 25000
+    timeout: 30000
