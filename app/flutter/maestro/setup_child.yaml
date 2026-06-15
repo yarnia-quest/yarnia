@@ -1,25 +1,26 @@
 appId: quest.yarnia.yarnia
 ---
 # Subflow: create a new child profile from the onboarding screen.
-# Called by other flows when clearState=true or when no profile exists.
 # After this flow completes, the app is on the GreetingScreen.
 
 - tapOn:
     text: "e.g. Mira"
 - inputText: "Mira"
-- pressKey: Enter
+# Dismiss keyboard before tapping age buttons
+- hideKeyboard
 
 - tapOn:
     text: "5"
 
 - scrollUntilVisible:
     element:
-      text: "START"
+      text: "Continue"
     direction: DOWN
-    timeout: 5000
+    timeout: 8000
+    speed: 20
 
 - tapOn:
-    text: "START"
+    text: "Continue"
 
 - waitForAnimationToEnd:
     timeout: 5000

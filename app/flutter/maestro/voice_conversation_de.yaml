@@ -1,9 +1,11 @@
 appId: quest.yarnia.yarnia
 ---
-# Full German voice conversation flow.
-# Build with German: flutter build apk --dart-define=APP_LANGUAGE=de
+# German voice conversation flow.
+# Works against both a German build (hint: "oder hier tippen…")
+# and an English build (hint: "or type here…") — same backend language
+# parameter drives the response language.
 #
-# Run: maestro test maestro/voice_conversation_de.yaml --device 53111FDAP004SA
+# Run: just maestro-de
 
 - launchApp
 
@@ -13,18 +15,51 @@ appId: quest.yarnia.yarnia
 - waitForAnimationToEnd:
     timeout: 5000
 
-- tapOn:
-    text: "oder hier tippen…"
-- inputText: "Ich will heute Abend zum Mond fliegen"
-- pressKey: Enter
+# Tap whichever hint text is visible depending on build language
+- runFlow:
+    when:
+      visible:
+        text: "oder hier tippen…"
+    commands:
+      - tapOn:
+          text: "oder hier tippen…"
+      - inputText: "Ich will heute Abend zum Mond fliegen"
+      - pressKey: Enter
+
+- runFlow:
+    when:
+      visible:
+        text: "or type here…"
+    commands:
+      - tapOn:
+          text: "or type here…"
+      - inputText: "Ich will heute Abend zum Mond fliegen"
+      - pressKey: Enter
 
 - waitForAnimationToEnd:
     timeout: 20000
 
-- tapOn:
-    text: "oder hier tippen…"
-- inputText: "Ja, das klingt toll"
-- pressKey: Enter
+# Optional follow-up turn
+- runFlow:
+    when:
+      visible:
+        text: "oder hier tippen…"
+    commands:
+      - tapOn:
+          text: "oder hier tippen…"
+      - inputText: "Ja, das klingt toll"
+      - pressKey: Enter
+      - waitForAnimationToEnd:
+          timeout: 30000
 
-- waitForAnimationToEnd:
-    timeout: 30000
+- runFlow:
+    when:
+      visible:
+        text: "or type here…"
+    commands:
+      - tapOn:
+          text: "or type here…"
+      - inputText: "Ja, das klingt toll"
+      - pressKey: Enter
+      - waitForAnimationToEnd:
+          timeout: 30000

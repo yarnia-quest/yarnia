@@ -1,17 +1,17 @@
 appId: quest.yarnia.yarnia
 ---
-# Full English voice conversation flow: launch → navigate to story → converse → story plays.
-# Handles fresh install, profile picker, and returning single-user starts.
+# Full English voice conversation flow: launch → navigate → converse → story narrates.
+# Handles fresh install, ProfilePicker, and returning single-user starts.
 #
-# Run (USB):  maestro test maestro/voice_conversation_en.yaml --device 53111FDAP004SA
-# Run (WiFi): maestro test maestro/voice_conversation_en.yaml --device pixie:5555
+# Run (USB):  just maestro-en
+# Run (WiFi): just maestro-en device=pixie:5555
 
 - launchApp
 
 - runFlow:
     file: navigate_to_story.yaml
 
-# ── Conversation: type into the always-visible text fallback ──────────
+# ── First conversation turn ───────────────────────────────────────────
 - waitForAnimationToEnd:
     timeout: 5000
 
@@ -20,16 +20,20 @@ appId: quest.yarnia.yarnia
 - inputText: "I want a story about rabbits"
 - pressKey: Enter
 
-# Wait for agent response (cloud ~3s; local fallback ~10s)
+# Wait for agent response — may go READY immediately (story starts) or
+# ask a follow-up question (text field stays visible)
 - waitForAnimationToEnd:
     timeout: 20000
 
-# Confirm the story choice
-- tapOn:
-    text: "or type here…"
-- inputText: "Yes please, let's start"
-- pressKey: Enter
-
-# Wait for story generation + first sentence narrating
-- waitForAnimationToEnd:
-    timeout: 30000
+# ── Optional second turn (agent asked a follow-up) ────────────────────
+- runFlow:
+    when:
+      visible:
+        text: "or type here…"
+    commands:
+      - tapOn:
+          text: "or type here…"
+      - inputText: "Yes please, let's start"
+      - pressKey: Enter
+      - waitForAnimationToEnd:
+          timeout: 30000
