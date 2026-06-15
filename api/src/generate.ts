@@ -1,12 +1,20 @@
-// Story generation via DashScope (OpenAI-compatible, requires API key).
+// Story/agent generation — OpenAI-compatible, works with DashScope or any local endpoint.
 // `fetch` is injectable so the client is unit-testable with no API spend.
 import type { StoryPrompt } from "./prompt";
 import { withTimeout } from "./timeout";
 
-// DashScope international endpoint — OpenAI-compatible, needs Bearer auth.
+// DashScope international endpoint (cloud fallback).
 const DEFAULT_BASE_URL = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1";
 const DEFAULT_MODEL = "qwen3.7-max";
 const DEFAULT_TIMEOUT_MS = 45_000;
+
+// llama.cpp (local pods) disables thinking via chat_template_kwargs, not enable_thinking.
+// DashScope uses enable_thinking. Detect by base URL.
+function noThinkingPayload(baseUrl: string): Record<string, unknown> {
+  if (baseUrl.includes("dashscope")) return { enable_thinking: false };
+  // llama.cpp OpenAI-compat endpoint
+  return { chat_template_kwargs: { enable_thinking: false } };
+}
 
 export type GenerateOpts = {
   model?: string;
@@ -44,7 +52,7 @@ export async function generateChat(
       body: JSON.stringify({
         model,
         messages: [{ role: "system", content: system }, ...history],
-        enable_thinking: false,
+        ...noThinkingPayload(baseUrl),
         ...(opts.maxTokens ? { max_tokens: opts.maxTokens } : {}),
       }),
     });
@@ -77,8 +85,8 @@ export async function generateStory(prompt: StoryPrompt, opts: GenerateOpts = {}
           { role: "system", content: prompt.system },
           { role: "user", content: prompt.user },
         ],
-        // Disable the reasoning pass — ~4s vs ~49s, no quality loss for stories.
-        enable_thinking: false,
+        // Disable the reasoning pass — ~4s vs ~49s on DashScope; llama.cpp uses chat_template_kwargs.
+        ...noThinkingPayload(baseUrl),
         ...(opts.maxTokens ? { max_tokens: opts.maxTokens } : {}),
       }),
     });
