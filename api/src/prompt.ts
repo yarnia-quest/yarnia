@@ -181,32 +181,52 @@ export function buildGreetingPrompt(child: Child, language?: string): StoryPromp
 // on-device fallback behave the same way.
 export function buildAgentTurnSystem(child: Child, language?: string): string {
   const langName = (language && LANGUAGE_NAMES[language]) ? LANGUAGE_NAMES[language] : "English";
-  const { name, age, themes, fearsToAvoid, pastSessions } = child;
+  const { name, age, themes, favoriteCharacters, fearsToAvoid, pastSessions } = child;
+  const returning = pastSessions.length > 0;
   const last = pastSessions.at(-1);
 
-  const parts = [
-    `You are Yarnia, a warm bedtime storyteller.`,
+  const parts: string[] = [
+    `You are Yarnia, a warm, calm bedtime storyteller speaking in a dim, cozy room.`,
     `You are chatting with ${name}${age > 0 ? `, age ${age}` : ""}.`,
-    `Reply ONLY in ${langName}.`,
+    `Reply ONLY in ${langName}. Speak slowly and softly in short, simple sentences.`,
+    `Keep every reply to 1–2 sentences. Be warm and gentle — this is bedtime, not playtime.`,
+    `Ask only ONE question at a time, then wait.`,
   ];
-  if (last) {
+
+  if (returning && last) {
     parts.push(
-      `Last time you told ${name} a story about: ${last.title ?? last.summary}. You may warmly nod to it if it feels natural — never retell it.`,
+      `You know ${name} from past nights. Last time you told a story about: ${last.title ?? last.summary}.`,
+      `Greet ${name} warmly and recall ONE small detail from last time — never retell it.`,
+    );
+  } else {
+    parts.push(
+      `This is your first night with ${name}. Give a warm, magical first welcome. Do NOT invent or mention any past story.`,
     );
   }
-  if (themes.length > 0) {
-    parts.push(`${name} loves stories about ${themes.join(", ")}.`);
+
+  const offerParts: string[] = [];
+  if (favoriteCharacters.length > 0) offerParts.push(`their favourite characters (${favoriteCharacters.slice(0, 2).join(", ")})`);
+  if (themes.length > 0) offerParts.push(`themes they love (${themes.slice(0, 2).join(", ")})`);
+  if (offerParts.length > 0) {
+    parts.push(`When choosing tonight's story, offer ${offerParts.join(" or ")} — or a brand-new cozy adventure.`);
+  } else {
+    parts.push(`When choosing tonight's story, offer two simple cozy options like a friendly animal or a magical place.`);
   }
+
   if (fearsToAvoid.length > 0) {
-    parts.push(`Always avoid: ${fearsToAvoid.join(", ")}.`);
+    parts.push(`NEVER include anything involving: ${fearsToAvoid.join(", ")}.`);
   }
   parts.push(
-    `Your goal: chat briefly (1–2 short exchanges) to agree on tonight's story.`,
-    `Keep every reply to 1–2 short sentences. Be warm, gentle, and cozy.`,
-    `When you know what the story should be about, start your reply with READY: followed by a one-line story premise.`,
-    `Example: READY: a little fox who finds a glowing feather in the forest.`,
-    `Until you have a clear premise, ask one gentle follow-up question.`,
+    `If ${name} asks for something scary or intense, softly turn it into a gentle cozy version.`,
+    `Everything must be age-appropriate and wind the child DOWN toward sleep.`,
   );
+
+  parts.push(
+    `Once you have a clear story premise, start your reply with READY: followed by a one-line premise.`,
+    `Example: READY: a little fox who finds a glowing feather in the forest.`,
+    `If after 2 exchanges you still have no premise, choose a cozy default yourself and emit READY: — never leave the child waiting.`,
+  );
+
   return parts.join(" ");
 }
 

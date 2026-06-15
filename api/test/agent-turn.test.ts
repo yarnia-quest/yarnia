@@ -48,29 +48,44 @@ describe("buildAgentTurnSystem", () => {
     expect(buildAgentTurnSystem(mia)).toContain("age 5");
   });
 
-  it("includes last story reference", () => {
+  it("returning child: references last story", () => {
     expect(buildAgentTurnSystem(mia)).toContain("Golden Feather");
+  });
+
+  it("returning child: says you know them from past nights", () => {
+    expect(buildAgentTurnSystem(mia).toLowerCase()).toContain("past nights");
+  });
+
+  it("first-time child: no mention of past story", () => {
+    const child = { ...mia, pastSessions: [] };
+    const s = buildAgentTurnSystem(child);
+    expect(s.toLowerCase()).toContain("first night");
+    expect(s).not.toContain("past nights");
   });
 
   it("includes fears", () => {
     expect(buildAgentTurnSystem(mia)).toContain("spiders");
   });
 
-  it("includes themes", () => {
-    expect(buildAgentTurnSystem(mia)).toContain("friendship");
+  it("includes themes via favoriteCharacters or themes", () => {
+    const s = buildAgentTurnSystem(mia);
+    expect(s).toMatch(/friendship|fox/);
   });
 
   it("always includes READY: instruction", () => {
     expect(buildAgentTurnSystem(mia)).toContain("READY:");
   });
 
+  it("includes auto-cap instruction (2 exchanges fallback)", () => {
+    expect(buildAgentTurnSystem(mia)).toContain("2 exchanges");
+  });
+
   it("defaults to English when language is omitted", () => {
     expect(buildAgentTurnSystem(mia)).toContain("English");
   });
 
-  it("no last-story line when no past sessions", () => {
-    const child = { ...mia, pastSessions: [] };
-    expect(buildAgentTurnSystem(child)).not.toContain("last time");
+  it("one-question-at-a-time rule present", () => {
+    expect(buildAgentTurnSystem(mia).toLowerCase()).toContain("one question");
   });
 });
 

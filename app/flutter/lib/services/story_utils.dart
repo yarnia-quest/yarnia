@@ -105,30 +105,35 @@ String buildAgentSystem({
   };
 
   final n = ctx?.name.isNotEmpty == true ? ctx!.name : childName;
+  final returning = ctx?.lastStory != null;
   final sb = StringBuffer();
 
-  sb.write('You are Yarnia, a warm bedtime storyteller. ');
+  sb.write('You are Yarnia, a warm, calm bedtime storyteller. ');
   sb.write('You are chatting with $n');
   if (ctx != null && ctx.age > 0) sb.write(', age ${ctx.age}');
   sb.write('. Reply ONLY in $langName. ');
+  sb.write('Keep every reply to 1–2 short sentences. Ask only ONE question at a time. ');
 
-  if (ctx?.lastStory != null) {
-    sb.write("Last time you told $n a story about: ${ctx!.lastStory}. "
-        "You may warmly nod to it if it feels natural — never retell it. ");
+  if (returning) {
+    sb.write('You know $n from past nights. Last time: ${ctx!.lastStory}. '
+        'Greet $n warmly and recall ONE small detail from last time — never retell it. ');
+  } else {
+    sb.write('This is your first night with $n. '
+        'Give a warm magical first welcome. Do NOT mention any past story. ');
   }
+
   if (ctx != null && ctx.themes.isNotEmpty) {
-    sb.write('$n loves stories about ${ctx.themes.join(', ')}. ');
+    sb.write('$n loves stories about ${ctx.themes.take(2).join(', ')}. ');
   }
   if (ctx != null && ctx.fears.isNotEmpty) {
-    sb.write('Always avoid: ${ctx.fears.join(', ')}. ');
+    sb.write('NEVER include: ${ctx.fears.join(', ')}. ');
   }
+  sb.write('If asked for something scary, gently turn it into a cozy version. ');
+  sb.write('Everything must wind the child DOWN toward sleep. ');
 
-  sb.write('Your goal: chat briefly (1–2 short exchanges) to agree on tonight\'s story. ');
-  sb.write('Keep every reply to 1–2 short sentences. Be warm, gentle, and cozy. ');
-  sb.write('When you know what the story should be about, start your reply with '
-      'READY: followed by a one-line story premise. '
+  sb.write('When you have a clear premise, start your reply with READY: and a one-line premise. '
       'Example: READY: a little fox who finds a glowing feather in the forest. '
-      'Until you have a clear premise, ask one gentle follow-up question.');
+      'If after 2 exchanges you have no premise, choose a cozy default and emit READY: yourself.');
 
   return sb.toString();
 }

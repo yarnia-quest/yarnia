@@ -119,23 +119,46 @@ void main() {
       expect(s, contains('Deutsch'));
     });
 
-    test('with full context includes age, themes, fears, last story', () {
+    test('returning child: references last story', () {
       final ctx = AgentContext(
-        name: 'Mia',
-        age: 5,
-        themes: ['friendship', 'animals'],
-        fears: ['spiders'],
+        name: 'Mia', age: 5,
+        themes: ['friendship'], fears: ['spiders'],
+        lastStory: 'the fox and the feather',
+      );
+      final s = buildAgentSystem(childName: 'Mia', lang: 'en', ctx: ctx);
+      expect(s, contains('fox and the feather'));
+      expect(s.toLowerCase(), contains('past nights'));
+    });
+
+    test('returning child: includes age, themes, fears', () {
+      final ctx = AgentContext(
+        name: 'Mia', age: 5,
+        themes: ['friendship'], fears: ['spiders'],
         lastStory: 'the fox and the feather',
       );
       final s = buildAgentSystem(childName: 'Mia', lang: 'en', ctx: ctx);
       expect(s, contains('age 5'));
       expect(s, contains('friendship'));
       expect(s, contains('spiders'));
-      expect(s, contains('fox and the feather'));
     });
 
-    test('always ends with READY: instruction', () {
+    test('first-time child: no past-nights reference', () {
+      final ctx = AgentContext(name: 'Sam', age: 4);
+      final s = buildAgentSystem(childName: 'Sam', lang: 'en', ctx: ctx);
+      expect(s.toLowerCase(), contains('first night'));
+      expect(s.toLowerCase(), isNot(contains('past nights')));
+    });
+
+    test('always contains READY: instruction', () {
       expect(buildAgentSystem(childName: 'X', lang: 'en'), contains('READY:'));
+    });
+
+    test('contains 2-exchange auto-cap fallback', () {
+      expect(buildAgentSystem(childName: 'X', lang: 'en'), contains('2 exchanges'));
+    });
+
+    test('one-question rule present', () {
+      expect(buildAgentSystem(childName: 'X', lang: 'en').toLowerCase(), contains('one question'));
     });
   });
 
