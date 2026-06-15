@@ -2,7 +2,7 @@ import { Hono, type Context } from "hono";
 import { cors } from "hono/cors";
 import { init, id } from "@instantdb/admin";
 import { loadChild } from "./child";
-import { generateStory } from "./generate";
+import { generateStory, generateChat, type ChatMessage } from "./generate";
 import { createStory, type StoryDeps } from "./story";
 import { createAgentSession, getSignedUrl, type ConversationTurn } from "./agent";
 import { persistSession, persistAgentSession, enrichSessionRecap, agentStoryText, quickRecap, toMessages, type SaveSessionInput } from "./session";
@@ -12,7 +12,7 @@ import { generateChildToken, hashToken, verifyChildToken } from "./auth";
 import { createRateLimiter } from "./ratelimit";
 import { createTelemetry } from "./observability";
 import { estimateStoryCost } from "./usage";
-import { buildStoryPrompt, buildTurnPrompt, buildGreetingPrompt, type StoryPrompt } from "./prompt";
+import { buildStoryPrompt, buildTurnPrompt, buildGreetingPrompt, buildAgentTurnSystem, type StoryPrompt } from "./prompt";
 import { interpretTurn } from "./turn";
 import { isStorySafe } from "./safety";
 
@@ -38,6 +38,8 @@ type Bindings = {
   MOLLIE_API_KEY?: string;
   MOLLIE_PAYMENT_LINK?: string;
   APP_BASE_URL?: string;
+  // DashScope API key for Qwen story generation.
+  QWEN_API_KEY?: string;
   // Optional observability sinks (structured logs are always emitted; these forward them).
   ERROR_WEBHOOK?: string;
   ANALYTICS_WEBHOOK?: string;
@@ -76,6 +78,8 @@ export function sanitizeList(xs?: string[]): string[] {
 type AppDeps = StoryDeps & {
   // Short, fast personalized greeting (capped tokens) for the start of a session.
   generateGreeting?: (prompt: StoryPrompt) => Promise<string>;
+  // Multi-turn agent conversation (pre-story chat). Optional so existing tests need not provide it.
+  generateAgentTurn?: (system: string, history: ChatMessage[]) => Promise<string>;
   agentId: string;
   getSignedUrl: (agentId: string) => Promise<string>;
   saveSession: (childId: string, input: SaveSessionInput) => Promise<string>;
@@ -158,9 +162,11 @@ function defaultDeps(env: Bindings): AppDeps {
   const db = init({ appId: env.INSTANT_APP_ID, adminToken: env.INSTANT_ADMIN_TOKEN });
   return {
     loadChild: (childId) => loadChild(childId, db.query.bind(db)),
-    generate: (prompt) => generateStory(prompt),
+    generate: (prompt) => generateStory(prompt, { apiKey: env.QWEN_API_KEY }),
     // Greeting is short — cap tokens so it returns fast.
-    generateGreeting: (prompt) => generateStory(prompt, { maxTokens: 80 }),
+    generateGreeting: (prompt) => generateStory(prompt, { apiKey: env.QWEN_API_KEY, maxTokens: 80 }),
+    // Agent conversation turn — multi-turn, capped short so it stays snappy.
+    generateAgentTurn: (system, history) => generateChat(system, history, { apiKey: env.QWEN_API_KEY, maxTokens: 150 }),
     agentId: env.ELEVENLABS_AGENT_ID ?? "",
     getSignedUrl: (agentId) => getSignedUrl(agentId, { apiKey: env.ELEVENLABS_API_KEY ?? "" }),
     saveSession: async (childId, input) => {
@@ -489,7 +495,64 @@ export function createApp(makeDeps: (env: Bindings) => AppDeps = defaultDeps) {
     const prompt = buildGreetingPrompt(child, language);
     const gen = deps.generateGreeting ?? deps.generate;
     const greeting = (await gen(prompt)).trim();
-    return c.json({ greeting });
+    const last = child.pastSessions.at(-1);
+    const agentContext = {
+      name: child.name,
+      age: child.age,
+      themes: child.themes,
+      fears: child.fearsToAvoid,
+      lastStory: last ? (last.title ?? last.summary) : undefined,
+    };
+    return c.json({ greeting, agentContext });
+  });
+
+  // POST /agent/turn — { childId, language?, history?: [{role,content}], userMessage }
+  // → { say, phase: "chatting"|"ready", brief? }
+  // Cloud LLM conversation turn for the pre-story agent chat. Uses Qwen3 via DashScope so
+  // conversation quality is far better than the tiny on-device model. The app falls back to
+  // the local LLM if this endpoint is unreachable (offline / timeout).
+  app.post("/agent/turn", async (c) => {
+    const body = await c.req
+      .json<{ childId?: string; language?: string; history?: { role: string; content: string }[]; userMessage?: string }>()
+      .catch(() => ({}) as { childId?: string; language?: string; history?: { role: string; content: string }[]; userMessage?: string });
+    const { childId, userMessage } = body;
+    if (!childId || !userMessage) return c.json({ error: "childId and userMessage required" }, 400);
+
+    const deps = makeDeps(c.env);
+    const denied = await requireChildToken(c, deps, childId);
+    if (denied) return denied;
+
+    const child = await deps.loadChild(childId);
+    if (!child) return c.json({ error: "child_not_found" }, 404);
+
+    const language = typeof body.language === "string" ? body.language : undefined;
+    const system = buildAgentTurnSystem(child, language);
+
+    // Keep last 6 messages (3 exchanges) to stay within context limits.
+    const rawHistory = body.history ?? [];
+    const history: ChatMessage[] = rawHistory
+      .filter((m): m is ChatMessage => (m.role === "user" || m.role === "assistant") && typeof m.content === "string")
+      .slice(-6);
+
+    const messages: ChatMessage[] = [...history, { role: "user", content: sanitizeChoice(userMessage) }];
+
+    const genTurn = deps.generateAgentTurn ?? ((s: string, h: ChatMessage[]) => generateChat(s, h, { apiKey: c.env.QWEN_API_KEY, maxTokens: 150 }));
+    let raw: string;
+    try {
+      raw = await genTurn(system, messages);
+    } catch (err) {
+      return c.json({ error: "generation_failed" }, 502);
+    }
+
+    // READY: prefix signals story topic is agreed.
+    const readyMatch = /READY:\s*(.+)/i.exec(raw);
+    if (readyMatch) {
+      const brief = readyMatch[1].trim().replace(/["\n]/g, "");
+      const say = raw.substring(0, readyMatch.index).trim();
+      return c.json({ say: say || "Okay, let's begin!", phase: "ready", brief });
+    }
+
+    return c.json({ say: raw.trim(), phase: "chatting" });
   });
 
   // POST /story/prompt — { childId, choice?, language? } -> { system, user, choice }.
@@ -514,6 +577,55 @@ export function createApp(makeDeps: (env: Bindings) => AppDeps = defaultDeps) {
     const language = typeof body.language === "string" ? body.language : undefined;
     const prompt = buildStoryPrompt(child, choice, language);
     return c.json({ system: prompt.system, user: prompt.user, choice });
+  });
+
+  // POST /story/tell — { childId, choice?, language? } -> { text, system, user }.
+  // On-device generation path: the phone can't reach Nebula but CAN reach this Worker,
+  // which in turn calls DashScope. No subscription gate — used directly by the Flutter app.
+  app.post("/story/tell", async (c) => {
+    const ip = c.req.header("cf-connecting-ip");
+    if (ip && !storyLimiter.check(`tell:${ip}`).allowed) {
+      return c.json({ error: "rate_limited" }, 429);
+    }
+    const body = await c.req
+      .json<{ childId?: string; choice?: string; language?: string }>()
+      .catch(() => ({}) as { childId?: string; choice?: string; language?: string });
+    const { childId } = body;
+    if (!childId) return c.json({ error: "childId required" }, 400);
+
+    const deps = makeDeps(c.env);
+    const telemetry = makeTelemetry(c);
+    const denied = await requireChildToken(c, deps, childId);
+    if (denied) return denied;
+
+    const child = await deps.loadChild(childId);
+    if (!child) {
+      telemetry.error("story_tell_child_not_found", { childId });
+      return c.json({ error: "child_not_found" }, 404);
+    }
+
+    const choice = sanitizeChoice(body.choice ?? "") || "a gentle surprise";
+    const language = typeof body.language === "string" ? body.language : undefined;
+    const prompt = buildStoryPrompt(child, choice, language);
+
+    let text: string;
+    try {
+      text = await deps.generate(prompt);
+    } catch (err) {
+      telemetry.error("story_tell_generate_failed", { childId, error: String(err) });
+      return c.json({ error: "generation_failed" }, 502);
+    }
+
+    if (!isStorySafe(text)) {
+      telemetry.error("story_tell_unsafe", { childId });
+      const { safeFallbackStory } = await import("./safety");
+      text = safeFallbackStory(child.name);
+    }
+
+    const cost = estimateStoryCost(text, false);
+    telemetry.track("story_told", { childId, language: language ?? "en", tokens: cost.tokens, estUsd: cost.totalUsd });
+
+    return c.json({ text, system: prompt.system, user: prompt.user });
   });
 
   // POST /session/persist — { childId, choice, text, system?, user? } -> { ok, sessionId }.

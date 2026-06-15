@@ -17,12 +17,14 @@ import '../services/asr_session.dart';
 import '../services/local_llm.dart';
 import '../services/settings_service.dart';
 import '../services/story_safety.dart';
+import '../services/story_utils.dart';
+import '../services/turn_decision.dart';
 import '../services/tts_session.dart';
 import 'settings_screen.dart';
 import '../widgets/starfield.dart';
 import '../theme.dart';
 
-enum _State { setup, greeting, listening, thinking, narrating, paused, done, error }
+enum _State { setup, greeting, conversing, listening, thinking, narrating, paused, done, error }
 
 class StoryScreen extends StatefulWidget {
   final String childName;
@@ -63,6 +65,10 @@ class _StoryScreenState extends State<StoryScreen>
   final AudioPlayer _player = AudioPlayer();
   final FlutterTts _systemTts = FlutterTts();
   TtsSession? _ttsSession;
+  // Pre-spawn future: started at initState so the native library (libsherpa_onnx.so)
+  // loads while the greeting text is displayed, not inside _speakLine where the cap
+  // would race against the ~30s cold-start load time.
+  Future<TtsSession>? _ttsSpawnFuture;
 
   late AnimationController _pulseController;
   late Animation<double> _pulse;
@@ -110,6 +116,15 @@ class _StoryScreenState extends State<StoryScreen>
   // ring repaints on every audio frame without rebuilding the whole screen.
   final ValueNotifier<double> _micLevel = ValueNotifier(0);
 
+  // Text entry fallback (for testing, Huawei, and users who prefer typing)
+  final TextEditingController _textController = TextEditingController();
+
+  // Conversational agent state
+  bool _conversationMode = false; // true while chatting with the agent before story
+  int _agentTurns = 0; // how many exchange turns have happened
+  // Conversation history for cloud /agent/turn — list of {role, content} pairs.
+  final List<Map<String, String>> _chatHistory = [];
+
   // Phase 1: checkpoint narration state
   List<String> _sentences = [];
   int _cursor = 0;           // index of the NEXT sentence to speak
@@ -133,26 +148,97 @@ class _StoryScreenState extends State<StoryScreen>
       CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
     );
     _pulseController.repeat(reverse: true);
+    _prewarmTts(); // fire-and-forget: loads libsherpa_onnx.so while greeting text shows
     _startSession();
+  }
+
+  // Spawns the TTS isolate immediately at startup so the native library cold-start
+  // (~30s first run) happens in parallel with the greeting, not inside _speakLine.
+  void _prewarmTts() {
+    final engine = widget.settings.effectiveEngine;
+    if (engine.isSystem || engine.kind == null || engine.modelDir == null) return;
+    _ttsSpawnFuture = (() async {
+      final support = await getApplicationSupportDirectory();
+      final modelDir = p.join(support.path, engine.modelDir!);
+      return TtsSession.spawn(
+        kind: engine.kind!,
+        modelDir: modelDir,
+        outDir: support.path,
+        seed: engine.seed,
+      );
+    })();
+    _ttsSpawnFuture!.then((s) {
+      if (mounted) _ttsSession = s;
+      debugPrint('StoryScreen: TTS prewarm done (${engine.label})');
+    }).catchError((Object e) {
+      debugPrint('StoryScreen: TTS prewarm failed: $e');
+    });
   }
 
   // Greet first (like an agent — Yarnia speaks before the child does), THEN load
   // STT in the background, THEN listen. The greeting must not wait behind the
   // slow Whisper model load, and it runs locally (no network).
   Future<void> _startSession() async {
-    // The storyteller runs on-device — if it isn't downloaded yet, set up first
-    // (never greet into a dead end).
-    if (!widget.settings.anyLlmInstalled) {
-      setState(() => _state = _State.setup);
-      return;
-    }
-    await _greet();
+    final agentCtx = await _greet();
     if (!mounted) return;
-    await _initStt(); // load STT after the greeting is spoken
+    await _initStt();
     if (!mounted || _state != _State.greeting) return;
-    setState(() => _state = _State.listening);
+    final engine = widget.settings.recommendedLlm;
+    final llmReady = await LocalLlm.instance.modelFileReady(engine.url);
+    if (llmReady) {
+      await _startConversation(agentCtx);
+    } else {
+      setState(() => _state = _State.listening);
+      await _startListening();
+    }
+  }
+
+  Future<void> _startConversation([AgentContext? ctx]) async {
+    _chatHistory.clear();
+    // Seed the history with Yarnia's opening greeting so the cloud LLM has context.
+    if (_currentSentence.isNotEmpty) {
+      _chatHistory.add({'role': 'assistant', 'content': _currentSentence});
+    }
+    try {
+      final engine = widget.settings.recommendedLlm;
+      await LocalLlm.instance.activate(
+        modelType: engine.modelType,
+        fileType: engine.fileType,
+        url: engine.url,
+      );
+      final system = buildAgentSystem(
+        childName: widget.childName,
+        lang: widget.settings.language,
+        ctx: ctx,
+      );
+      await LocalLlm.instance.startChat(system, maxTokens: 256);
+      setState(() {
+        _conversationMode = true;
+        _agentTurns = 0;
+        _state = _State.listening;
+      });
+    } catch (e) {
+      debugPrint('StoryScreen: startChat/activate failed: $e — falling back to direct listen');
+      setState(() => _state = _State.listening);
+    }
     await _startListening();
   }
+
+  // Skip the conversation and generate a story from whatever topic was gathered.
+  Future<void> _skipConversation() async {
+    _conversationMode = false;
+    await LocalLlm.instance.closeChat();
+    final topic = _heard.isNotEmpty ? _heard : _defaultStoryTopic();
+    setState(() => _state = _State.thinking);
+    await _generateAndSpeak(topic);
+  }
+
+  String _defaultStoryTopic() => switch (widget.settings.language) {
+    'de' => 'ein kleines Tier auf Abenteuersuche',
+    'fr' => 'un petit animal en aventure',
+    'es' => 'un pequeño animal en aventura',
+    _ => 'a little animal on an adventure',
+  };
 
   // Download the device-recommended storyteller model inline, then start.
   Future<void> _downloadStoryteller() async {
@@ -193,22 +279,52 @@ class _StoryScreenState extends State<StoryScreen>
     ));
   }
 
-  // Local, instant, spoken greeting. (Backend/LLM-personalized greeting is Phase 2;
-  // the backend can't reach Nebula and we're going fully on-device anyway.)
-  Future<void> _greet() async {
-    final greeting = _localGreeting();
-    setState(() {
-      _state = _State.greeting;
-      _currentSentence = greeting;
-    });
-    // Let the greeting be readable even if TTS is silent/instant.
-    await Future.any([
-      _speakLine(greeting),
-      Future.delayed(const Duration(seconds: 8)), // safety cap
-    ]);
-    await Future.delayed(const Duration(milliseconds: 400));
+  // Fetch a personalized LLM greeting from the API; fall back to a local template
+  // if the network is unavailable or too slow. Returns both the greeting text and
+  // optional agent context (child age/themes/fears/lastStory) for the conversation.
+  Future<({String greeting, AgentContext? ctx})> _fetchGreeting() async {
+    try {
+      final res = await http.post(
+        Uri.parse('${widget.apiBase}/greeting'),
+        headers: {...widget.apiHeaders, 'content-type': 'application/json'},
+        body: jsonEncode({
+          'childId': widget.childId,
+          'language': widget.settings.language,
+        }),
+      ).timeout(const Duration(seconds: 8));
+      if (res.statusCode == 200) {
+        final d = jsonDecode(res.body) as Map<String, dynamic>;
+        final text = (d['greeting'] as String?)?.trim() ?? '';
+        AgentContext? ctx;
+        if (d['agentContext'] is Map<String, dynamic>) {
+          ctx = AgentContext.fromJson(d['agentContext'] as Map<String, dynamic>);
+        }
+        if (text.isNotEmpty) return (greeting: text, ctx: ctx);
+      }
+    } catch (e) {
+      debugPrint('StoryScreen: /greeting failed → local fallback: $e');
+    }
+    return (greeting: _localGreeting(), ctx: null);
   }
 
+  // Greet the child: show the animation immediately, then speak once we have text.
+  Future<AgentContext?> _greet() async {
+    setState(() {
+      _state = _State.greeting;
+      _currentSentence = '';
+    });
+    final result = await _fetchGreeting();
+    if (!mounted) return null;
+    setState(() => _currentSentence = result.greeting);
+    final cap = widget.settings.effectiveEngine.isSystem
+        ? const Duration(seconds: 9)
+        : const Duration(seconds: 90);
+    await Future.any([_speakLine(result.greeting), Future.delayed(cap)]);
+    await Future.delayed(const Duration(milliseconds: 400));
+    return result.ctx;
+  }
+
+  // Local fallback greeting used when /greeting is unreachable.
   String _localGreeting() {
     final n = widget.childName;
     switch (widget.settings.language) {
@@ -315,10 +431,27 @@ class _StoryScreenState extends State<StoryScreen>
     });
   }
 
+  /// Submit typed text directly, bypassing the STT path entirely.
+  Future<void> _submitTyped(String text) async {
+    final trimmed = text.trim();
+    if (trimmed.isEmpty) return;
+    _textController.clear();
+    if (_conversationMode) {
+      setState(() { _state = _State.thinking; _thinkingForTurn = true; });
+      await _doConverseTurn(trimmed);
+    } else if (_state == _State.paused) {
+      await _sendTurn(trimmed);
+    } else {
+      setState(() => _state = _State.thinking);
+      await _generateAndSpeak(trimmed);
+    }
+  }
+
   @override
   void dispose() {
     _pulseController.dispose();
     _micLevel.dispose();
+    _textController.dispose();
     _silenceTimer?.cancel();
     _speech.stop();
     _asrSub?.cancel();
@@ -421,26 +554,222 @@ class _StoryScreenState extends State<StoryScreen>
     // Nothing was heard: stop and stay idle so the user can retry — do NOT loop
     // back into listening (that made the mic impossible to turn off).
     if (text.isEmpty) return;
-    setState(() => _state = _State.thinking);
-    await _generateAndSpeak(text);
+    if (_conversationMode) {
+      await _doConverseTurn(text);
+    } else {
+      setState(() => _state = _State.thinking);
+      await _generateAndSpeak(text);
+    }
+  }
+
+  // Run one agent conversation turn: send user utterance, parse reply, speak it.
+  // If the reply signals the story is agreed ("READY:"), generate the story.
+  // Call POST /agent/turn (cloud Qwen3). Returns the parsed response map on success,
+  // null if the endpoint is unreachable or returns an error (triggering local fallback).
+  Future<Map<String, dynamic>?> _tryCloudAgentTurn(String userMessage) async {
+    try {
+      final res = await http.post(
+        Uri.parse('${widget.apiBase}/agent/turn'),
+        headers: {...widget.apiHeaders, 'content-type': 'application/json'},
+        body: jsonEncode({
+          'childId': widget.childId,
+          'language': widget.settings.language,
+          'history': _chatHistory,
+          'userMessage': userMessage,
+        }),
+      ).timeout(const Duration(seconds: 15));
+      if (res.statusCode == 200) {
+        final d = jsonDecode(res.body) as Map<String, dynamic>;
+        if (d['say'] is String) return d;
+      }
+    } catch (e) {
+      debugPrint('StoryScreen: /agent/turn failed: $e');
+    }
+    return null;
+  }
+
+  // If still chatting, listen again. After 3 turns, force story generation.
+  Future<void> _doConverseTurn(String userSaid) async {
+    setState(() {
+      _state = _State.thinking;
+      _thinkingForTurn = true;
+    });
+    try {
+      AgentParsed parsed;
+      final cloudReply = await _tryCloudAgentTurn(userSaid);
+      if (cloudReply != null) {
+        // Cloud returned structured JSON — use it directly.
+        final phase = cloudReply['phase'] as String? ?? 'chatting';
+        final say = cloudReply['say'] as String? ?? '';
+        final brief = cloudReply['brief'] as String?;
+        parsed = (say: say, phase: phase, brief: brief);
+        _chatHistory.add({'role': 'user', 'content': userSaid});
+        _chatHistory.add({'role': 'assistant', 'content': say});
+        debugPrint('StoryScreen: cloud agent turn: phase=$phase say=${say.substring(0, say.length.clamp(0, 120))}');
+      } else {
+        // Fall back to on-device LLM.
+        final buf = StringBuffer();
+        await for (final token in LocalLlm.instance.chatTurn(userSaid)) {
+          buf.write(token);
+          // Abort early if the model enters a repetition loop (same word 8+ times in a row)
+          final current = buf.toString();
+          if (current.length > 80) {
+            final words = current.split(RegExp(r'[\s,.]+')).where((w) => w.length > 2).toList();
+            if (words.length >= 8) {
+              final last = words.last;
+              if (words.sublist(words.length - 8).every((w) => w == last)) {
+                debugPrint('StoryScreen: repetition loop detected — aborting generation');
+                break;
+              }
+            }
+          }
+        }
+        var response = buf.toString().trim();
+        response = _derepeat(response);
+        debugPrint('StoryScreen: local agent response: ${response.substring(0, response.length.clamp(0, 200))}');
+        parsed = _parseAgentResponse(response);
+      }
+      _agentTurns++;
+      if (!mounted) return;
+
+      if (parsed.phase == 'ready' && parsed.brief != null) {
+        // Transition: speak the line, then generate the story.
+        setState(() { _state = _State.conversing; _currentSentence = parsed.say; });
+        await _speakLine(parsed.say);
+        if (!mounted) return;
+        _conversationMode = false;
+        await LocalLlm.instance.closeChat();
+        setState(() => _state = _State.thinking);
+        await _generateAndSpeak(parsed.brief!);
+      } else if (_agentTurns >= 3) {
+        // Max turns reached — use the whole transcript as the story topic.
+        _conversationMode = false;
+        await LocalLlm.instance.closeChat();
+        final topic = userSaid.isNotEmpty ? userSaid : _defaultStoryTopic();
+        setState(() => _state = _State.thinking);
+        await _generateAndSpeak(topic);
+      } else {
+        // Still chatting — speak the reply and listen again.
+        setState(() { _state = _State.conversing; _currentSentence = parsed.say; });
+        await _speakLine(parsed.say);
+        if (!mounted) return;
+        setState(() {
+          _state = _State.listening;
+          _committed = '';
+          _partial = '';
+        });
+        await _startListening();
+      }
+    } catch (e) {
+      debugPrint('StoryScreen: _doConverseTurn failed: $e');
+      if (!mounted) return;
+      _conversationMode = false;
+      await LocalLlm.instance.closeChat();
+      setState(() => _state = _State.thinking);
+      await _generateAndSpeak(userSaid.isNotEmpty ? userSaid : _defaultStoryTopic());
+    }
+  }
+
+  AgentParsed _parseAgentResponse(String text) =>
+      parseAgentResponse(text, widget.settings.language);
+
+  // Remove trailing repetition artifacts from local LLM output.
+  // Splits on sentences/commas, finds where a word starts repeating 4+ times, truncates.
+  static String _derepeat(String text) {
+    final words = text.split(RegExp(r'[\s,]+'));
+    if (words.length < 8) return text;
+    for (var i = words.length - 1; i >= 4; i--) {
+      final w = words[i];
+      if (w.length < 3) continue;
+      var run = 1;
+      while (i - run >= 0 && words[i - run] == w) run++;
+      if (run >= 4) {
+        // Truncate before the run and find the last sentence boundary
+        final truncated = words.sublist(0, i - run + 1).join(' ');
+        final lastPunct = truncated.lastIndexOf(RegExp(r'[.!?]'));
+        return lastPunct > 0 ? truncated.substring(0, lastPunct + 1).trim() : truncated.trim();
+      }
+    }
+    return text;
   }
 
   Future<void> _generateAndSpeak(String userInput) async {
     _thinkingForTurn = false;
     _lastInput = userInput;
+    final choice = userInput;
 
-    // The LLM runs on-device now (the Worker can't reach Nebula). Need a model.
-    if (!widget.settings.anyLlmInstalled) {
-      setState(() => _state = _State.setup);
-      return;
-    }
-
-    // 1. Build the prompt. Prefer the backend (it adds per-child memory/recall from
-    //    InstantDB), but fall back to a local prompt so generation works even when
-    //    the backend is unreachable — the whole point is to not depend on the network.
+    // 1. Try the cloud backend first (Qwen3 via DashScope — much better quality).
+    //    Falls back to on-device only when the network is unavailable.
+    String storyText;
     String system;
     String user;
-    final choice = userInput;
+
+    final cloudResult = await _tryCloudGenerate(userInput);
+    if (cloudResult != null) {
+      storyText = cloudResult.text;
+      system = cloudResult.system;
+      user = cloudResult.user;
+    } else {
+      // 2. Off-line fallback: on-device Qwen2.5-1.5B.
+      if (!mounted) return;
+      final localResult = await _tryLocalGenerate(userInput);
+      if (localResult == null) return; // error already surfaced
+      storyText = localResult.text;
+      system = localResult.system;
+      user = localResult.user;
+    }
+    if (!mounted) return;
+
+    // 3. Safety check.
+    if (!isStorySafe(storyText)) {
+      debugPrint('StoryScreen: story failed safety check → safe fallback');
+      storyText = safeFallbackStory(widget.childName);
+    }
+
+    // 4. Narrate and persist.
+    _sentences = splitSentences(storyText);
+    _cursor = 0;
+    unawaited(_persistStory(choice: choice, text: storyText, system: system, user: user));
+    await _narrateFrom(0);
+  }
+
+  // Cloud generation via /story/tell (Qwen3 on DashScope). Returns null on any failure.
+  Future<({String text, String system, String user})?> _tryCloudGenerate(String userInput) async {
+    try {
+      final res = await http
+          .post(
+            Uri.parse('${widget.apiBase}/story/tell'),
+            headers: {...widget.apiHeaders, 'content-type': 'application/json'},
+            body: jsonEncode({
+              'childId': widget.childId,
+              'choice': userInput,
+              'language': widget.settings.language,
+            }),
+          )
+          .timeout(const Duration(seconds: 45));
+      if (res.statusCode == 200) {
+        final d = jsonDecode(res.body) as Map<String, dynamic>;
+        final text = (d['text'] as String?)?.trim() ?? '';
+        if (text.isNotEmpty) {
+          return (
+            text: text,
+            system: (d['system'] as String?) ?? _localStorySystem(),
+            user: (d['user'] as String?) ?? _localStoryUser(userInput),
+          );
+        }
+      }
+      debugPrint('StoryScreen: /story/tell ${res.statusCode} → local fallback');
+    } catch (e) {
+      debugPrint('StoryScreen: /story/tell failed → local fallback: $e');
+    }
+    return null;
+  }
+
+  // Local generation via on-device Qwen2.5-1.5B. Returns null and surfaces error on failure.
+  Future<({String text, String system, String user})?> _tryLocalGenerate(String userInput) async {
+    // Try to get a personalized prompt from the backend first.
+    String system;
+    String user;
     try {
       final res = await http
           .post(
@@ -452,84 +781,88 @@ class _StoryScreenState extends State<StoryScreen>
               'language': widget.settings.language,
             }),
           )
-          .timeout(const Duration(seconds: 12));
+          .timeout(const Duration(seconds: 10));
       if (res.statusCode == 200) {
         final d = jsonDecode(res.body) as Map<String, dynamic>;
         system = d['system'] as String? ?? _localStorySystem();
         user = d['user'] as String? ?? _localStoryUser(userInput);
       } else {
-        debugPrint('StoryScreen: /story/prompt ${res.statusCode} → local prompt');
         system = _localStorySystem();
         user = _localStoryUser(userInput);
       }
-    } catch (e) {
-      debugPrint('StoryScreen: /story/prompt failed → local prompt: $e');
+    } catch (_) {
       system = _localStorySystem();
       user = _localStoryUser(userInput);
     }
-    if (!mounted) return;
-
-    // 2. Generate the story fully on-device.
-    final engine = widget.settings.llmEngine;
-    String storyText;
     try {
+      const engine = LlmEngine.qwen25_15b;
       await LocalLlm.instance.activate(
         modelType: engine.modelType,
         fileType: engine.fileType,
         url: engine.url,
       );
       final buf = StringBuffer();
-      await for (final delta
-          in LocalLlm.instance.generate(system: system, user: user)) {
+      await for (final delta in LocalLlm.instance.generate(
+        system: system,
+        user: user,
+        maxTokens: 1024,
+      )) {
         buf.write(delta);
       }
-      storyText = buf.toString().trim();
+      final text = cleanLlmOutput(buf.toString());
+      if (text.isEmpty) {
+        _showGenError(_l(widget.settings.language,
+          en: 'The storyteller didn\'t generate a story. Please try again.',
+          de: 'Yarnia konnte keine Geschichte erstellen. Bitte nochmal.',
+          fr: 'Yarnia n\'a pas pu créer une histoire. Réessaie.',
+          es: 'Yarnia no pudo crear una historia. Inténtalo de nuevo.',
+        ));
+        return null;
+      }
+      return (text: text, system: system, user: user);
     } catch (e) {
-      debugPrint('StoryScreen: local LLM generation failed: $e');
-      _showGenError('The storyteller model could not run on this device.');
-      return;
+      debugPrint('StoryScreen: local LLM failed: $e');
+      _showGenError(_l(widget.settings.language,
+        en: 'The storyteller ran into a problem. Please try again.',
+        de: 'Yarnia hatte ein Problem. Bitte nochmal.',
+        fr: 'Yarnia a eu un problème. Réessaie.',
+        es: 'Yarnia tuvo un problema. Inténtalo de nuevo.',
+      ));
+      return null;
     }
-    if (!mounted) return;
-
-    // 3. Safety-vet on-device; fall back to a guaranteed-safe story if needed.
-    if (storyText.isEmpty || !isStorySafe(storyText)) {
-      debugPrint('StoryScreen: story empty/unsafe → safe fallback');
-      storyText = safeFallbackStory(widget.childName);
-    }
-
-    // 4. Narrate via the existing checkpoint loop, then persist (best-effort).
-    _sentences = splitSentences(storyText);
-    _cursor = 0;
-    unawaited(_persistStory(choice: choice, text: storyText, system: system, user: user));
-    await _narrateFrom(0);
   }
 
   // Local fallback prompt (mirrors api/src/prompt.ts core, without the recall layer
   // which needs the backend). Used when /story/prompt is unreachable.
   String _localStorySystem() {
     final n = widget.childName;
-    return 'You are Yarnia, a warm, calm bedtime storyteller for the child named $n. '
-        'The story must be gentle, soothing, and nonviolent — no peril, no scary or '
-        'startling moments. The tone winds the child DOWN toward sleep. Keep it short '
-        '(a handful of short paragraphs).';
+    final langName = switch (widget.settings.language) {
+      'de' => 'German',
+      'fr' => 'French',
+      'es' => 'Spanish',
+      _ => 'English',
+    };
+    return 'You are Yarnia, a warm bedtime storyteller. '
+        'Tell a story to $n in $langName. '
+        'Write ONLY in $langName — not English, not any other language. '
+        'The story must be gentle, soothing, and calm — no danger, no violence. '
+        'The tone is cozy and dreamy, slowly winding $n toward sleep. '
+        'Write 4–5 short flowing paragraphs. Give characters names and feelings. '
+        'End with the character drifting peacefully to sleep. '
+        'IMPORTANT: Write continuous prose — NO numbered lists, NO bullet points, NO headers. '
+        'Write ONLY the story text itself, nothing else.';
   }
 
   String _localStoryUser(String choice) {
     final n = widget.childName;
-    final parts = [
-      'Tell $n a short bedtime story.',
-      'Tonight $n chose this to be in the story: $choice.',
-    ];
-    final lang = switch (widget.settings.language) {
+    final langName = switch (widget.settings.language) {
       'de' => 'German',
       'fr' => 'French',
       'es' => 'Spanish',
-      _ => null,
+      _ => 'English',
     };
-    if (lang != null) {
-      parts.add('Tell the entire story in $lang. Every word must be in that language.');
-    }
-    return parts.join(' ');
+    return 'Write a bedtime story in $langName for $n featuring: $choice. '
+        'Flowing prose only. Begin the story immediately.';
   }
 
   // Best-effort save so per-child memory/recall keeps working next session.
@@ -638,18 +971,12 @@ class _StoryScreenState extends State<StoryScreen>
   }
 
   Future<void> _narrateSystemFrom() async {
-    await _systemTts.setLanguage(widget.settings.locale);
-    await _systemTts.setSpeechRate(0.5);
-
     while (_cursor < _sentences.length && !_interruptPending) {
       if (!mounted) return;
       final sentence = _sentences[_cursor];
       setState(() => _currentSentence = sentence);
-      final completer = Completer<void>();
-      _systemTts.setCompletionHandler(() => completer.complete());
-      await _systemTts.speak(sentence);
-      await completer.future;
-      _cursor++; // advance AFTER the sentence finishes = checkpoint
+      await _speakSystemTts(sentence);
+      _cursor++;
     }
   }
 
@@ -662,6 +989,8 @@ class _StoryScreenState extends State<StoryScreen>
     final startIndex = _cursor;
 
     _ttsSession?.dispose();
+    _ttsSession = null;
+    _ttsSpawnFuture = null; // prewarm consumed; next _speakLine will spawn fresh
     StreamSubscription<int?>? idxSub;
     try {
       final session = await TtsSession.spawn(
@@ -691,12 +1020,20 @@ class _StoryScreenState extends State<StoryScreen>
 
       await for (final chunk in session.speakStream(
         sentenceController.stream,
+        speed: widget.settings.ttsSpeed,
         refWavPath: refWavPath,
       )) {
         if (!mounted) return;
         await playlist.add(AudioSource.uri(Uri.file(chunk.wavPath)));
         if (!playerStarted) {
-          await _player.setAudioSource(playlist);
+          await _player.stop(); // reset any prior state
+          await _player.setVolume(1.0);
+          await _player.setAudioSource(playlist, initialIndex: 0, initialPosition: Duration.zero);
+          // Log errors so we can see if playback fails.
+          _player.playbackEventStream.listen(
+            (_) {},
+            onError: (e, st) => debugPrint('StoryScreen: just_audio error: $e'),
+          );
           // Show the sentence that is actually playing, not the one being synthesized.
           idxSub = _player.currentIndexStream.listen((i) {
             if (i == null || !mounted) return;
@@ -705,7 +1042,8 @@ class _StoryScreenState extends State<StoryScreen>
               setState(() => _currentSentence = _sentences[si]);
             }
           });
-          unawaited(_player.play());
+          debugPrint('StoryScreen: starting audio playback wav=${chunk.wavPath}');
+          await _player.play();
           playerStarted = true;
         }
         if (_interruptPending) {
@@ -726,9 +1064,11 @@ class _StoryScreenState extends State<StoryScreen>
         _cursor = (startIndex + heardIdx + 1).clamp(0, _sentences.length);
       } else {
         // Ran through every sentence — wait for playback to drain.
-        await _player.playerStateStream.firstWhere(
-          (s) => s.processingState == ProcessingState.completed,
-        );
+        await _player.playerStateStream.firstWhere((s) {
+          debugPrint('StoryScreen: player state=${s.processingState} playing=${s.playing}');
+          return s.processingState == ProcessingState.completed ||
+              s.processingState == ProcessingState.idle;
+        });
         _cursor = _sentences.length;
       }
     } catch (e) {
@@ -763,8 +1103,10 @@ class _StoryScreenState extends State<StoryScreen>
   void _restart() {
     _player.stop();
     _systemTts.stop();
+    _conversationMode = false;
+    _agentTurns = 0;
+    LocalLlm.instance.closeChat().ignore();
     setState(() {
-      _state = _State.listening;
       _committed = '';
       _partial = '';
       _decoding = false;
@@ -774,82 +1116,114 @@ class _StoryScreenState extends State<StoryScreen>
       _cursor = 0;
       _interruptPending = false;
       _pendingHandsFreeUtterance = null;
+      _genError = null;
+      _state = _State.listening;
     });
+    _startListening();
   }
 
   // ── Phase 2: conversation turn ────────────────────────────────────────────
 
-  /// Send the child's utterance to the backend and apply the decision.
+  /// Send the child's utterance to the on-device LLM (when active) or the backend,
+  /// then apply the decision to the narration (continue / answer / revise).
   Future<void> _sendTurn(String utterance) async {
     setState(() {
       _state = _State.thinking;
       _thinkingForTurn = true;
     });
     try {
-      final res = await http
-          .post(
-            Uri.parse('${widget.apiBase}/story/turn'),
-            headers: {...widget.apiHeaders, 'content-type': 'application/json'},
-            body: jsonEncode({
-              'childId': widget.childId,
-              'sentences': _sentences,
-              'cursor': _cursor,
-              'utterance': utterance,
-              'language': widget.settings.language,
-            }),
-          )
-          .timeout(_genTimeout);
+      final decision = LocalLlm.instance.hasActiveModel
+          ? await _sendTurnLocal(utterance)
+          : await _sendTurnApi(utterance);
       if (!mounted) return;
-      if (res.statusCode != 200) {
-        debugPrint('StoryScreen: /story/turn returned ${res.statusCode}');
-        await _narrateFrom(_cursor);
-        return;
-      }
-      final Map<String, dynamic> decision;
-      try {
-        decision = jsonDecode(res.body) as Map<String, dynamic>;
-      } catch (e) {
-        debugPrint('StoryScreen: failed to parse /story/turn response: $e');
-        await _narrateFrom(_cursor);
-        return;
-      }
-
-      final intent = decision['intent'] as String? ?? 'continue';
-      final say = decision['say'] as String?;
-      final resumeAt = (decision['resumeAt'] as num?)?.toInt() ?? _cursor;
-
-      switch (intent) {
-        case 'answer':
-          if (say != null && say.isNotEmpty) await _speakLine(say);
-          if (!mounted) return;
-          // Show a "Continue?" prompt — the user can tap Continue or speak again.
-          setState(() => _state = _State.paused);
-
-        case 'revise':
-          final revision = decision['revision'] as Map<String, dynamic>?;
-          final newSentences = (revision?['sentences'] as List?)
-              ?.map((e) => e as String)
-              .toList();
-          final fromSentence = (revision?['fromSentence'] as num?)?.toInt();
-          if (newSentences != null && newSentences.isNotEmpty && fromSentence != null) {
-            _sentences.replaceRange(fromSentence, _sentences.length, newSentences);
-          }
-          final revSay = say ?? "Okay, I changed that part — let me read it again.";
-          await _speakLine(revSay);
-          if (!mounted) return;
-          await _narrateFrom(fromSentence ?? resumeAt);
-
-        case 'continue':
-        default:
-          if (say != null && say.isNotEmpty) await _speakLine(say);
-          if (!mounted) return;
-          await _narrateFrom(resumeAt);
-      }
+      await _applyTurnDecision(decision);
     } catch (e) {
       debugPrint('StoryScreen: _sendTurn failed: $e');
       if (mounted) await _narrateFrom(_cursor);
     }
   }
+
+  Future<TurnDecision> _sendTurnLocal(String utterance) async {
+    final prompt = buildLocalTurnPrompt(
+      childName: widget.childName,
+      sentences: _sentences,
+      cursor: _cursor,
+      utterance: utterance,
+      language: widget.settings.language,
+    );
+    final buf = StringBuffer();
+    await for (final token in LocalLlm.instance.generate(
+      system: prompt.system,
+      user: prompt.user,
+      maxTokens: 512,
+      temperature: 0.3,
+    )) {
+      buf.write(token);
+    }
+    debugPrint('StoryScreen: local turn raw: ${buf.toString().substring(0, buf.length.clamp(0, 300))}');
+    return interpretTurn(buf.toString(), _cursor, _sentences.length);
+  }
+
+  Future<TurnDecision> _sendTurnApi(String utterance) async {
+    final res = await http
+        .post(
+          Uri.parse('${widget.apiBase}/story/turn'),
+          headers: {...widget.apiHeaders, 'content-type': 'application/json'},
+          body: jsonEncode({
+            'childId': widget.childId,
+            'sentences': _sentences,
+            'cursor': _cursor,
+            'utterance': utterance,
+            'language': widget.settings.language,
+          }),
+        )
+        .timeout(_genTimeout);
+    if (res.statusCode != 200) {
+      debugPrint('StoryScreen: /story/turn returned ${res.statusCode}');
+      return TurnDecision.safe(_cursor);
+    }
+    try {
+      return interpretTurn(res.body, _cursor, _sentences.length);
+    } catch (e) {
+      debugPrint('StoryScreen: failed to parse /story/turn response: $e');
+      return TurnDecision.safe(_cursor);
+    }
+  }
+
+  Future<void> _applyTurnDecision(TurnDecision decision) async {
+    switch (decision.intent) {
+      case TurnIntent.answer:
+        if (decision.say != null && decision.say!.isNotEmpty) {
+          await _speakLine(decision.say!);
+        }
+        if (!mounted) return;
+        setState(() => _state = _State.paused);
+
+      case TurnIntent.revise:
+        final rev = decision.revision;
+        if (rev != null && rev.sentences.isNotEmpty) {
+          _sentences.replaceRange(rev.fromSentence, _sentences.length, rev.sentences);
+        }
+        final revSay = decision.say ?? _defaultReviseLine(widget.settings.language);
+        await _speakLine(revSay);
+        if (!mounted) return;
+        await _narrateFrom(rev?.fromSentence ?? decision.resumeAt);
+
+      case TurnIntent.continueStory:
+        if (decision.say != null && decision.say!.isNotEmpty) {
+          await _speakLine(decision.say!);
+        }
+        if (!mounted) return;
+        await _narrateFrom(decision.resumeAt);
+    }
+  }
+
+  String _defaultReviseLine(String lang) => switch (lang) {
+    'de' => 'Okay, ich ändere das — lass mich neu lesen.',
+    'fr' => 'D\'accord, je change ça — laisse-moi relire.',
+    'es' => 'Bien, lo cambio — deja que vuelva a leer.',
+    _ => 'Okay, I changed that part — let me read it again.',
+  };
 
   // ── Paused: capture one utterance from the child, then send it as a turn ────
 
@@ -919,52 +1293,79 @@ class _StoryScreenState extends State<StoryScreen>
   Future<void> _speakLine(String line) async {
     final engine = widget.settings.effectiveEngine;
     if (engine.isSystem) {
-      await _systemTts.setLanguage(widget.settings.locale);
-      await _systemTts.setSpeechRate(0.5);
-      final completer = Completer<void>();
-      _systemTts.setCompletionHandler(() => completer.complete());
-      await _systemTts.speak(line);
-      await completer.future;
+      await _speakSystemTts(line);
     } else {
       try {
         final support = await getApplicationSupportDirectory();
         final modelDir = p.join(support.path, engine.modelDir!);
         final refWavPath = _refWavForEngine(engine, modelDir);
-        // Spawn a session if none exists yet (e.g. the greeting speaks before any
-        // story narration has created one) — otherwise the line is silently dropped.
+        // Reuse prewarm future if the session isn't ready yet (avoids spawning a
+        // second isolate and racing with the first cold-start load).
         var session = _ttsSession;
         if (session == null) {
-          session = await TtsSession.spawn(
-            kind: engine.kind!,
-            modelDir: modelDir,
-            outDir: support.path,
-            seed: engine.seed,
-          );
+          if (_ttsSpawnFuture != null) {
+            session = await _ttsSpawnFuture!;
+          } else {
+            session = await TtsSession.spawn(
+              kind: engine.kind!,
+              modelDir: modelDir,
+              outDir: support.path,
+              seed: engine.seed,
+            );
+          }
           _ttsSession = session;
         }
-        final sc = StreamController<String>();
-        sc.add(line);
-        await sc.close();
-        await for (final chunk in session.speakStream(sc.stream, refWavPath: refWavPath)) {
+        // Use session.speak() so sentence splitting and stream setup are handled
+        // correctly (no await on sc.close() which can race with the listener).
+        // Use AudioSource.uri (not Concatenating) for simpler completion semantics.
+        await for (final chunk in session.speak(line, speed: widget.settings.ttsSpeed, refWavPath: refWavPath)) {
           if (!mounted) return;
-          final playlist = ConcatenatingAudioSource(children: []);
-          await playlist.add(AudioSource.uri(Uri.file(chunk.wavPath)));
-          await _player.setAudioSource(playlist);
+          debugPrint('StoryScreen: _speakLine chunk ${chunk.index} wav=${chunk.wavPath}');
+          await _player.stop();
+          await _player.setVolume(1.0);
+          await _player.setAudioSource(AudioSource.uri(Uri.file(chunk.wavPath)));
           await _player.play();
-          await _player.playerStateStream.firstWhere(
-            (s) => s.processingState == ProcessingState.completed,
-          );
+          debugPrint('StoryScreen: _speakLine playing, waiting for completion');
+          await _player.playerStateStream.firstWhere((s) {
+            debugPrint('StoryScreen: _speakLine state=${s.processingState}');
+            return s.processingState == ProcessingState.completed ||
+                s.processingState == ProcessingState.idle;
+          }).timeout(const Duration(seconds: 30), onTimeout: () {
+            debugPrint('StoryScreen: _speakLine player timeout — audio done or stalled');
+            return _player.playerState;
+          });
+          debugPrint('StoryScreen: _speakLine chunk done');
         }
+        debugPrint('StoryScreen: _speakLine all chunks done');
       } catch (e) {
-        debugPrint('StoryScreen: _speakLine pocket TTS failed: $e');
-        // Fall back to system TTS for the line.
-        await _systemTts.setLanguage(widget.settings.locale);
-        await _systemTts.setSpeechRate(0.5);
-        final completer = Completer<void>();
-        _systemTts.setCompletionHandler(() => completer.complete());
-        await _systemTts.speak(line);
-        await completer.future;
+        debugPrint('StoryScreen: _speakLine on-device TTS failed: $e');
+        // Fall back to system TTS with a timeout so a broken/blocked TTS
+        // engine can't hang the entire app (happens on GrapheneOS).
+        await _speakSystemTts(line);
       }
+    }
+  }
+
+  /// Speak via system TTS. Includes a 6s timeout because on GrapheneOS the
+  /// speech services app is BLOCKED by AppsFilter — the completion callback
+  /// never fires, which would hang the caller indefinitely without the cap.
+  Future<void> _speakSystemTts(String line) async {
+    try {
+      await _systemTts.setLanguage(widget.settings.locale);
+      await _systemTts.setSpeechRate(0.5);
+      final completer = Completer<void>();
+      _systemTts.setCompletionHandler(() {
+        if (!completer.isCompleted) completer.complete();
+      });
+      await _systemTts.speak(line);
+      await completer.future.timeout(
+        const Duration(seconds: 6),
+        onTimeout: () {
+          debugPrint('StoryScreen: system TTS timed out (likely blocked on GrapheneOS)');
+        },
+      );
+    } catch (e) {
+      debugPrint('StoryScreen: system TTS failed: $e');
     }
   }
 
@@ -988,31 +1389,67 @@ class _StoryScreenState extends State<StoryScreen>
                       onDownload: _downloadStoryteller,
                       onSettings: _openSettings,
                     ),
-                  _State.greeting => _GreetingView(text: _currentSentence),
+                  _State.greeting => _GreetingView(text: _currentSentence, pulse: _pulse),
+                  _State.conversing => _ConversationView(
+                      text: _currentSentence,
+                      language: widget.settings.language,
+                      pulse: _pulse,
+                      onSkip: _skipConversation,
+                    ),
                   _State.error => _ErrorView(
                       message: _genError ?? 'Something went wrong.',
                       onRetry: _retryGeneration,
                       onStartOver: _restart,
                       onSettings: _openSettings,
                     ),
-                  _State.listening => _ListeningView(
-                      childName: widget.childName,
-                      transcript: _heard,
-                      status: _sttStatus,
-                      error: _sttError,
-                      speechReady: _speechReady,
-                      pulse: _pulse,
-                      level: _micLevel,
-                      onMicTap: _isListening
-                          ? _stopListeningAndGenerate
-                          : _startListening,
-                      isListening: _isListening,
+                  _State.listening => Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _ListeningView(
+                          childName: widget.childName,
+                          language: widget.settings.language,
+                          transcript: _heard,
+                          status: _sttStatus,
+                          error: _sttError,
+                          speechReady: _speechReady,
+                          pulse: _pulse,
+                          level: _micLevel,
+                          onMicTap: _isListening
+                              ? _stopListeningAndGenerate
+                              : _startListening,
+                          isListening: _isListening,
+                          textController: _textController,
+                          onTextSubmit: _submitTyped,
+                        ),
+                        if (_conversationMode) ...[
+                          const SizedBox(height: 20),
+                          TextButton(
+                            onPressed: _skipConversation,
+                            child: Text(
+                              switch (widget.settings.language) {
+                                'de' => 'Einfach erzählen →',
+                                'fr' => 'Juste raconter →',
+                                'es' => 'Solo contar →',
+                                _ => 'Just tell me a story →',
+                              },
+                              style: TextStyle(
+                                fontFamily: 'Lora',
+                                color: cream.withOpacity(0.45),
+                                fontSize: 13,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                   _State.thinking => _ThinkingView(
-                      childName: widget.childName, forTurn: _thinkingForTurn),
+                      childName: widget.childName,
+                      language: widget.settings.language,
+                      forTurn: _thinkingForTurn),
                   _State.narrating => _NarratingView(
                       sentence: _currentSentence,
                       onInterrupt: _requestInterrupt,
+                      pulse: _pulse,
                     ),
                   _State.paused => _PausedView(
                       onContinue: _resumeFromPaused,
@@ -1024,12 +1461,16 @@ class _StoryScreenState extends State<StoryScreen>
                       speechReady: _speechReady,
                       transcript: _heard,
                       status: _sttStatus,
+                      language: widget.settings.language,
                       pulse: _pulse,
                       level: _micLevel,
+                      textController: _textController,
+                      onTextSubmit: _submitTyped,
                     ),
                   _State.done => _DoneView(
                       onAgain: _restart,
                       onGoodnight: widget.onDone,
+                      language: widget.settings.language,
                     ),
                 },
               ),
@@ -1053,8 +1494,13 @@ class _StoryScreenState extends State<StoryScreen>
   }
 }
 
+// Locale-aware label helper — keeps switch expressions off widget build methods.
+String _l(String lang, {required String en, required String de, required String fr, required String es}) =>
+    switch (lang) { 'de' => de, 'fr' => fr, 'es' => es, _ => en };
+
 class _ListeningView extends StatelessWidget {
   final String childName;
+  final String language;
   final String transcript;
   final String status;
   final String? error;
@@ -1063,9 +1509,12 @@ class _ListeningView extends StatelessWidget {
   final ValueNotifier<double> level;
   final VoidCallback onMicTap;
   final bool isListening;
+  final TextEditingController textController;
+  final Future<void> Function(String) onTextSubmit;
 
   const _ListeningView({
     required this.childName,
+    required this.language,
     required this.transcript,
     required this.status,
     required this.error,
@@ -1074,6 +1523,8 @@ class _ListeningView extends StatelessWidget {
     required this.level,
     required this.onMicTap,
     required this.isListening,
+    required this.textController,
+    required this.onTextSubmit,
   });
 
   @override
@@ -1082,7 +1533,12 @@ class _ListeningView extends StatelessWidget {
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         Text(
-          "Who's in tonight's story,\n$childName?",
+          _l(language,
+            en: "Who's in tonight's story,\n$childName?",
+            de: 'Worum soll deine Geschichte gehen,\n$childName?',
+            fr: 'De quoi parlera ton histoire,\n$childName?',
+            es: '¿De qué tratará tu historia,\n$childName?',
+          ),
           style: const TextStyle(
             fontFamily: 'Fraunces',
             fontSize: 26,
@@ -1156,7 +1612,9 @@ class _ListeningView extends StatelessWidget {
         _Caption(
           text: transcript,
           status: status,
-          emptyHint: isListening ? 'Listening…' : 'Tap to speak',
+          emptyHint: isListening
+              ? _l(language, en: 'Listening…', de: 'Ich höre…', fr: "J'écoute…", es: 'Escuchando…')
+              : _l(language, en: 'Tap to speak', de: 'Tippe zum Sprechen', fr: 'Appuie pour parler', es: 'Toca para hablar'),
         ),
         if (error != null) ...[
           const SizedBox(height: 12),
@@ -1170,6 +1628,12 @@ class _ListeningView extends StatelessWidget {
             textAlign: TextAlign.center,
           ),
         ],
+        const SizedBox(height: 20),
+        _TextEntryField(
+          controller: textController,
+          language: language,
+          onSubmit: onTextSubmit,
+        ),
       ],
     );
   }
@@ -1218,11 +1682,13 @@ class _Caption extends StatelessWidget {
   }
 }
 
-// Spoken-greeting screen: shows the greeting text while Yarnia says it, before
-// auto-listening. Feels like an agent welcoming the child.
-class _GreetingView extends StatelessWidget {
+// Yarnia's spoken reply during the pre-story conversation, with a skip backstop.
+class _ConversationView extends StatelessWidget {
   final String text;
-  const _GreetingView({required this.text});
+  final String language;
+  final Animation<double> pulse;
+  final VoidCallback onSkip;
+  const _ConversationView({required this.text, required this.language, required this.pulse, required this.onSkip});
 
   @override
   Widget build(BuildContext context) {
@@ -1230,7 +1696,100 @@ class _GreetingView extends StatelessWidget {
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         const Text('🌙', style: TextStyle(fontSize: 56)),
+        const SizedBox(height: 20),
+        AnimatedBuilder(
+          animation: pulse,
+          builder: (_, __) {
+            final t = pulse.value;
+            final h1 = 6 + (t - 1.0) * 56;
+            final h2 = 6 + ((t - 1.0) * 0.6) * 56;
+            final h3 = 6 + ((t - 1.0) * 0.85) * 56;
+            return Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                _AudioBar(height: h1),
+                const SizedBox(width: 5),
+                _AudioBar(height: h3),
+                const SizedBox(width: 5),
+                _AudioBar(height: h2),
+                const SizedBox(width: 5),
+                _AudioBar(height: h1 * 0.7),
+                const SizedBox(width: 5),
+                _AudioBar(height: h3 * 1.1),
+              ],
+            );
+          },
+        ),
+        const SizedBox(height: 20),
+        Text(
+          text.isEmpty ? '…' : text,
+          style: const TextStyle(
+            fontFamily: 'Fraunces',
+            fontSize: 22,
+            fontWeight: FontWeight.w600,
+            color: cream,
+            height: 1.5,
+          ),
+          textAlign: TextAlign.center,
+        ),
         const SizedBox(height: 28),
+        TextButton(
+          onPressed: onSkip,
+          child: Text(
+            _l(language, en: 'Skip →', de: 'Überspringen →', fr: 'Passer →', es: 'Saltar →'),
+            style: TextStyle(
+              fontFamily: 'Lora',
+              color: cream.withOpacity(0.35),
+              fontSize: 12,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// Spoken-greeting screen: shows the greeting text while Yarnia says it, before
+// auto-listening. Feels like an agent welcoming the child.
+class _GreetingView extends StatelessWidget {
+  final String text;
+  final Animation<double> pulse;
+  const _GreetingView({required this.text, required this.pulse});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        const Text('🌙', style: TextStyle(fontSize: 56)),
+        const SizedBox(height: 20),
+        // Audio bars — shows Yarnia is loading her voice / speaking.
+        AnimatedBuilder(
+          animation: pulse,
+          builder: (_, __) {
+            final t = pulse.value;
+            final h1 = 6 + (t - 1.0) * 56;
+            final h2 = 6 + ((t - 1.0) * 0.6) * 56;
+            final h3 = 6 + ((t - 1.0) * 0.85) * 56;
+            return Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                _AudioBar(height: h1),
+                const SizedBox(width: 5),
+                _AudioBar(height: h3),
+                const SizedBox(width: 5),
+                _AudioBar(height: h2),
+                const SizedBox(width: 5),
+                _AudioBar(height: h1 * 0.7),
+                const SizedBox(width: 5),
+                _AudioBar(height: h3 * 1.1),
+              ],
+            );
+          },
+        ),
+        const SizedBox(height: 20),
         Text(
           text.isEmpty ? '…' : text,
           style: const TextStyle(
@@ -1388,8 +1947,9 @@ class _SetupView extends StatelessWidget {
 
 class _ThinkingView extends StatelessWidget {
   final String childName;
+  final String language;
   final bool forTurn; // a mid-story conversation turn vs the initial story
-  const _ThinkingView({required this.childName, this.forTurn = false});
+  const _ThinkingView({required this.childName, required this.language, this.forTurn = false});
 
   @override
   Widget build(BuildContext context) {
@@ -1399,7 +1959,9 @@ class _ThinkingView extends StatelessWidget {
         const Text('🌙', style: TextStyle(fontSize: 56)),
         const SizedBox(height: 24),
         Text(
-          forTurn ? 'One moment…' : 'Weaving your story…',
+          forTurn
+            ? _l(language, en: 'One moment…', de: 'Einen Moment…', fr: 'Un instant…', es: 'Un momento…')
+            : _l(language, en: 'Weaving your story…', de: 'Deine Geschichte wird gewoben…', fr: 'Ton histoire se tisse…', es: 'Tejiendo tu historia…'),
           style: TextStyle(
             fontFamily: 'Lora',
             color: cream.withOpacity(0.7),
@@ -1417,10 +1979,12 @@ class _ThinkingView extends StatelessWidget {
 class _NarratingView extends StatelessWidget {
   final String sentence;
   final VoidCallback onInterrupt;
+  final Animation<double> pulse;
 
   const _NarratingView({
     required this.sentence,
     required this.onInterrupt,
+    required this.pulse,
   });
 
   @override
@@ -1429,7 +1993,33 @@ class _NarratingView extends StatelessWidget {
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         const Text('🌙', style: TextStyle(fontSize: 56)),
-        const SizedBox(height: 32),
+        const SizedBox(height: 24),
+        // Audio bars — three bars pulsing at different phases to show narration is active.
+        AnimatedBuilder(
+          animation: pulse,
+          builder: (_, __) {
+            final t = pulse.value; // 1.0 → 1.25
+            final h1 = 6 + (t - 1.0) * 56; // tallest
+            final h2 = 6 + ((t - 1.0) * 0.6) * 56;
+            final h3 = 6 + ((t - 1.0) * 0.85) * 56;
+            return Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                _AudioBar(height: h1),
+                const SizedBox(width: 5),
+                _AudioBar(height: h3),
+                const SizedBox(width: 5),
+                _AudioBar(height: h2),
+                const SizedBox(width: 5),
+                _AudioBar(height: h1 * 0.7),
+                const SizedBox(width: 5),
+                _AudioBar(height: h3 * 1.1),
+              ],
+            );
+          },
+        ),
+        const SizedBox(height: 24),
         AnimatedSwitcher(
           duration: const Duration(milliseconds: 400),
           child: Text(
@@ -1466,6 +2056,23 @@ class _NarratingView extends StatelessWidget {
   }
 }
 
+class _AudioBar extends StatelessWidget {
+  final double height;
+  const _AudioBar({required this.height});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 4,
+      height: height.clamp(6.0, 36.0),
+      decoration: BoxDecoration(
+        color: gold.withOpacity(0.7),
+        borderRadius: BorderRadius.circular(2),
+      ),
+    );
+  }
+}
+
 /// Shown when narration is paused mid-story.
 /// Phase 1: resume or start over.
 /// Phase 2: also captures an utterance and sends a turn.
@@ -1477,8 +2084,11 @@ class _PausedView extends StatelessWidget {
   final bool speechReady;
   final String transcript;
   final String status;
+  final String language;
   final Animation<double> pulse;
   final ValueNotifier<double> level;
+  final TextEditingController textController;
+  final Future<void> Function(String) onTextSubmit;
 
   const _PausedView({
     required this.onContinue,
@@ -1488,8 +2098,11 @@ class _PausedView extends StatelessWidget {
     required this.speechReady,
     required this.transcript,
     required this.status,
+    required this.language,
     required this.pulse,
     required this.level,
+    required this.textController,
+    required this.onTextSubmit,
   });
 
   @override
@@ -1499,9 +2112,9 @@ class _PausedView extends StatelessWidget {
       children: [
         const Text('🌙', style: TextStyle(fontSize: 56)),
         const SizedBox(height: 24),
-        const Text(
-          'Paused',
-          style: TextStyle(
+        Text(
+          _l(language, en: 'Paused', de: 'Pausiert', fr: 'En pause', es: 'Pausado'),
+          style: const TextStyle(
             fontFamily: 'Fraunces',
             fontSize: 26,
             fontWeight: FontWeight.w700,
@@ -1569,15 +2182,26 @@ class _PausedView extends StatelessWidget {
         _Caption(
           text: transcript,
           status: status,
-          emptyHint: isListening ? 'Listening…' : 'Tap to talk, or Continue',
+          emptyHint: isListening
+              ? _l(language, en: 'Listening…', de: 'Ich höre…', fr: "J'écoute…", es: 'Escuchando…')
+              : _l(language, en: 'Tap to talk, or Continue', de: 'Tippe oder Weiter', fr: 'Appuie ou Continuer', es: 'Toca o Continuar'),
         ),
-        const SizedBox(height: 32),
-        _OutlineButton(label: 'Continue', onTap: onContinue),
+        const SizedBox(height: 16),
+        _TextEntryField(
+          controller: textController,
+          language: language,
+          onSubmit: onTextSubmit,
+        ),
+        const SizedBox(height: 24),
+        _OutlineButton(
+          label: _l(language, en: 'Continue', de: 'Weiter', fr: 'Continuer', es: 'Continuar'),
+          onTap: onContinue,
+        ),
         const SizedBox(height: 14),
         TextButton(
           onPressed: onStartOver,
           child: Text(
-            'Start over',
+            _l(language, en: 'Start over', de: 'Nochmal', fr: 'Recommencer', es: 'Empezar de nuevo'),
             style: TextStyle(
               fontFamily: 'Lora',
               color: cream.withOpacity(0.5),
@@ -1593,8 +2217,9 @@ class _PausedView extends StatelessWidget {
 class _DoneView extends StatelessWidget {
   final VoidCallback onAgain;
   final VoidCallback onGoodnight;
+  final String language;
 
-  const _DoneView({required this.onAgain, required this.onGoodnight});
+  const _DoneView({required this.onAgain, required this.onGoodnight, required this.language});
 
   @override
   Widget build(BuildContext context) {
@@ -1603,9 +2228,9 @@ class _DoneView extends StatelessWidget {
       children: [
         const Text('✨', style: TextStyle(fontSize: 56)),
         const SizedBox(height: 24),
-        const Text(
-          'Sweet dreams.',
-          style: TextStyle(
+        Text(
+          _l(language, en: 'Sweet dreams.', de: 'Träum süß.', fr: 'Fais de beaux rêves.', es: 'Que sueñes bonito.'),
+          style: const TextStyle(
             fontFamily: 'Fraunces',
             fontSize: 26,
             fontWeight: FontWeight.w700,
@@ -1613,12 +2238,15 @@ class _DoneView extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 40),
-        _OutlineButton(label: 'Another story', onTap: onAgain),
+        _OutlineButton(
+          label: _l(language, en: 'Another story', de: 'Noch eine Geschichte', fr: 'Une autre histoire', es: 'Otra historia'),
+          onTap: onAgain,
+        ),
         const SizedBox(height: 14),
         TextButton(
           onPressed: onGoodnight,
           child: Text(
-            'Goodnight 🌙',
+            _l(language, en: 'Goodnight 🌙', de: 'Gute Nacht 🌙', fr: 'Bonne nuit 🌙', es: 'Buenas noches 🌙'),
             style: TextStyle(
               fontFamily: 'Lora',
               color: cream.withAlpha(140),
@@ -1627,6 +2255,53 @@ class _DoneView extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+// Text entry alternative to voice — always visible, subtle. Works on any device
+// (no mic needed) and makes automated testing straightforward.
+class _TextEntryField extends StatelessWidget {
+  final TextEditingController controller;
+  final String language;
+  final Future<void> Function(String) onSubmit;
+
+  const _TextEntryField({
+    required this.controller,
+    required this.language,
+    required this.onSubmit,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final hint = _l(language,
+      en: 'or type here…',
+      de: 'oder hier tippen…',
+      fr: 'ou écrire ici…',
+      es: 'o escribe aquí…',
+    );
+    return TextField(
+      controller: controller,
+      style: TextStyle(fontFamily: 'Lora', color: cream, fontSize: 14),
+      textInputAction: TextInputAction.send,
+      onSubmitted: onSubmit,
+      decoration: InputDecoration(
+        hintText: hint,
+        hintStyle: TextStyle(fontFamily: 'Lora', color: cream.withAlpha(60), fontSize: 13),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(24),
+          borderSide: BorderSide(color: cream.withAlpha(40), width: 1),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(24),
+          borderSide: BorderSide(color: gold.withAlpha(160), width: 1.5),
+        ),
+        suffixIcon: IconButton(
+          icon: Icon(Icons.send_rounded, color: gold.withAlpha(140), size: 18),
+          onPressed: () => onSubmit(controller.text),
+        ),
+      ),
     );
   }
 }

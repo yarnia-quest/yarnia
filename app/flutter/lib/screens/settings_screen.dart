@@ -393,6 +393,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
               );
             }),
 
+            const SizedBox(height: 16),
+            _SpeedTile(
+              value: s.ttsSpeed,
+              onChanged: s.setTtsSpeed,
+            ),
+
             const SizedBox(height: 32),
 
             // ── Listener (STT) ────────────────────────────────────────────
@@ -769,6 +775,77 @@ class _StatusChip extends StatelessWidget {
 }
 
 // ── Toggle tile ─────────────────────────────────────────────────────────────
+
+class _SpeedTile extends StatelessWidget {
+  final double value;
+  final Future<void> Function(double) onChanged;
+  const _SpeedTile({required this.value, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    final label = value == 1.0 ? '1.0× (default)' : '${value.toStringAsFixed(2)}×';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        border: Border.all(color: cream.withAlpha(40)),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Narration speed',
+                style: TextStyle(
+                  fontFamily: 'Lora',
+                  color: cream,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              Text(
+                label,
+                style: TextStyle(
+                  fontFamily: 'Lora',
+                  color: gold,
+                  fontSize: 13,
+                ),
+              ),
+            ],
+          ),
+          SliderTheme(
+            data: SliderTheme.of(context).copyWith(
+              activeTrackColor: gold,
+              inactiveTrackColor: cream.withAlpha(40),
+              thumbColor: gold,
+              overlayColor: gold.withAlpha(30),
+              trackHeight: 2,
+              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
+            ),
+            child: Slider(
+              value: value,
+              min: 0.5,
+              max: 2.0,
+              divisions: 30,
+              onChanged: (v) => onChanged((v * 20).round() / 20),
+            ),
+          ),
+          Text(
+            'Slower ←───────────────────→ Faster',
+            style: TextStyle(
+              fontFamily: 'Lora',
+              color: cream.withAlpha(70),
+              fontSize: 10,
+              letterSpacing: 0.3,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 class _ToggleTile extends StatelessWidget {
   final String label;

@@ -46,17 +46,33 @@ describe("buildGreetingPrompt", () => {
 });
 
 describe("POST /greeting", () => {
-  it("returns a personalized greeting", async () => {
+  it("returns a personalized greeting with agentContext", async () => {
     const generateGreeting = vi.fn(async () => "Hello Lisa! What should tonight's story be about?");
     const res = await post(appWith({ generateGreeting }), "/greeting", {
       childId: "lisa-1",
       language: "en",
     });
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({
-      greeting: "Hello Lisa! What should tonight's story be about?",
-    });
+    const body = await res.json();
+    expect(body.greeting).toBe("Hello Lisa! What should tonight's story be about?");
+    expect(body.agentContext.name).toBe("Lisa");
+    expect(body.agentContext.age).toBe(4);
+    expect(body.agentContext.themes).toEqual(["friendship"]);
+    expect(body.agentContext.fears).toEqual(["thunder"]);
+    expect(body.agentContext.lastStory).toBe("Sharing Stones");
     expect(generateGreeting).toHaveBeenCalledOnce();
+  });
+
+  it("agentContext.lastStory is undefined when no past sessions", async () => {
+    const childNoHistory = { ...lisa, pastSessions: [] };
+    const res = await post(
+      appWith({ loadChild: async () => childNoHistory }),
+      "/greeting",
+      { childId: "lisa-1" },
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.agentContext.lastStory).toBeUndefined();
   });
 
   it("400 without childId", async () => {

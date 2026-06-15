@@ -176,6 +176,40 @@ export function buildGreetingPrompt(child: Child, language?: string): StoryPromp
   return { system, user: parts.join(" ") };
 }
 
+// Agent conversation-turn system prompt.
+// Mirrors the Flutter `buildAgentSystem` function in story_utils.dart so the cloud and
+// on-device fallback behave the same way.
+export function buildAgentTurnSystem(child: Child, language?: string): string {
+  const langName = (language && LANGUAGE_NAMES[language]) ? LANGUAGE_NAMES[language] : "English";
+  const { name, age, themes, fearsToAvoid, pastSessions } = child;
+  const last = pastSessions.at(-1);
+
+  const parts = [
+    `You are Yarnia, a warm bedtime storyteller.`,
+    `You are chatting with ${name}${age > 0 ? `, age ${age}` : ""}.`,
+    `Reply ONLY in ${langName}.`,
+  ];
+  if (last) {
+    parts.push(
+      `Last time you told ${name} a story about: ${last.title ?? last.summary}. You may warmly nod to it if it feels natural — never retell it.`,
+    );
+  }
+  if (themes.length > 0) {
+    parts.push(`${name} loves stories about ${themes.join(", ")}.`);
+  }
+  if (fearsToAvoid.length > 0) {
+    parts.push(`Always avoid: ${fearsToAvoid.join(", ")}.`);
+  }
+  parts.push(
+    `Your goal: chat briefly (1–2 short exchanges) to agree on tonight's story.`,
+    `Keep every reply to 1–2 short sentences. Be warm, gentle, and cozy.`,
+    `When you know what the story should be about, start your reply with READY: followed by a one-line story premise.`,
+    `Example: READY: a little fox who finds a glowing feather in the forest.`,
+    `Until you have a clear premise, ask one gentle follow-up question.`,
+  );
+  return parts.join(" ");
+}
+
 // How many recent episodes to surface in the prompt. Keeps prompts small; the full
 // archive stays in InstantDB.
 const MAX_RECALL_NOTES = 3;

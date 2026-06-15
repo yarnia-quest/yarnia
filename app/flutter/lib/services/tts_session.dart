@@ -26,6 +26,7 @@ import 'dart:async';
 import 'dart:isolate';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:path/path.dart' as p;
 import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa_onnx;
 
@@ -170,6 +171,8 @@ class TtsSession {
     required String outDir,
     int seed = 1,
   }) async {
+    final spawnSw = Stopwatch()..start();
+    debugPrint('TtsSession.spawn: starting ${kind.name}');
     final fromWorker = ReceivePort();
     final isolate = await Isolate.spawn(_ttsWorkerMain, {
       'sendPort': fromWorker.sendPort,
@@ -181,6 +184,7 @@ class TtsSession {
     final events =
         fromWorker.asBroadcastStream().cast<Map<dynamic, dynamic>>();
     final ready = await events.first;
+    debugPrint('TtsSession.spawn: ready after ${spawnSw.elapsedMilliseconds}ms, type=${ready['type']}');
     if (ready['type'] == 'error') {
       isolate.kill(priority: Isolate.immediate);
       throw Exception('TTS worker init failed: ${ready['message']}');
@@ -270,11 +274,17 @@ Future<void> _ttsWorkerMain(Map<dynamic, dynamic> args) async {
   sherpa_onnx.OfflineTts tts;
   final initSw = Stopwatch()..start();
   try {
+    final t0 = DateTime.now().millisecondsSinceEpoch;
     sherpa_onnx.initBindings();
+    // ignore: avoid_print
+    print('tts-worker: initBindings done in ${DateTime.now().millisecondsSinceEpoch - t0}ms');
+    final t1 = DateTime.now().millisecondsSinceEpoch;
     tts = sherpa_onnx.OfflineTts(sherpa_onnx.OfflineTtsConfig(
       model: kind.modelConfig(modelDir),
       maxNumSenetences: 1,
     ));
+    // ignore: avoid_print
+    print('tts-worker: OfflineTts init done in ${DateTime.now().millisecondsSinceEpoch - t1}ms');
   } catch (e) {
     out.send({'type': 'error', 'message': '$e'});
     return;

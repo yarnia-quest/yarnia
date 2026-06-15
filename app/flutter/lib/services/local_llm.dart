@@ -18,6 +18,7 @@ class LocalLlm {
 
   bool _initialized = false;
   String? _activeUrl; // which model URL is currently the active one
+  InferenceChat? _chat; // active multi-turn chat session
 
   Future<void> _ensureInit() async {
     if (_initialized) return;
@@ -69,8 +70,57 @@ class LocalLlm {
 
   bool get hasActiveModel => _initialized && FlutterGemma.hasActiveModel();
 
-  /// Stream a generation. [system] becomes the session's systemInstruction; [user]
-  /// is the query. Yields text deltas as the model produces them.
+  /// True if a pushed or downloaded model file exists for [url] — does NOT
+  /// require flutter_gemma to be initialized yet. Use this at startup to decide
+  /// whether to enable the conversational agent before the first generation.
+  Future<bool> modelFileReady(String url) async {
+    final pushed = await _pushedPath(url);
+    if (pushed != null) return true;
+    return false;
+  }
+
+  /// Start a new multi-turn chat session. Call before the first [chatTurn].
+  /// Closes any prior session so the token buffer starts fresh.
+  Future<void> startChat(String system, {int maxTokens = 512}) async {
+    await _ensureInit();
+    await closeChat();
+    final model = await FlutterGemma.getActiveModel(
+      maxTokens: maxTokens,
+      preferredBackend: PreferredBackend.gpu,
+    );
+    _chat = await model.createChat(
+      systemInstruction: system,
+      temperature: 0.7,
+      tokenBuffer: 128,
+    );
+  }
+
+  /// Send one user turn and stream back the model's reply.
+  /// [startChat] must have been called first.
+  Stream<String> chatTurn(String userMessage) async* {
+    final chat = _chat;
+    if (chat == null) {
+      throw StateError('startChat() must be called before chatTurn()');
+    }
+    await chat.addQueryChunk(Message.text(text: userMessage, isUser: true));
+    // generateChatResponseAsync streams token deltas; we collect TextResponse tokens.
+    await for (final resp in chat.generateChatResponseAsync()) {
+      if (resp is TextResponse) yield resp.token;
+    }
+  }
+
+  /// Close the active chat session and free its resources.
+  Future<void> closeChat() async {
+    try {
+      await _chat?.session.close();
+    } catch (e) {
+      // Closing a session that already closed is harmless.
+    }
+    _chat = null;
+  }
+
+  /// Stream a one-shot generation (no history). [system] becomes the session's
+  /// systemInstruction; [user] is the query. Yields text deltas as the model produces them.
   Stream<String> generate({
     required String system,
     required String user,

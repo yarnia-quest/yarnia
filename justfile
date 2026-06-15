@@ -39,10 +39,31 @@ flutter-release:
     cd app/flutter && flutter build apk --dart-define-from-file=dart_defines/prod.json
 
 # Run the on-device voice spike (Speak/Listen test screens) instead of the app.
-# Same package, different home screen via the TTS_SPIKE dart-define. Models are
-# pushed separately via adb run-as (see lib/screens/tts_spike_screen.dart).
+# Same package, different home screen via the TTS_SPIKE dart-define.
+# Models live on-device under pocket-tts-* dirs; push with just pocket-push-models
+# (or just pocket-spike-deploy for APK + models + launch).
 flutter-spike:
     cd app/flutter && flutter run --dart-define-from-file=dart_defines/prod.json --dart-define=TTS_SPIKE=true
+
+# ── Pocket TTS (on-device spike) ──────────────────────────────────────────────
+# Composable pieces: export → push-models. Deploy adds debug APK install + launch.
+# Debug APK is required so push_to_device.sh can run-as into the app files dir.
+
+# Export all 4 spike languages (german, german_24l, french_24l, spanish)
+pocket-export:
+    cd tools/pocket-tts-export && ./export_all.sh
+
+# Push exported models to a connected device (skips dirs not yet exported)
+pocket-push-models pkg="quest.yarnia.yarnia":
+    cd tools/pocket-tts-export && ./push_to_device.sh {{pkg}}
+
+# Install debug APK only (builds if missing); use before pocket-push-models
+pocket-install-debug pkg="quest.yarnia.yarnia":
+    cd tools/pocket-tts-export && ./install_debug_apk.sh {{pkg}}
+
+# Full spike deploy: debug APK + push models + launch app
+pocket-spike-deploy pkg="quest.yarnia.yarnia":
+    cd tools/pocket-tts-export && ./deploy_and_test.sh {{pkg}}
 
 # ── Flutter web (app.yarnia.quest) ────────────────────────────────────────────
 

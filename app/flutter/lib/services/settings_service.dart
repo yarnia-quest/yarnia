@@ -249,8 +249,8 @@ class SettingsService extends ChangeNotifier {
   static const _sttKey = 'sttEngine';
   static const _llmKey = 'llmEngine';
   static const _llmInstalledKey = 'llmInstalled';
-  // Phase 2b: hands-free VAD interrupt toggle. Default OFF until tuned.
   static const _handsFreeKey = 'handsFreeInterrupt';
+  static const _ttsSpeedKey = 'ttsSpeed';
   static const _supportedLanguages = {'en', 'de', 'fr', 'es'};
 
   late SharedPreferences _prefs;
@@ -263,6 +263,7 @@ class SettingsService extends ChangeNotifier {
   // Hands-free VAD interrupt: keep mic open during narration so the child can
   // interrupt by speaking. Default off — enable once AEC tuning is complete.
   bool _handsFreeInterrupt = false;
+  double _ttsSpeed = 1.0;
 
   // Phase 3: device class drives the "Recommended" badge and smart default.
   late DeviceClass _deviceClass;
@@ -273,11 +274,12 @@ class SettingsService extends ChangeNotifier {
   LlmEngine get llmEngine => _llmEngine;
   String get appSupportDir => _appSupportDir;
   bool get handsFreeInterrupt => _handsFreeInterrupt;
+  double get ttsSpeed => _ttsSpeed;
   DeviceClass get deviceClass => _deviceClass;
 
-  /// Default on-device LLM: the tiny, newest Qwen3-0.6B (~498 MB) everywhere — a
-  /// friendly first download. Stronger devices can opt into the richer 1.5B in Settings.
-  LlmEngine get recommendedLlm => LlmEngine.qwen3_06b;
+  /// Default on-device LLM: Qwen2.5-1.5B (MediaPipe .task, stable on Pixel).
+  /// Qwen3-0.6B uses LiteRT-LM which crashes on some Pixel GPU drivers.
+  LlmEngine get recommendedLlm => LlmEngine.qwen25_15b;
 
   bool isLlmInstalled(LlmEngine e) => _llmInstalled.contains(e.name);
   bool get anyLlmInstalled => _llmInstalled.isNotEmpty;
@@ -293,9 +295,9 @@ class SettingsService extends ChangeNotifier {
     final dir = await getApplicationSupportDirectory();
     _appSupportDir = dir.path;
 
-    // Phase 3: classify device once on load. Used for "Recommended" badge and
-    // smart default (first run only — never overrides a saved preference).
-    _deviceClass = classifyDevice();
+    // Classify device for "Recommended" badge and smart default (first run only).
+    // Use async brand-aware classification on Android; sync core-count elsewhere.
+    _deviceClass = await classifyDeviceAsync();
 
     final savedLang = _prefs.getString(_langKey);
     if (savedLang != null && _supportedLanguages.contains(savedLang)) {
@@ -310,18 +312,26 @@ class SettingsService extends ChangeNotifier {
     if (savedTts != null && savedTts < TtsEngine.values.length) {
       _ttsEngine = TtsEngine.values[savedTts];
     } else {
-      // Phase 3: no saved TTS preference → seed with recommended engine for
-      // this device (Pocket for strong; Piper for weak). Falls back to system
-      // if the recommended engine is not yet installed (user will see Download).
       _ttsEngine = recommendedEngine;
+    }
+    // If the chosen TTS engine isn't installed, auto-select the best one that is.
+    // Prevents silent failure on GrapheneOS where system TTS doesn't exist.
+    if (!isEngineInstalled(_ttsEngine)) {
+      final installed = TtsEngine.values.where((e) => !e.isSystem && isEngineInstalled(e));
+      if (installed.isNotEmpty) _ttsEngine = installed.first;
     }
 
     final savedStt = _prefs.getInt(_sttKey);
     if (savedStt != null && savedStt < SttEngine.values.length) {
       _sttEngine = SttEngine.values[savedStt];
     }
+    // Auto-select Whisper if it's installed but system STT was the default.
+    if (_sttEngine == SttEngine.system && isSttEngineInstalled(SttEngine.whisperBase)) {
+      _sttEngine = SttEngine.whisperBase;
+    }
 
     _handsFreeInterrupt = _prefs.getBool(_handsFreeKey) ?? false;
+    _ttsSpeed = _prefs.getDouble(_ttsSpeedKey) ?? 1.0;
 
     _llmInstalled = (_prefs.getStringList(_llmInstalledKey) ?? const []).toSet();
     final savedLlm = _prefs.getInt(_llmKey);
@@ -356,6 +366,12 @@ class SettingsService extends ChangeNotifier {
   Future<void> setHandsFreeInterrupt(bool enabled) async {
     _handsFreeInterrupt = enabled;
     await _prefs.setBool(_handsFreeKey, enabled);
+    notifyListeners();
+  }
+
+  Future<void> setTtsSpeed(double speed) async {
+    _ttsSpeed = speed.clamp(0.5, 2.0);
+    await _prefs.setDouble(_ttsSpeedKey, _ttsSpeed);
     notifyListeners();
   }
 

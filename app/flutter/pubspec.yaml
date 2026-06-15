@@ -23,6 +23,7 @@ dependencies:
   flutter_tts: ^4.2.5
   url_launcher: ^6.3.0
   flutter_gemma: ^0.13.6
+  device_info_plus: ^12.4.0
 
 dev_dependencies:
   flutter_test:

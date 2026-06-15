@@ -1,32 +1,50 @@
-// Device capability classification for recommending the right TTS engine.
+// Device capability classification — drives TTS/LLM engine recommendations.
 //
-// Strong devices (Pocket recommended): >= 6 cores or modern flagship chip.
-// Weak devices (Piper/System recommended): fewer cores or older SoCs.
+// Strong: modern flagship with known good GPU inference (Pixel, Samsung S-class, etc.)
+// Weak: older SoC, non-flagship brand, or brands known for MediaPipe issues.
 //
-// Heuristic: Pixel 9 → strong; Huawei P20 Pro class → weak.
-// The classification is advisory only — the user can override in Settings.
+// The classification is advisory — the user can always override in Settings.
 
 import 'dart:io';
 
+import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/foundation.dart';
 
 enum DeviceClass {
-  /// Modern flagship — Pocket TTS performs well (e.g. Pixel 9, iPhone 15).
+  /// Modern flagship — Pocket TTS + on-device LLM perform well.
   strong,
 
-  /// Older or low-end device — prefer Piper or System TTS.
+  /// Older, low-end, or brand with limited GPU inference support — prefer Piper or System TTS.
   weak,
 }
 
-/// Classify the current device based on processor count.
-/// Uses Platform.numberOfProcessors as a coarse heuristic (available without
-/// platform plugins). For a more accurate classification use device_info_plus
-/// to read the SoC model or RAM, but that adds a dependency.
-///
-/// TODO(phase3): add device_info_plus for RAM-based classification on Android.
+// Brands where GPU-based MediaPipe inference is unreliable or unsupported.
+// Huawei (Kirin post-2018), Oppo, Vivo, Xiaomi budget lines have varying support.
+// These devices can still use CPU-based Piper TTS fine.
+const _weakBrands = {'huawei', 'honor', 'oppo', 'vivo', 'realme', 'tecno', 'itel'};
+
+/// Async classification using device_info_plus for brand-aware results.
+/// Prefer this on Android for accurate recommendations. Falls back to core count.
+Future<DeviceClass> classifyDeviceAsync() async {
+  if (!Platform.isAndroid) return classifyDevice();
+  try {
+    final info = await DeviceInfoPlugin().androidInfo;
+    final brand = info.brand.toLowerCase();
+    if (_weakBrands.contains(brand)) {
+      debugPrint('DeviceClass: brand=$brand → weak');
+      return DeviceClass.weak;
+    }
+    // Brand looks fine — fall back to core count for further discrimination.
+    return classifyDevice();
+  } catch (e) {
+    debugPrint('DeviceClass: device_info_plus failed ($e), using core count');
+    return classifyDevice();
+  }
+}
+
+/// Synchronous fallback (used at startup before the async result is available).
+/// Uses Platform.numberOfProcessors — >= 8 → strong; < 8 → weak.
 DeviceClass classifyDevice() {
-  // numberOfProcessors includes efficiency cores on modern chips.
-  // Heuristic: >= 8 cores → strong; < 8 → weak.
   final cores = Platform.numberOfProcessors;
   final cls = cores >= 8 ? DeviceClass.strong : DeviceClass.weak;
   debugPrint('DeviceClass: $cores cores → $cls');
