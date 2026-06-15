@@ -1,10 +1,6 @@
 appId: quest.yarnia.yarnia
 ---
-# German voice conversation flow.
-# Works against both a German build (hint: "oder hier tippen…")
-# and an English build (hint: "or type here…") — same backend language
-# parameter drives the response language.
-#
+# German voice conversation flow. Works against EN or DE build.
 # Run: just maestro-de
 
 - launchApp
@@ -12,46 +8,23 @@ appId: quest.yarnia.yarnia
 - runFlow:
     file: navigate_to_story.yaml
 
+# Wait for the agent conversation to start
 - waitForAnimationToEnd:
-    timeout: 5000
+    timeout: 15000
 
-# Tap whichever hint text is visible depending on build language
-- runFlow:
-    when:
-      visible:
-        text: "oder hier tippen…"
-    commands:
-      - tapOn:
-          text: "oder hier tippen…"
-      - inputText: "Ich will heute Abend zum Mond fliegen"
-      - pressKey: Enter
+# Text field hint is "oder hier tippen…" (DE build) or "or type here…" (EN build)
+- assertVisible:
+    text: "or type here…"
 
-- runFlow:
-    when:
-      visible:
-        text: "or type here…"
-    commands:
-      - tapOn:
-          text: "or type here…"
-      - inputText: "Ich will heute Abend zum Mond fliegen"
-      - pressKey: Enter
+- tapOn:
+    text: "or type here…"
+- inputText: "Ich will heute Abend zum Mond fliegen"
+- pressKey: Enter
 
 - waitForAnimationToEnd:
     timeout: 20000
 
 # Optional follow-up turn
-- runFlow:
-    when:
-      visible:
-        text: "oder hier tippen…"
-    commands:
-      - tapOn:
-          text: "oder hier tippen…"
-      - inputText: "Ja, das klingt toll"
-      - pressKey: Enter
-      - waitForAnimationToEnd:
-          timeout: 30000
-
 - runFlow:
     when:
       visible:

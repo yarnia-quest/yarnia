@@ -1,6 +1,6 @@
 appId: quest.yarnia.yarnia
 ---
-# Full English voice conversation flow: launch → navigate → converse → story narrates.
+# Full English voice conversation flow: launch → navigate → agent converse → story narrates.
 # Handles fresh install, ProfilePicker, and returning single-user starts.
 #
 # Run (USB):  just maestro-en
@@ -11,17 +11,22 @@ appId: quest.yarnia.yarnia
 - runFlow:
     file: navigate_to_story.yaml
 
-# ── First conversation turn ───────────────────────────────────────────
+# ── Wait for the agent conversation to start ─────────────────────────
+# The greeting TTS plays first; _startConversation() fires after it finishes.
+# The text field "or type here…" appears once the app is in listening state
+# and ready for the first conversation turn.
 - waitForAnimationToEnd:
-    timeout: 5000
+    timeout: 15000
+- assertVisible:
+    text: "or type here…"
 
+# ── First conversation turn ───────────────────────────────────────────
 - tapOn:
     text: "or type here…"
 - inputText: "I want a story about rabbits"
 - pressKey: Enter
 
-# Wait for agent response — may go READY immediately (story starts) or
-# ask a follow-up question (text field stays visible)
+# Wait for agent response — may go READY immediately or ask a follow-up
 - waitForAnimationToEnd:
     timeout: 20000
 
