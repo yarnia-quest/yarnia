@@ -397,27 +397,16 @@ def export_tokenizer(tokenizer_model_path: str, out_dir: Path):
 # Reference wav management
 # ---------------------------------------------------------------------------
 
-# Native-language reference files ship with the package or are cached by HuggingFace.
-# Each entry maps language prefix → (source_path, dest_filename).
-# dest_filename must match _defaultRefFilename in tts_spike_screen.dart.
-_LANG_REFS: dict[str, tuple[str, str]] = {
-    "german": (
-        "/home/o/.cache/huggingface/hub/models--kyutai--pocket-tts"
-        "/snapshots/64ab7d24c479d736a83b8cc666c4a776fca30fda/de-DE-juergen.mp3",
-        "juergen.wav",
-    ),
-    "french": (
-        "/home/o/.cache/huggingface/hub/models--kyutai--tts-voices"
-        "/snapshots/1fc7395b7e012e2bbebfca14b942a4ef62ccc899"
-        "/unmute-prod-website/developpeuse-3.wav",
-        "developpeuse.wav",
-    ),
+# Official pocket-tts 2.1.0 default voices → dest filename under test_wavs/.
+# Resolved via package predefined voices (HF), not Yarnia/sherpa leftovers like bria.
+_OFFICIAL_REF_DEST = {
+    "alba": "alba.wav",
+    "juergen": "juergen.wav",
+    "estelle": "estelle.wav",  # package maps estelle → developpeuse-3.wav
+    "lola": "lola.wav",
+    "giovanni": "giovanni.wav",
+    "rafael": "rafael.wav",
 }
-
-_EN_BRIA = (
-    "/tmp/sherpa-onnx-pocket-tts-int8-2026-01-26/test_wavs/bria.wav",
-    "bria.wav",
-)
 
 
 def _prepare_reference_wav(y: np.ndarray, sr: int) -> np.ndarray:
@@ -440,34 +429,47 @@ def _prepare_reference_wav(y: np.ndarray, sr: int) -> np.ndarray:
     return yt
 
 
+def _resolve_predefined_voice_path(voice_name: str) -> Path | None:
+    """Download/resolve a pocket-tts predefined voice name to a local audio file."""
+    from pocket_tts.utils.utils import _ORIGINS_OF_PREDEFINED_VOICES, download_if_necessary
+
+    origin = _ORIGINS_OF_PREDEFINED_VOICES.get(voice_name)
+    if not origin:
+        return None
+    # strip @revision for download_if_necessary if needed — package accepts hf://…@rev
+    path = download_if_necessary(origin)
+    return Path(path) if path else None
+
+
 def _copy_reference_wavs(language: str, out_dir: Path):
-    """Copy reference speaker wavs into <out_dir>/test_wavs/."""
-    import numpy as np
+    """Copy the official default voice for this language into <out_dir>/test_wavs/."""
     import librosa
     import soundfile as sf
+    from pocket_tts.default_parameters import get_default_voice_for_language
 
     wav_dir = out_dir / "test_wavs"
     wav_dir.mkdir(exist_ok=True)
 
-    # Always copy the EN reference as a generic fallback.
-    bria_src, bria_dst = _EN_BRIA
-    if Path(bria_src).exists() and not (wav_dir / bria_dst).exists():
-        y, _ = librosa.load(bria_src, sr=24000, mono=True)
-        y = _prepare_reference_wav(y, 24000)
-        sf.write(str(wav_dir / bria_dst), y, 24000, subtype="PCM_16")
-        log.info("  ref: %s", bria_dst)
+    voice = get_default_voice_for_language(language)
+    dest_name = _OFFICIAL_REF_DEST.get(voice, f"{voice}.wav")
+    dest = wav_dir / dest_name
 
-    # Language-specific native reference.
-    lang_prefix = language.split("_")[0]  # "german_24l" → "german"
-    if lang_prefix in _LANG_REFS:
-        src, dst = _LANG_REFS[lang_prefix]
-        if Path(src).exists():
-            y, _ = librosa.load(src, sr=24000, mono=True)
-            y = _prepare_reference_wav(y, 24000)
-            sf.write(str(wav_dir / dst), y, 24000, subtype="PCM_16")
-            log.info("  ref (native): %s", dst)
-        else:
-            log.warning("  native ref not found: %s — skipping", src)
+    src = _resolve_predefined_voice_path(voice)
+    if src is None or not src.is_file():
+        log.warning("  official voice %r not resolvable — skipping ref copy", voice)
+        return
+
+    y, _ = librosa.load(str(src), sr=24000, mono=True)
+    y = _prepare_reference_wav(y, 24000)
+    sf.write(str(dest), y, 24000, subtype="PCM_16")
+    log.info("  ref (official %s): %s ← %s", voice, dest.name, src)
+
+    # Also keep estelle's upstream basename for older consumers
+    if voice == "estelle" and dest_name != "developpeuse.wav":
+        alias = wav_dir / "developpeuse.wav"
+        if not alias.exists():
+            sf.write(str(alias), y, 24000, subtype="PCM_16")
+            log.info("  ref alias: %s", alias.name)
 
 
 # ---------------------------------------------------------------------------
@@ -597,9 +599,8 @@ def export_language(language: str, out_dir: Path):
     export_tokenizer(tokenizer_path, out_dir)
 
     # ---- reference wavs (voice-cloning seed) ---------------------------------
-    # Always include the official EN bria.wav so the app has a fallback. For
-    # languages that have a native-speaker reference, include that too; it
-    # produces noticeably more natural prosody than using an EN reference.
+    # Official pocket-tts 2.1.0 default voice for this language (alba/juergen/estelle/…).
+    # Do not copy cross-language leftovers like sherpa "bria.wav".
     _copy_reference_wavs(language, out_dir)
 
     log.info("=== Done: %s ===\n%s", language,
