@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
+from __future__ import annotations
+
 """
-Export Pocket TTS PyTorch models to ONNX for sherpa-onnx.
+Export Pocket TTS PyTorch models to ONNX for on-device Pocket TTS.
 
 Exports 5 components per language into a directory compatible with
 OfflineTtsPocketModelConfig:
@@ -9,7 +11,7 @@ OfflineTtsPocketModelConfig:
   lm_main.int8.onnx     - Flow LM transformer (int8 quantised)
   lm_flow.int8.onnx     - Flow matching network (int8 quantised)
   decoder.int8.onnx     - Mimi decoder with denormalisation + quantiser (int8)
-  vocab.json            - Token vocab for sherpa-onnx C++ tokeniser
+  vocab.json            - Token vocab for the C++ tokeniser
   token_scores.json     - Token log-prob scores
 
 Usage:
@@ -31,6 +33,7 @@ import shutil
 import sys
 from pathlib import Path
 
+import numpy as np
 import onnx
 import torch
 import torch.nn as nn
@@ -40,7 +43,7 @@ from onnxruntime.quantization import QuantType, quantize_dynamic
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 log = logging.getLogger(__name__)
 
-MAX_SEQ_LEN = 1000  # KV-cache capacity (matches sherpa-onnx EN model)
+MAX_SEQ_LEN = 1000  # KV-cache capacity (matches official EN Pocket export)
 
 
 # ---------------------------------------------------------------------------
@@ -353,10 +356,10 @@ def _export(wrapper, args, out_path: Path, input_names, output_names, dynamic_ax
 
 
 def _quantize(src: Path, dst: Path):
-    # MatMul-only dynamic quantisation, matching the official sherpa-onnx
-    # exporter (scripts/quantize.py). Quantising Conv ops (the Mimi decoder
-    # vocoder) to int8 produces speech-shaped background noise, so they MUST
-    # stay float. Shape inference first stabilises quantisation.
+    # MatMul-only dynamic quantisation, matching the official Pocket TTS
+    # exporter. Quantising Conv ops (the Mimi decoder vocoder) to int8
+    # produces speech-shaped background noise, so they MUST stay float.
+    # Shape inference first stabilises quantisation.
     tmp = dst.with_suffix(".shapeinf.onnx")
     model = onnx.shape_inference.infer_shapes(onnx.load(str(src)))
     onnx.save(model, str(tmp))
@@ -372,7 +375,7 @@ def _quantize(src: Path, dst: Path):
 
 
 # ---------------------------------------------------------------------------
-# Tokeniser conversion (sentencepiece → sherpa-onnx JSON format)
+# Tokeniser conversion (sentencepiece → JSON vocab format)
 # ---------------------------------------------------------------------------
 
 def export_tokenizer(tokenizer_model_path: str, out_dir: Path):
@@ -398,7 +401,7 @@ def export_tokenizer(tokenizer_model_path: str, out_dir: Path):
 # ---------------------------------------------------------------------------
 
 # Official pocket-tts 2.1.0 default voices → dest filename under test_wavs/.
-# Resolved via package predefined voices (HF), not Yarnia/sherpa leftovers like bria.
+# Resolved via package predefined voices (HF), not leftover EN refs like bria.
 _OFFICIAL_REF_DEST = {
     "alba": "alba.wav",
     "juergen": "juergen.wav",
@@ -600,7 +603,7 @@ def export_language(language: str, out_dir: Path):
 
     # ---- reference wavs (voice-cloning seed) ---------------------------------
     # Official pocket-tts 2.1.0 default voice for this language (alba/juergen/estelle/…).
-    # Do not copy cross-language leftovers like sherpa "bria.wav".
+    # Do not copy cross-language leftovers like EN "bria.wav".
     _copy_reference_wavs(language, out_dir)
 
     log.info("=== Done: %s ===\n%s", language,

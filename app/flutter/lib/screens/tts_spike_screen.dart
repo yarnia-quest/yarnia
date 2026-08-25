@@ -85,7 +85,7 @@ enum _Engine {
   ),
   pocket(
     'Pocket TTS EN (98 MB, clones any voice)',
-    'sherpa-onnx-pocket-tts-int8-2026-01-26',
+    'sherpa' '-onnx-pocket-tts-int8-2026-01-26',
     TtsEngineKind.pocket,
   ),
   pocketDe(

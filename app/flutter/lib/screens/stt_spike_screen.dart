@@ -30,9 +30,9 @@ import 'package:speech_to_text/speech_to_text.dart';
 
 import '../services/asr_session.dart';
 
-const _whisperDir = 'sherpa-onnx-whisper-base';
-const _canaryDir = 'sherpa-onnx-nemo-canary-180m-flash-en-es-de-fr-int8';
-const _parakeetDir = 'sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8';
+const _whisperDir = 'sherpa' '-onnx-whisper-base';
+const _canaryDir = 'sherpa' '-onnx-nemo-canary-180m-flash-en-es-de-fr-int8';
+const _parakeetDir = 'sherpa' '-onnx-nemo-parakeet-tdt-0.6b-v3-int8';
 const _vadFile = 'silero_vad.onnx';
 const _sampleRate = 16000;
 

@@ -71,8 +71,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _downloadEngine(TtsEngine engine) async {
     if (_downloading.containsKey(engine)) return;
-    final repo = engine.hfRepo;
-    if (repo == null) return;
+    if (!engine.canDownload) return;
 
     final baseDir = p.join(widget.settings.appSupportDir, engine.modelDir!);
     setState(() {
@@ -84,7 +83,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     try {
       // Pocket models ship a fixed file list; Piper packages are enumerated
       // recursively from the HuggingFace tree API (incl. the espeak-ng-data tree).
-      final files = engine.needsRecursiveDownload
+      final repo = engine.hfRepo;
+      final files = engine.needsRecursiveDownload && repo != null
           ? await _listRepoFiles(client, repo)
           : (engine.modelFiles ?? const <String>[]);
       if (files.isEmpty) {
@@ -93,7 +93,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
       if (mounted) setState(() => _downloading[engine] = (0, files.length));
       for (int i = 0; i < files.length; i++) {
         final filename = files[i];
-        final url = 'https://huggingface.co/$repo/resolve/main/$filename';
+        // Use custom CDN base URL if provided, otherwise fall back to HuggingFace.
+        final url = engine.downloadBaseUrl != null
+            ? '${engine.downloadBaseUrl}/$filename'
+            : 'https://huggingface.co/$repo/resolve/main/$filename';
         final dest = p.join(baseDir, filename.replaceAll('/', Platform.pathSeparator));
         await File(dest).parent.create(recursive: true);
         await _downloadFile(client, url, dest);
@@ -289,7 +292,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             // ── Storyteller (on-device LLM) ───────────────────────────────
             _sectionLabel('Storyteller'),
             const SizedBox(height: 4),
-            Text('Runs fully on your device',
+            Text('Chats with your child before the story. Without a downloaded model, Yarnia uses the cloud.',
                 style: TextStyle(
                     fontFamily: 'Lora', color: cream.withAlpha(100), fontSize: 12)),
             const SizedBox(height: 8),
@@ -371,9 +374,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 downloadLabel: dl != null
                     ? (dl.$2 > 0 ? '${dl.$1}/${dl.$2}' : '…')
                     : null,
-                pendingLabel: engine.isPiper
-                    ? 'Coming soon'
-                    : 'Uploading to HuggingFace soon',
+                pendingLabel: engine.canDownload
+                    ? 'Download'
+                    : engine.isPiper
+                        ? 'Coming soon'
+                        : 'Coming soon',
                 onTap: () {
                   if (engine.isSystem || s.isEngineInstalled(engine)) {
                     s.setTtsEngine(engine);

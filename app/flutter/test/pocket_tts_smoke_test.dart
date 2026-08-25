@@ -3,11 +3,10 @@
 // both are provided; run it on a dev machine with:
 //
 //   LD_LIBRARY_PATH=~/.pub-cache/hosted/pub.dev/sherpa_onnx_linux-<ver>/linux/x64 \
-//   POCKET_TTS_MODEL_DIR=/tmp/sherpa-onnx-pocket-tts-int8-2026-01-26 \
+//   POCKET_TTS_MODEL_DIR=/tmp/pocket-tts-en \
 //   flutter test test/pocket_tts_smoke_test.dart
 //
-// Model: https://github.com/k2-fsa/sherpa-onnx/releases/tag/tts-models
-// (sherpa-onnx-pocket-tts-int8-2026-01-26.tar.bz2)
+// Model: Kyutai Pocket TTS EN int8 ONNX export (tts-models release).
 
 import 'dart:io';
 

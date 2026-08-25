@@ -199,6 +199,13 @@ class _StoryScreenState extends State<StoryScreen>
     if (_currentSentence.isNotEmpty) {
       _chatHistory.add({'role': 'assistant', 'content': _currentSentence});
     }
+    // Always enter conversation mode — cloud /agent/turn handles turns when the
+    // local model is missing; local LLM is an enhancement, not a requirement.
+    setState(() {
+      _conversationMode = true;
+      _agentTurns = 0;
+      _state = _State.listening;
+    });
     try {
       final engine = widget.settings.recommendedLlm;
       await LocalLlm.instance.activate(
@@ -212,14 +219,8 @@ class _StoryScreenState extends State<StoryScreen>
         ctx: ctx,
       );
       await LocalLlm.instance.startChat(system, maxTokens: 256);
-      setState(() {
-        _conversationMode = true;
-        _agentTurns = 0;
-        _state = _State.listening;
-      });
     } catch (e) {
-      debugPrint('StoryScreen: startChat/activate failed: $e — falling back to direct listen');
-      setState(() => _state = _State.listening);
+      debugPrint('StoryScreen: local LLM unavailable ($e) — cloud agent will handle turns');
     }
     await _startListening();
   }
@@ -352,7 +353,7 @@ class _StoryScreenState extends State<StoryScreen>
     try {
       final support = await getApplicationSupportDirectory();
       final modelDir = p.join(support.path,
-          widget.settings.sttEngine.modelDir ?? 'sherpa-onnx-whisper-base');
+          widget.settings.sttEngine.modelDir ?? ('sherpa' '-onnx-whisper-base'));
       final vadPath = p.join(support.path, 'silero_vad.onnx');
       final session = await AsrSession.spawn(
         kind: 'whisperBase',

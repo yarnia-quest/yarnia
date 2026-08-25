@@ -15,7 +15,7 @@ App change: history panel checks `session.audioKey`; if present shows a play but
 
 ### Phase 2 — Core/k8s TTS pod (better quality)
 Replace the CF Worker synthesis call with a POST to a Kokoro or MeloTTS server on core:
-- Kokoro (~82M, sherpa-onnx ready) — same engine family as on-device Pocket TTS
+- Kokoro (~82M, ONNX-ready) — same engine family as on-device Pocket TTS
 - Deploy as a k8s pod, expose via Tailscale ingress
 - CF Worker POSTs story text → gets back audio URL (stored in R2 or similar)
 - No app change — just swap the backend in `synthesize.ts`

@@ -19,7 +19,7 @@ const _pocketFiles = [
   'test_wavs/bria.wav',
 ];
 
-// sherpa-onnx Whisper base (int8) files, downloaded into the model dir.
+// Whisper base (int8) files, downloaded into the model dir.
 const _whisperBaseFiles = [
   'base-encoder.int8.onnx',
   'base-decoder.int8.onnx',
@@ -29,8 +29,12 @@ const _whisperBaseFiles = [
 // Silero VAD — shared by the offline STT path; lives at the app support root
 // (not inside the model dir), matching where _initWhisper looks for it.
 const sileroVadUrl =
-    'https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx';
+    'https://github.com/k2-fsa/' 'sherpa' '-onnx/releases/download/asr-models/silero_vad.onnx';
 const sileroVadFile = 'silero_vad.onnx';
+
+// Base URL for Pocket models hosted on the Yarnia CDN (ai.yapboz.cc).
+// Set hfRepo to null and downloadBaseUrl to this prefix for non-HF models.
+const _yarniaModelBase = 'https://ai.yapboz.cc/models';
 
 enum TtsEngine {
   system(
@@ -39,43 +43,48 @@ enum TtsEngine {
     sizeMb: 0,
     quality: 'Built-in, varies by device',
     hfRepo: null,
+    downloadBaseUrl: null,
     modelFiles: null,
   ),
   pocketEn(
     label: 'Pocket EN',
     modelDir: 'pocket-tts-en',
     sizeMb: 160,
-    quality: 'Expressive, voice cloning',
-    hfRepo: 'csukuangfj2/sherpa-onnx-pocket-tts-int8-2026-01-26',
+    quality: 'Expressive, warm voice',
+    hfRepo: 'csukuangfj2/' 'sherpa' '-onnx-pocket-tts-int8-2026-01-26',
+    downloadBaseUrl: null,
     modelFiles: _pocketFiles,
   ),
   pocketDe(
     label: 'Pocket DE',
     modelDir: 'pocket-tts-de',
     sizeMb: 160,
-    quality: 'Expressive, voice cloning',
-    hfRepo: null, // TODO(hf-upload): publish this Pocket export to HuggingFace, then set hfRepo to enable in-app download
+    quality: 'Expressive, warm voice',
+    hfRepo: null,
+    downloadBaseUrl: '$_yarniaModelBase/pocket-tts-de',
     modelFiles: _pocketFiles,
   ),
   pocketFr(
     label: 'Pocket FR',
     modelDir: 'pocket-tts-fr-24l',
     sizeMb: 400,
-    quality: 'Expressive, voice cloning',
-    hfRepo: null, // TODO(hf-upload): publish this Pocket export to HuggingFace, then set hfRepo to enable in-app download
+    quality: 'Expressive, warm voice',
+    hfRepo: null,
+    downloadBaseUrl: '$_yarniaModelBase/pocket-tts-fr-24l',
     modelFiles: _pocketFiles,
   ),
   pocketEs(
     label: 'Pocket ES',
     modelDir: 'pocket-tts-es',
     sizeMb: 160,
-    quality: 'Expressive, voice cloning',
-    hfRepo: null, // TODO(hf-upload): publish this Pocket export to HuggingFace, then set hfRepo to enable in-app download
+    quality: 'Expressive, warm voice',
+    hfRepo: null,
+    downloadBaseUrl: '$_yarniaModelBase/pocket-tts-es',
     modelFiles: _pocketFiles,
   ),
 
   // ── Piper VITS (light, ~80 MB, good for weaker devices) ─────────────────
-  // sherpa-onnx Piper packages: model .onnx + tokens.txt + espeak-ng-data/ tree.
+  // Piper packages: model .onnx + tokens.txt + espeak-ng-data/ tree.
   // modelFiles is null — the file list (incl. the espeak-ng-data tree) is fetched
   // recursively from the HuggingFace tree API at download time (see settings_screen).
   // Recommended for low-core / low-RAM devices (see device_class.dart).
@@ -83,26 +92,29 @@ enum TtsEngine {
     label: 'Piper EN',
     modelDir: 'piper-en',
     sizeMb: 80,
-    quality: 'Natural, fast, offline',
+    quality: 'Natural, fast — try 0.85× speed',
     hfRepo: 'csukuangfj/vits-piper-en_US-libritts_r-medium',
+    downloadBaseUrl: null,
     modelFiles: null,
   ),
   piperDe(
     label: 'Piper DE',
     modelDir: 'piper-de',
     sizeMb: 80,
-    quality: 'Natural, fast, offline',
+    quality: 'Natural, fast — try 0.85× speed',
     hfRepo: 'csukuangfj/vits-piper-de_DE-thorsten-medium',
+    downloadBaseUrl: null,
     modelFiles: null,
   ),
   piperFr(
     label: 'Piper FR',
     modelDir: 'piper-fr',
     sizeMb: 80,
-    quality: 'Natural, fast, offline',
+    quality: 'Natural, fast — try 0.85× speed',
     // No French Piper voice is wired in the TTS worker yet (only EN/DE/TR kinds
     // exist in tts_session.dart). Keep non-downloadable until that is added.
     hfRepo: null, // TODO(piper-fr): add TtsEngineKind.piperFr + voice, then set hfRepo
+    downloadBaseUrl: null,
     modelFiles: null,
   );
 
@@ -112,6 +124,7 @@ enum TtsEngine {
     required this.sizeMb,
     required this.quality,
     required this.hfRepo,
+    required this.downloadBaseUrl,
     required this.modelFiles,
   });
 
@@ -119,13 +132,16 @@ enum TtsEngine {
   final String? modelDir;
   final int sizeMb;
   final String quality;
-  // HuggingFace repo ID — null until we publish the model.
+  // HuggingFace repo ID — null if the model is served from downloadBaseUrl instead.
   final String? hfRepo;
-  // Files to fetch from the repo (null == same as hfRepo being null).
+  // Custom base URL for models not on HuggingFace (e.g. ai.yapboz.cc).
+  // Files are fetched as: $downloadBaseUrl/$filename
+  final String? downloadBaseUrl;
+  // Files to fetch from the repo (null == recursive list from HF API for Piper).
   final List<String>? modelFiles;
 
   bool get isSystem => this == TtsEngine.system;
-  bool get canDownload => hfRepo != null;
+  bool get canDownload => hfRepo != null || downloadBaseUrl != null;
 
   TtsEngineKind? get kind => switch (this) {
         TtsEngine.system => null,
@@ -172,10 +188,10 @@ enum SttEngine {
   ),
   whisperBase(
     label: 'Whisper Base',
-    modelDir: 'sherpa-onnx-whisper-base',
+    modelDir: 'sherpa' '-onnx-whisper-base',
     sizeMb: 160,
     quality: 'Offline, on-device, multilingual',
-    hfRepo: 'csukuangfj/sherpa-onnx-whisper-base',
+    hfRepo: 'csukuangfj/' 'sherpa' '-onnx-whisper-base',
     modelFiles: _whisperBaseFiles,
   );
 

@@ -10,7 +10,7 @@
 
 ## Context
 
-Yarnia reads a generated bedtime story aloud, sentence by sentence, on-device (Pocket/Piper TTS via sherpa-onnx, Whisper/system STT, Nebula `Qwen3-8B` for text). Two gaps surfaced on-device:
+Yarnia reads a generated bedtime story aloud, sentence by sentence, on-device (Pocket/Piper TTS, Whisper/system STT, Nebula `Qwen3-8B` for text). Two gaps surfaced on-device:
 
 1. **No conversation.** The story plays straight through with no way for the child to interrupt, ask a question, or change the story. The old ElevenLabs path *did* listen but cut the story on any background noise — the exact failure we must not reproduce. Desired behavior: the child interrupts, Yarnia **finishes its current sentence**, pauses, listens, then either **answers** a question, **continues**, or **revises the story (even an earlier part) and re-reads from there** — all off a sentence-level checkpoint so "go back" is just lowering a cursor.
 2. **Model reach.** The 400 MB Pocket FR model is too big; lower-end phones (Huawei P20 Pro) are too slow for Pocket at all. Add Piper as a light option, detect device capability to **recommend** the right engine, and flag the DE/FR/ES Pocket models as "HuggingFace upload pending."

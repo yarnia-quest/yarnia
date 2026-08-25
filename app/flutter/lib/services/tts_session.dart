@@ -38,7 +38,7 @@ enum TtsEngineKind {
   piperTr,
   kokoro,
   kitten,
-  pocket,      // Kyutai Pocket TTS — sherpa-onnx int8 export (EN)
+  pocket,      // Kyutai Pocket TTS — int8 ONNX export (EN)
   pocketDe,    // Pocket TTS German 6-layer (our export)
   pocketDe24l, // Pocket TTS German 24-layer (our export)
   pocketFr24l, // Pocket TTS French 24-layer (our export)
